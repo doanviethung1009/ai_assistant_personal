@@ -213,6 +213,32 @@ prod-up: ## Dựng stack ở chế độ prod (không bind mount, không reload)
 prod-logs: ## Log của stack prod
 	$(DC) -f docker-compose.yml -f docker-compose.prod.yml logs -f --tail=100
 
+# ── Git flow: main → uat → prod ────────────────────────────────────────
+#
+#  Nhánh môi trường chỉ đi lên bằng fast-forward. Chi tiết và lý do:
+#  docs/git-workflow.md
+
+.PHONY: git-status
+git-status: ## Xem main, uat, prod đang lệch nhau thế nào
+	@bash scripts/release.sh status
+
+.PHONY: promote-uat
+promote-uat: ## Đưa main lên uat rồi push (fast-forward)
+	@bash scripts/release.sh uat
+
+.PHONY: promote-prod
+promote-prod: ## Go-live: uat lên prod kèm tag. Dùng: make promote-prod v=1.0.0
+	@test -n "$(v)" || (echo "Thiếu tham số v. Ví dụ: make promote-prod v=1.0.0" && exit 1)
+	@bash scripts/release.sh prod "$(v)"
+
+.PHONY: rollback-info
+rollback-info: ## In hướng dẫn lùi production về tag trước
+	@bash scripts/release.sh rollback
+
+.PHONY: git-init-branches
+git-init-branches: ## Tạo nhánh uat và prod từ main (chỉ chạy một lần)
+	@bash scripts/init-branches.sh
+
 # ── Dọn dẹp ────────────────────────────────────────────────────────────
 
 .PHONY: fix-eol

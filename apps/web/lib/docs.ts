@@ -37,6 +37,13 @@ export const DOCS: DocEntry[] = [
     file: "README.md",
   },
   {
+    slug: "gitflow",
+    title: "Mô hình Git và go-live",
+    description:
+      "Đường đi của code từ main qua uat tới prod, quy trình hotfix, rollback và tách môi trường.",
+    file: path.join("docs", "git-workflow.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:

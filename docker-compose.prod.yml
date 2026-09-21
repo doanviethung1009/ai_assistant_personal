@@ -19,7 +19,10 @@ services:
       context: ./apps/core
       target: prod
     environment:
-      ENVIRONMENT: production
+      # UAT dùng lại đúng file override này, chỉ khác giá trị trong .env.
+      # Giá trị hợp lệ theo config.py: development | staging | production.
+      # UAT đặt ENVIRONMENT=staging, không phải "uat".
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     # !override thay vì merge, để bind mount của dev không bị kéo theo
     volumes: !override []
