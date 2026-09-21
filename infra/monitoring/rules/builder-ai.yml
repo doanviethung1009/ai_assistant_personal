@@ -1,0 +1,100 @@
+groups:
+  - name: availability
+    rules:
+      - alert: ServiceProbeFailing
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Probe thất bại: {{ $labels.instance }}"
+          description: "Blackbox không probe được {{ $labels.instance }} trong 2 phút."
+
+      - alert: ApiDown
+        expr: up{job="builder-api"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Core API không scrape được"
+          description: "Prometheus không lấy được /metrics của builder-api."
+
+      - alert: TlsCertExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 14 * 24 * 3600
+        for: 1h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cert của {{ $labels.instance }} sắp hết hạn"
+          description: "Còn dưới 14 ngày. Kiểm tra Caddy đã renew chưa."
+
+  - name: api-health
+    rules:
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_requests_total{status=~"5.."}[5m]))
+            /
+          sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Tỉ lệ lỗi 5xx vượt 5%"
+          description: "Xem log: docker compose logs -f api"
+
+      - alert: SlowRequests
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path)
+          ) > 2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "p95 của {{ $labels.path }} vượt 2 giây"
+          description: "Ứng viên cho việc tuning: kiểm tra index và query plan."
+
+  - name: resources
+    rules:
+      - alert: HostMemoryPressure
+        expr: |
+          (1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.9
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "RAM còn dưới 10%"
+          description: "Cân nhắc đổi Prometheus sang VictoriaMetrics nếu là do monitoring."
+
+      - alert: HostDiskFillingUp
+        expr: |
+          node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"} < 0.15
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Ổ {{ $labels.mountpoint }} còn dưới 15%"
+          description: "Kiểm tra retention của Prometheus và log của Docker."
+
+  - name: postgres
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Postgres không phản hồi"
+
+      - alert: PostgresConnectionsHigh
+        expr: |
+          sum(pg_stat_activity_count) by (instance)
+            / on(instance) pg_settings_max_connections > 0.8
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Đã dùng trên 80% max_connections"
+          description: "Xem lại pool_size của api hoặc tăng max_connections."

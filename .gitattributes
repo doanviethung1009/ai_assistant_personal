@@ -1,0 +1,40 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Bắt buộc LF cho mọi file text.
+#
+#  Đây không phải chuyện thẩm mỹ. Project này viết trên Windows và chạy
+#  trên Ubuntu. Nếu file .sh hoặc entrypoint mang CRLF, Linux sẽ báo
+#  "bad interpreter: /bin/bash^M" hoặc "no such file or directory" và rất
+#  khó đoán nguyên nhân.
+# ═══════════════════════════════════════════════════════════════════════
+
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.py    text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.json  text eol=lf
+*.sql   text eol=lf
+*.md    text eol=lf
+*.css   text eol=lf
+*.toml  text eol=lf
+*.ini   text eol=lf
+*.mako  text eol=lf
+
+Dockerfile      text eol=lf
+Makefile        text eol=lf
+.env.example    text eol=lf
+.gitignore      text eol=lf
+.dockerignore   text eol=lf
+
+# Nhị phân, không đụng vào
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary

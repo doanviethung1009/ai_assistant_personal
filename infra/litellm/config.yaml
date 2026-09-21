@@ -1,0 +1,112 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  LiteLLM gateway
+#
+#  Mọi thành phần trong hệ thống chỉ gọi endpoint này, không dùng SDK
+#  provider trực tiếp. Đổi model = sửa file này, không sửa code.
+#
+#  Model ID của các provider đổi khá thường xuyên, nên phần model_list
+#  dùng wildcard passthrough: LiteLLM chuyển tiếp nguyên ID bạn gửi lên
+#  provider tương ứng. Không cần cập nhật file này mỗi khi có model mới.
+#
+#  Kiểm tra model nào đang khả dụng:
+#    curl -H "x-api-key: $ANTHROPIC_API_KEY" -H "anthropic-version: 2023-06-01" \
+#         https://api.anthropic.com/v1/models
+#    curl "https://generativelanguage.googleapis.com/v1beta/models?key=$GEMINI_API_KEY"
+#    curl -H "Authorization: Bearer $OPENAI_API_KEY" https://api.openai.com/v1/models
+# ═══════════════════════════════════════════════════════════════════════
+
+model_list:
+  # ── Passthrough theo provider ────────────────────────────────────────
+  # Gọi bằng tên đầy đủ, ví dụ "anthropic/claude-sonnet-4-5".
+  - model_name: "anthropic/*"
+    litellm_params:
+      model: "anthropic/*"
+      api_key: os.environ/ANTHROPIC_API_KEY
+
+  - model_name: "openai/*"
+    litellm_params:
+      model: "openai/*"
+      api_key: os.environ/OPENAI_API_KEY
+
+  - model_name: "gemini/*"
+    litellm_params:
+      model: "gemini/*"
+      api_key: os.environ/GEMINI_API_KEY
+
+  # ── Local model qua Ollama ───────────────────────────────────────────
+  # Kéo model trước: ollama pull qwen2.5:7b && ollama pull bge-m3
+  - model_name: "ollama/*"
+    litellm_params:
+      model: "ollama/*"
+      api_base: os.environ/OLLAMA_BASE_URL
+
+  # ── Alias theo mục đích ──────────────────────────────────────────────
+  # Code trong app gọi alias, không gọi tên model cụ thể. Muốn đổi model
+  # cho một loại việc thì sửa đúng một dòng ở đây.
+  #
+  # ĐIỀN model ID hiện hành trước khi dùng. Các giá trị dưới đây là ví dụ.
+
+  # Việc khối lượng lớn, chi phí thấp: phân loại, trích xuất, tóm tắt.
+  # Gemini Flash-Lite có free tier rộng nhất, hợp cho việc này.
+  - model_name: fast
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+    model_info:
+      mode: chat
+
+  # Suy luận: phân tích deploy, đọc log, tuning advisor. Tần suất thấp.
+  - model_name: reasoning
+    litellm_params:
+      model: anthropic/claude-sonnet-4-5
+      api_key: os.environ/ANTHROPIC_API_KEY
+    model_info:
+      mode: chat
+
+  # Embedding chạy local, dữ liệu không ra khỏi máy, không tốn tiền.
+  - model_name: embedding
+    litellm_params:
+      model: ollama/bge-m3
+      api_base: os.environ/OLLAMA_BASE_URL
+    model_info:
+      mode: embedding
+
+router_settings:
+  routing_strategy: simple-shuffle
+  num_retries: 2
+  timeout: 120
+  # Khi alias chính lỗi hoặc bị rate limit, tự chuyển sang phương án dự phòng.
+  fallbacks:
+    - fast: ["reasoning"]
+    - reasoning: ["fast"]
+
+litellm_settings:
+  # Cache theo nội dung request, tiết kiệm token cho prompt lặp lại.
+  cache: true
+  cache_params:
+    type: redis
+    ttl: 3600
+  drop_params: true
+  # Không ghi nội dung prompt/response vào log. Dữ liệu cá nhân không nên
+  # nằm trong log, và log có thể bị đẩy sang Loki.
+  turn_off_message_logging: true
+  set_verbose: false
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  database_url: os.environ/DATABASE_URL
+
+  # Theo dõi chi tiêu. Cần Postgres, không có DB thì mất toàn bộ tính năng
+  # virtual key và budget.
+  store_model_in_db: true
+  disable_spend_logs: false
+
+  # Ngưỡng an toàn cho tài khoản cá nhân. Vượt là chặn, không phải cảnh báo.
+  max_budget: 20
+  budget_duration: 30d
+
+  # Báo cáo chi tiêu định kỳ. Đặt SLACK_WEBHOOK_URL hoặc dùng webhook của
+  # Telegram bot nếu muốn nhận trên điện thoại.
+  alerting: ["slack"]
+  alerting_threshold: 300
+  spend_report_frequency: "7d"

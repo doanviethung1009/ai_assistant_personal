@@ -1,0 +1,77 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Override cho chế độ production.
+#
+#  Dùng:  docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#  Hoặc:  make prod-up
+#
+#  Khác gì so với dev:
+#    - build target prod: user không phải root, không hot reload
+#    - bỏ bind mount source, code nằm trong image nên deploy có thể lặp lại
+#    - uvicorn chạy nhiều worker
+#
+#  Cần Docker Compose 2.24 trở lên cho thẻ !override.
+#  Kiểm tra: docker compose version --short
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  api:
+    build:
+      context: ./apps/core
+      target: prod
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    # !override thay vì merge, để bind mount của dev không bị kéo theo
+    volumes: !override []
+    deploy:
+      resources:
+        limits:
+          memory: 768M
+
+  web:
+    build:
+      context: ./apps/web
+      target: prod
+      args:
+        # Phải là build arg. NEXT_PUBLIC_* được nhúng vào bundle lúc build.
+        NEXT_PUBLIC_DISPLAY_TZ: ${TZ:-Asia/Ho_Chi_Minh}
+    environment:
+      NODE_ENV: production
+      CORE_API_URL: ${CORE_API_URL:-http://api:8000}
+      CORE_API_KEY: ${API_KEY}
+      DOCS_DIR: /docs
+    # Bỏ bind mount source của dev, nhưng vẫn cần tài liệu cho trang /docs
+    volumes: !override
+      - ./README.md:/docs/README.md:ro
+      - ./docs:/docs/docs:ro
+      - ./.kiro/steering:/docs/.kiro/steering:ro
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  postgres:
+    # Ở prod không cần mở cổng ra host. Truy cập qua `make psql` hoặc
+    # docker exec. Bỏ hẳn port giảm bề mặt tấn công.
+    ports: !override []
+    command:
+      - postgres
+      - -c
+      - max_connections=100
+      - -c
+      - shared_buffers=256MB
+      - -c
+      - effective_cache_size=768MB
+      - -c
+      - work_mem=8MB
+      - -c
+      - maintenance_work_mem=64MB
+      - -c
+      - log_min_duration_statement=500
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  redis:
+    ports: !override []
