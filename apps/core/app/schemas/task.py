@@ -9,22 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validat
 
 from app.core.config import settings
 from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
+from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
-
-MAX_TAGS = 20
-
-
-def _normalize_tags(value: list[str] | None) -> list[str]:
-    if not value:
-        return []
-    seen: dict[str, None] = {}
-    for raw in value:
-        tag = raw.strip().lower().replace(" ", "-")
-        if tag and len(tag) <= 64:
-            seen[tag] = None
-    if len(seen) > MAX_TAGS:
-        raise ValueError(f"tối đa {MAX_TAGS} tag")
-    return list(seen)
 
 
 class TaskBase(BaseModel):

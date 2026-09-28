@@ -33,23 +33,33 @@ apps/core/app/
   db/base.py           DeclarativeBase, naming convention, mixin timestamp
   db/session.py        engine async, get_session dependency (tự commit)
   db/redis.py          client redis dùng chung
-  models/enums.py      TaskStatus, TaskPriority, TaskSource, TaskEventType
+  db/base.py           thêm: enum_column() — cấu hình cột enum dùng chung
+  models/enums.py      TaskStatus, TaskPriority, TaskSource, TaskEventType,
+                       NoteKind, NoteSource
   models/task.py       Task, TaskEvent — nơi định nghĩa constraint và index
   models/project.py    Project
+  models/note.py       Note — sổ tay command/SQL/cấu hình, có soft delete
   schemas/             Pydantic, TaskRead có computed field is_overdue
+  schemas/common.py    Page[T], và normalize_tags() dùng chung Task với Note
   services/
     task_service.py    toàn bộ logic nghiệp vụ của task
     project_service.py logic project
+    note_service.py    logic sổ tay, gồm soft delete và mark_used
     clock.py           quy đổi "hôm nay" giữa timezone hiển thị và UTC
     errors.py          DomainError, map sang HTTP ở main.py
   api/health.py        /health/live, /health/ready — không cần API key
   api/v1/tasks.py      route tĩnh (/agenda, /stats) khai báo TRƯỚC /{task_id}
+  api/v1/notes.py      route tĩnh (/trash, /stats) khai báo TRƯỚC /{note_id}
 apps/web/
   lib/api.ts           duy nhất nơi gọi core API, có "server-only"
   lib/types.ts         mirror schema backend, sửa backend thì sửa cả đây
   lib/format.ts        format ngày giờ với timeZone tường minh
+  lib/note-danger.ts   heuristic nhận lệnh nguy hiểm và dấu hiệu lộ secret.
+                       KHÔNG "server-only": form ở client cũng gọi.
   app/actions.ts       Server Action, mọi mutation đi qua đây
   components/          task-item và quick-add-form là client component
+  components/copy-button.tsx  có đường dự phòng khi navigator.clipboard
+                       không tồn tại (mở app qua IP LAN không phải secure context)
 ```
 
 ## Quy ước dễ vi phạm
@@ -98,11 +108,30 @@ apps/web/
   (backend dùng helper `_alive()`, web dùng `aliveTasks()`). Thiếu nó là task
   trong thùng rác lại hiện ở agenda và thống kê.
 - **Ràng buộc unique phải là partial index.** `UNIQUE (source, external_id)` có
-  điều kiện `WHERE deleted_at IS NULL`. Task xoá mềm không được chiếm chỗ, nếu
-  không thì sync lại từ Jira sẽ bị chặn.
+  điều kiện `WHERE deleted_at IS NULL`. Áp dụng cho cả `tasks` và `notes`. Bản
+  ghi xoá mềm không được chiếm chỗ, nếu không thì sync lại từ Jira hay Obsidian
+  sẽ bị chặn.
+- **Nội dung note là dữ liệu, không phải code.** `note.content` chỉ được lưu,
+  trả về, và copy vào clipboard. Không đưa vào shell, không `eval`, không nối
+  vào câu SQL. Khi render ở component phải dùng text node của JSX; dùng
+  `dangerouslySetInnerHTML` là mở đường cho XSS vì nội dung do người dùng dán.
+  Nếu sau này có tính năng "chạy note" thì nó phải là cơ chế riêng có xác nhận
+  tường minh, không phải hệ quả của việc lưu note.
+- **Cột enum khai báo qua `enum_column()` trong `db/base.py`.** Đừng tự gọi
+  `SAEnum` với cấu hình riêng: lệch `native_enum` hay `length` giữa các bảng sẽ
+  làm Alembic autogenerate sinh diff nhiễu mãi không hết.
 - **Đổi cấu trúc file JSON thì phải tăng `SCHEMA_VERSION` và viết bước
   migrate.** Xem `store/json-file.ts`. Thêm field mà không backfill thì dữ liệu
-  cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai.
+  cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai. Hiện tại
+  đang ở **v3** (v2 → v3 là thêm mảng `notes`). Thêm mảng mới thì phải backfill
+  thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
+- **Thêm entity mới thì phải đi hết chuỗi:** model → `models/__init__.py` →
+  schema → service → router → `api/v1/router.py` → `lib/types.ts` →
+  `store/types.ts` (`StoredX` + `DataFile`) → `store/engine.ts` →
+  `lib/api.ts` (cả ba chế độ) → `app/actions.ts` → `store/csv.ts` →
+  `store/transfer.ts` → `app/api/export/route.ts` → `lib/nav.ts` →
+  `scripts/smoke-test.sh`. Bỏ sót một khâu thì lỗi chỉ hiện ở đúng một chế độ
+  `DATA_SOURCE`, và thường là chế độ bạn không chạy lúc đó.
 
 ## Khi sửa backend
 

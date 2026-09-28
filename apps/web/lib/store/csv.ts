@@ -12,9 +12,16 @@ import "server-only";
  * Excel mà không cần tra UUID.
  */
 
-import type { Project, TaskPriority, TaskSource, TaskStatus } from "../types";
-import { makeTask, normalizeTags, nowIso, summary, uuid } from "./engine";
-import type { StoredTask } from "./types";
+import type {
+  NoteKind,
+  NoteSource,
+  Project,
+  TaskPriority,
+  TaskSource,
+  TaskStatus,
+} from "../types";
+import { makeNote, makeTask, normalizeTags, nowIso, summary, uuid } from "./engine";
+import type { StoredNote, StoredTask } from "./types";
 
 const BOM = "\uFEFF";
 
@@ -339,6 +346,144 @@ export function csvToProjects(csv: string): CsvImportResult<Project> {
       created_at: record.created_at || nowIso(),
       updated_at: record.updated_at || nowIso(),
     });
+  });
+
+  return { items, skipped };
+}
+
+// ── Note ───────────────────────────────────────────────────────────────
+
+export const NOTE_COLUMNS = [
+  "id",
+  "title",
+  "kind",
+  // Nội dung thường có nhiều dòng. Parser RFC 4180 ở trên xử lý được xuống
+  // dòng bên trong dấu ngoặc kép, nên không cần làm phẳng.
+  "content",
+  "description",
+  "context",
+  "project_key",
+  "tags",
+  "is_pinned",
+  "is_dangerous",
+  "use_count",
+  "last_used_at",
+  "source",
+  "external_id",
+  "created_at",
+  "updated_at",
+  "deleted_at",
+] as const;
+
+export function notesToCsv(notes: StoredNote[], projects: Project[]): string {
+  const keyById = new Map(projects.map((p) => [p.id, p.key]));
+
+  const rows = notes.map((note) => [
+    note.id,
+    note.title,
+    note.kind,
+    note.content,
+    note.description ?? "",
+    note.context ?? "",
+    note.project_id ? (keyById.get(note.project_id) ?? "") : "",
+    note.tags.join(";"),
+    note.is_pinned ? "true" : "false",
+    note.is_dangerous ? "true" : "false",
+    note.use_count.toString(),
+    note.last_used_at ?? "",
+    note.source,
+    note.external_id ?? "",
+    note.created_at,
+    note.updated_at,
+    note.deleted_at ?? "",
+  ]);
+
+  return buildCsv(NOTE_COLUMNS, rows);
+}
+
+const VALID_NOTE_KIND: readonly NoteKind[] = [
+  "command",
+  "sql",
+  "text",
+  "config",
+  "code",
+];
+const VALID_NOTE_SOURCE: readonly NoteSource[] = [
+  "manual",
+  "obsidian",
+  "github",
+  "agent",
+];
+
+export function csvToNotes(
+  csv: string,
+  projects: Project[],
+): CsvImportResult<StoredNote> {
+  const records = toRecords(parseCsv(csv));
+  const byKey = new Map(projects.map((p) => [p.key.toUpperCase(), p]));
+
+  const items: StoredNote[] = [];
+  const skipped: { line: number; reason: string }[] = [];
+
+  records.forEach((record, position) => {
+    const line = position + 2; // +1 cho header, +1 vì đếm từ 1
+    const title = (record.title ?? "").trim();
+    // content KHÔNG trim sâu: thụt lề bên trong là phần nội dung, nhất là
+    // với YAML và SQL nhiều dòng. Chỉ kiểm tra có ký tự thật hay không.
+    const content = record.content ?? "";
+
+    if (!title) {
+      skipped.push({ line, reason: "thiếu title" });
+      return;
+    }
+    if (!content.trim()) {
+      skipped.push({ line, reason: "thiếu content" });
+      return;
+    }
+
+    const kind = record.kind as NoteKind;
+    if (kind && !VALID_NOTE_KIND.includes(kind)) {
+      skipped.push({ line, reason: `kind không hợp lệ: ${record.kind}` });
+      return;
+    }
+
+    const source = record.source as NoteSource;
+    if (source && !VALID_NOTE_SOURCE.includes(source)) {
+      skipped.push({ line, reason: `source không hợp lệ: ${record.source}` });
+      return;
+    }
+
+    const projectKey = (record.project_key ?? "").toUpperCase();
+    const project = projectKey ? byKey.get(projectKey) : undefined;
+    if (projectKey && !project) {
+      skipped.push({ line, reason: `không có project key '${projectKey}'` });
+      return;
+    }
+
+    const used = Number.parseInt(record.use_count ?? "", 10);
+
+    items.push(
+      makeNote({
+        id: record.id || uuid(),
+        title,
+        kind: kind || "command",
+        content,
+        description: record.description || null,
+        context: record.context || null,
+        project_id: project?.id ?? null,
+        project: summary(project),
+        tags: normalizeTags((record.tags ?? "").split(";")),
+        is_pinned: record.is_pinned === "true",
+        is_dangerous: record.is_dangerous === "true",
+        use_count: Number.isFinite(used) && used > 0 ? used : 0,
+        last_used_at: record.last_used_at || null,
+        source: source || "manual",
+        external_id: record.external_id || null,
+        created_at: record.created_at || nowIso(),
+        updated_at: record.updated_at || nowIso(),
+        deleted_at: record.deleted_at || null,
+      }),
+    );
   });
 
   return { items, skipped };

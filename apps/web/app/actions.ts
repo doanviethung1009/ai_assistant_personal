@@ -4,24 +4,33 @@ import { revalidatePath } from "next/cache";
 
 import {
   CoreApiError,
+  createNote,
   createProject,
   createTask,
+  deleteNote,
   deleteTask,
+  emptyNoteTrash,
   emptyTrash,
   logTime,
+  markNoteUsed,
+  patchNote,
   patchTask,
   purgeExpired,
+  purgeExpiredNotes,
+  purgeNote,
   purgeTask,
+  restoreNote,
   restoreTask,
 } from "@/lib/api";
 import {
   importJson,
+  importNotesCsv,
   importProjectsCsv,
   importTasksCsv,
   type ImportMode,
   type ImportSummary,
 } from "@/lib/store/transfer";
-import type { TaskPriority, TaskStatus } from "@/lib/types";
+import type { NoteKind, TaskPriority, TaskStatus } from "@/lib/types";
 
 export interface ActionResult {
   ok: boolean;
@@ -32,6 +41,7 @@ function revalidateAll(): void {
   revalidatePath("/");
   revalidatePath("/tasks");
   revalidatePath("/projects");
+  revalidatePath("/notes");
   revalidatePath("/trash");
   revalidatePath("/data");
 }
@@ -212,6 +222,179 @@ export async function createProjectAction(
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+//  Sổ tay
+//
+//  `content` của note là dữ liệu do người dùng nhập. Nó chỉ được validate độ
+//  dài rồi lưu, không parse và không thực thi. Không có action nào ở đây chạy
+//  nội dung note.
+// ═══════════════════════════════════════════════════════════════════════
+
+const MAX_NOTE_CONTENT = 20_000;
+
+export interface NewNoteInput {
+  title: string;
+  content: string;
+  kind?: NoteKind;
+  description?: string;
+  context?: string;
+  projectId?: string;
+  tags?: string[];
+  isPinned?: boolean;
+  isDangerous?: boolean;
+}
+
+export async function createNoteAction(
+  input: NewNoteInput,
+): Promise<ActionResult> {
+  const title = input.title?.trim();
+  if (!title) {
+    return { ok: false, error: "Tiêu đề không được để trống" };
+  }
+  if (title.length > 300) {
+    return { ok: false, error: "Tiêu đề tối đa 300 ký tự" };
+  }
+
+  const content = input.content?.trim();
+  if (!content) {
+    return { ok: false, error: "Nội dung không được để trống" };
+  }
+  if (content.length > MAX_NOTE_CONTENT) {
+    return {
+      ok: false,
+      error: `Nội dung tối đa ${MAX_NOTE_CONTENT.toLocaleString("vi-VN")} ký tự`,
+    };
+  }
+
+  try {
+    await createNote({
+      title,
+      content,
+      kind: input.kind ?? "command",
+      description: input.description?.trim() || null,
+      context: input.context?.trim() || null,
+      project_id: input.projectId || null,
+      tags: input.tags ?? [],
+      is_pinned: input.isPinned ?? false,
+      is_dangerous: input.isDangerous ?? false,
+    });
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function updateNoteAction(
+  id: string,
+  patch: Record<string, unknown>,
+): Promise<ActionResult> {
+  if (typeof patch.title === "string" && !patch.title.trim()) {
+    return { ok: false, error: "Tiêu đề không được để trống" };
+  }
+  if (typeof patch.content === "string") {
+    if (!patch.content.trim()) {
+      return { ok: false, error: "Nội dung không được để trống" };
+    }
+    if (patch.content.length > MAX_NOTE_CONTENT) {
+      return {
+        ok: false,
+        error: `Nội dung tối đa ${MAX_NOTE_CONTENT.toLocaleString("vi-VN")} ký tự`,
+      };
+    }
+  }
+
+  try {
+    await patchNote(id, patch);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function toggleNotePinAction(
+  id: string,
+  isPinned: boolean,
+): Promise<ActionResult> {
+  try {
+    await patchNote(id, { is_pinned: isPinned });
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * Ghi nhận người dùng vừa copy note.
+ *
+ * Cố tình KHÔNG revalidate: copy là hành động rất thường xuyên, và render lại
+ * cả trang chỉ để tăng một con số đếm sẽ làm danh sách nhảy dưới tay người
+ * dùng. Số liệu sẽ đúng ở lần tải trang sau.
+ */
+export async function markNoteUsedAction(id: string): Promise<ActionResult> {
+  try {
+    await markNoteUsed(id);
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Xoá mềm: note vào thùng rác, còn phục hồi được trong thời hạn giữ. */
+export async function deleteNoteAction(id: string): Promise<ActionResult> {
+  try {
+    await deleteNote(id);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function restoreNoteAction(id: string): Promise<ActionResult> {
+  try {
+    await restoreNote(id);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Xoá vĩnh viễn một note trong thùng rác. Không hoàn tác được. */
+export async function purgeNoteAction(id: string): Promise<ActionResult> {
+  try {
+    await purgeNote(id);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function purgeExpiredNotesAction(): Promise<PurgeActionResult> {
+  try {
+    const result = await purgeExpiredNotes();
+    revalidateAll();
+    return { ok: true, purged: result.purged };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Xoá vĩnh viễn toàn bộ thùng rác sổ tay, không chờ hết hạn. */
+export async function emptyNoteTrashAction(): Promise<PurgeActionResult> {
+  try {
+    const result = await emptyNoteTrash();
+    revalidateAll();
+    return { ok: true, purged: result.purged };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
 //  Nhập dữ liệu từ file JSON hoặc CSV
 // ═══════════════════════════════════════════════════════════════════════
 
@@ -260,6 +443,8 @@ export async function importDataAction(
       summary = await importTasksCsv(text, mode);
     } else if (kind === "projects-csv") {
       summary = await importProjectsCsv(text, mode);
+    } else if (kind === "notes-csv") {
+      summary = await importNotesCsv(text, mode);
     } else {
       return { ok: false, error: `Loại dữ liệu không hợp lệ: ${kind}` };
     }

@@ -105,6 +105,19 @@ export function migrate(data: DataFile): DataFile {
     data.schema_version = 2;
   }
 
+  // v2 → v3: bổ sung mảng `notes`.
+  //
+  // Phải backfill thành mảng rỗng, không để undefined. Engine gọi
+  // state().notes.filter(...) ngay khi đọc; undefined sẽ ném TypeError và
+  // làm cả store không nạp được, không chỉ mất phần sổ tay.
+  if (data.schema_version < 3) {
+    if (!Array.isArray(data.notes)) {
+      data.notes = [];
+      console.info("[store] migrate v2→v3: thêm mảng notes rỗng");
+    }
+    data.schema_version = 3;
+  }
+
   return data;
 }
 
@@ -125,14 +138,21 @@ async function initialise(): Promise<void> {
     if (!isDataFile(parsed)) {
       throw new Error("Cấu trúc file không hợp lệ");
     }
-    engine.restore(migrate(parsed));
-    console.info(`[store] đã nạp ${parsed.tasks.length} task từ ${file}`);
+    const data = migrate(parsed);
+    engine.restore(data);
+    console.info(
+      `[store] đã nạp ${data.tasks.length} task và ${data.notes.length} note từ ${file}`,
+    );
 
     // Dọn thùng rác quá hạn ngay khi khởi động. Chưa có scheduler nên đây
     // là điểm dọn tự động duy nhất ngoài lúc mở trang thùng rác.
     const purged = engine.purgeExpired();
     if (purged > 0) {
       console.info(`[store] đã xoá vĩnh viễn ${purged} task quá hạn giữ`);
+    }
+    const purgedNotes = engine.purgeExpiredNotes();
+    if (purgedNotes > 0) {
+      console.info(`[store] đã xoá vĩnh viễn ${purgedNotes} note quá hạn giữ`);
     }
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;

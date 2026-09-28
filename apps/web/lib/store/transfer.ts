@@ -18,13 +18,19 @@ import type { Project } from "../types";
 import * as csvCodec from "./csv";
 import * as engine from "./engine";
 import { ensureLoaded, migrate } from "./json-file";
-import { SCHEMA_VERSION, type DataFile, type StoredTask } from "./types";
+import {
+  SCHEMA_VERSION,
+  type DataFile,
+  type StoredNote,
+  type StoredTask,
+} from "./types";
 
 export type ImportMode = "merge" | "replace";
 
 export interface ImportSummary {
   created_projects: number;
   created_tasks: number;
+  created_notes: number;
   skipped: { line: number; reason: string }[];
   warnings: string[];
 }
@@ -70,11 +76,24 @@ export async function collect(): Promise<DataFile> {
     if (offset >= page.total || page.items.length === 0) break;
   }
 
+  const notes: StoredNote[] = [];
+  offset = 0;
+  for (; ;) {
+    const page = await apiClient.listNotes({ limit: pageSize, offset });
+    for (const note of page.items) {
+      const { days_until_purge: _purge, ...rest } = note;
+      notes.push(rest);
+    }
+    offset += pageSize;
+    if (offset >= page.total || page.items.length === 0) break;
+  }
+
   return {
     schema_version: SCHEMA_VERSION,
     exported_at: new Date().toISOString(),
     projects,
     tasks,
+    notes,
     meta: {
       minutes_logged_today: 0,
       minutes_logged_date: new Date().toISOString().slice(0, 10),
@@ -96,10 +115,21 @@ export async function buildProjectsCsv(): Promise<string> {
   return csvCodec.projectsToCsv(data.projects);
 }
 
+export async function buildNotesCsv(): Promise<string> {
+  const data = await collect();
+  return csvCodec.notesToCsv(data.notes, data.projects);
+}
+
 // ── Nhập ───────────────────────────────────────────────────────────────
 
 function emptySummary(): ImportSummary {
-  return { created_projects: 0, created_tasks: 0, skipped: [], warnings: [] };
+  return {
+    created_projects: 0,
+    created_tasks: 0,
+    created_notes: 0,
+    skipped: [],
+    warnings: [],
+  };
 }
 
 function assertReplaceAllowed(mode: ImportMode): void {
@@ -120,6 +150,7 @@ function assertReplaceAllowed(mode: ImportMode): void {
 async function apply(
   projects: Project[],
   tasks: StoredTask[],
+  notes: StoredNote[],
   mode: ImportMode,
 ): Promise<ImportSummary> {
   assertReplaceAllowed(mode);
@@ -130,9 +161,15 @@ async function apply(
 
     if (mode === "replace") {
       const remapped = relinkByKey(projects, tasks, summary);
-      engine.replaceAll({ projects, tasks: remapped });
+      const remappedNotes = relinkNotesByKey(projects, notes, summary);
+      engine.replaceAll({
+        projects,
+        tasks: remapped,
+        notes: remappedNotes,
+      });
       summary.created_projects = projects.length;
       summary.created_tasks = remapped.length;
+      summary.created_notes = remappedNotes.length;
       return summary;
     }
 
@@ -184,6 +221,57 @@ async function apply(
     if (skippedTrash > 0) {
       summary.warnings.push(
         `Bỏ qua ${skippedTrash} task đang ở trong thùng rác của file nguồn`,
+      );
+    }
+
+    // Note trùng bị bỏ qua, khác với task.
+    //
+    // Nhập lại đúng một file backup là việc hay làm với sổ tay, và nhân đôi
+    // toàn bộ câu lệnh thì danh sách thành vô dụng. Dấu hiệu nhận trùng là
+    // cùng tiêu đề và cùng nội dung; sửa một trong hai thì coi là note khác.
+    const existingNoteKeys = new Set(
+      engine.allNotes().map((n) => `${n.title}\u0000${n.content}`),
+    );
+    let skippedNoteTrash = 0;
+    let duplicateNotes = 0;
+
+    for (const note of notes) {
+      if (note.deleted_at) {
+        skippedNoteTrash += 1;
+        continue;
+      }
+
+      const fingerprint = `${note.title}\u0000${note.content}`;
+      if (existingNoteKeys.has(fingerprint)) {
+        duplicateNotes += 1;
+        continue;
+      }
+      existingNoteKeys.add(fingerprint);
+
+      const key =
+        note.project?.key?.toUpperCase() ?? keyById.get(note.project_id ?? "");
+      engine.createNote({
+        title: note.title,
+        content: note.content,
+        kind: note.kind,
+        description: note.description,
+        context: note.context,
+        project_id: key ? (currentByKey.get(key) ?? null) : null,
+        tags: note.tags,
+        is_pinned: note.is_pinned,
+        is_dangerous: note.is_dangerous,
+      });
+      summary.created_notes += 1;
+    }
+
+    if (skippedNoteTrash > 0) {
+      summary.warnings.push(
+        `Bỏ qua ${skippedNoteTrash} note đang ở trong thùng rác của file nguồn`,
+      );
+    }
+    if (duplicateNotes > 0) {
+      summary.warnings.push(
+        `Bỏ qua ${duplicateNotes} note đã có sẵn (trùng tiêu đề và nội dung)`,
       );
     }
 
@@ -246,6 +334,74 @@ async function apply(
     );
   }
 
+  // Note: cùng luật bỏ trùng như đường cục bộ. Chỉ lấy một trang đủ lớn để
+  // dựng bảng đối chiếu; nếu sổ tay vượt 500 mục thì có thể lọt trùng, và đó
+  // là đánh đổi có ý thức để không phải phân trang toàn bộ trước mỗi lần nhập.
+  let existingNoteKeysRemote = new Set<string>();
+  try {
+    const current = await apiClient.listNotes({ limit: 200 });
+    existingNoteKeysRemote = new Set(
+      current.items.map((n) => `${n.title}\u0000${n.content}`),
+    );
+    if (current.total > current.items.length) {
+      summary.warnings.push(
+        `Chỉ đối chiếu trùng với ${current.items.length}/${current.total} note hiện có`,
+      );
+    }
+  } catch {
+    summary.warnings.push("Không đọc được sổ tay hiện có, bỏ qua bước lọc trùng");
+  }
+
+  let skippedNoteTrashRemote = 0;
+  let duplicateNotesRemote = 0;
+
+  for (const [index, note] of notes.entries()) {
+    if (note.deleted_at) {
+      skippedNoteTrashRemote += 1;
+      continue;
+    }
+
+    const fingerprint = `${note.title}\u0000${note.content}`;
+    if (existingNoteKeysRemote.has(fingerprint)) {
+      duplicateNotesRemote += 1;
+      continue;
+    }
+    existingNoteKeysRemote.add(fingerprint);
+
+    const key =
+      note.project?.key?.toUpperCase() ?? keyById.get(note.project_id ?? "");
+    try {
+      await apiClient.createNote({
+        title: note.title,
+        content: note.content,
+        kind: note.kind,
+        description: note.description,
+        context: note.context,
+        project_id: key ? (currentByKey.get(key) ?? null) : null,
+        tags: note.tags,
+        is_pinned: note.is_pinned,
+        is_dangerous: note.is_dangerous,
+      });
+      summary.created_notes += 1;
+    } catch (error) {
+      summary.skipped.push({
+        line: index + 2,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (skippedNoteTrashRemote > 0) {
+    summary.warnings.push(
+      `Bỏ qua ${skippedNoteTrashRemote} note đang ở trong thùng rác của file nguồn`,
+    );
+  }
+  if (duplicateNotesRemote > 0) {
+    summary.warnings.push(
+      `Bỏ qua ${duplicateNotesRemote} note đã có sẵn (trùng tiêu đề và nội dung)`,
+    );
+  }
+
   return summary;
 }
 
@@ -269,6 +425,39 @@ function relinkByKey(
 
     return {
       ...task,
+      project_id: project?.id ?? null,
+      project: project
+        ? {
+          id: project.id,
+          key: project.key,
+          name: project.name,
+          color: project.color,
+        }
+        : null,
+    };
+  });
+}
+
+/** Gắn lại quan hệ project cho note theo key, dùng cho chế độ replace cục bộ. */
+function relinkNotesByKey(
+  projects: Project[],
+  notes: StoredNote[],
+  summary: ImportSummary,
+): StoredNote[] {
+  const byKey = new Map(projects.map((p) => [p.key.toUpperCase(), p]));
+
+  return notes.map((note) => {
+    const key = note.project?.key?.toUpperCase();
+    const project = key ? byKey.get(key) : undefined;
+
+    if (key && !project) {
+      summary.warnings.push(
+        `Note '${note.title}' trỏ tới project '${key}' không có trong file, đã bỏ liên kết`,
+      );
+    }
+
+    return {
+      ...note,
       project_id: project?.id ?? null,
       project: project
         ? {
@@ -313,6 +502,9 @@ function parseDataFile(text: string): DataFile {
     exported_at: candidate.exported_at ?? new Date().toISOString(),
     projects: candidate.projects,
     tasks: candidate.tasks,
+    // File v2 không có `notes`. migrate() sẽ backfill, nhưng đặt sẵn ở đây để
+    // object đúng kiểu DataFile ngay từ lúc dựng.
+    notes: candidate.notes ?? [],
     meta: candidate.meta ?? {
       minutes_logged_today: 0,
       minutes_logged_date: new Date().toISOString().slice(0, 10),
@@ -325,7 +517,7 @@ export async function importJson(
   mode: ImportMode,
 ): Promise<ImportSummary> {
   const data = parseDataFile(text);
-  return apply(data.projects, data.tasks, mode);
+  return apply(data.projects, data.tasks, data.notes, mode);
 }
 
 export async function importProjectsCsv(
@@ -333,7 +525,7 @@ export async function importProjectsCsv(
   mode: ImportMode,
 ): Promise<ImportSummary> {
   const parsed = csvCodec.csvToProjects(text);
-  const summary = await apply(parsed.items, [], mode);
+  const summary = await apply(parsed.items, [], [], mode);
   summary.skipped.push(...parsed.skipped);
   return summary;
 }
@@ -349,13 +541,64 @@ export async function importTasksCsv(
     : await apiClient.listProjects(true);
 
   const parsed = csvCodec.csvToTasks(text, projects);
-  const summary = await apply(mode === "replace" ? projects : [], parsed.items, mode);
+  const summary = await apply(
+    mode === "replace" ? projects : [],
+    parsed.items,
+    // Replace từ CSV task không được xoá sổ tay. Truyền sổ tay hiện có để
+    // replaceAll ghi lại đúng những gì đang có.
+    mode === "replace" ? engineNotesOrEmpty() : [],
+    mode,
+  );
   summary.skipped.push(...parsed.skipped);
 
   if (mode === "replace") {
     summary.created_projects = 0;
-    summary.warnings.push("Chế độ replace chỉ thay task, project được giữ nguyên");
+    summary.created_notes = 0;
+    summary.warnings.push(
+      "Chế độ replace chỉ thay task, project và sổ tay được giữ nguyên",
+    );
   }
 
   return summary;
+}
+
+/** Sổ tay hiện tại ở chế độ cục bộ, mảng rỗng ở chế độ api. */
+function engineNotesOrEmpty(): StoredNote[] {
+  return IS_LOCAL ? engine.allNotes() : [];
+}
+
+export async function importNotesCsv(
+  text: string,
+  mode: ImportMode,
+): Promise<ImportSummary> {
+  // Note CSV chỉ mang project_key, nên cần danh sách project hiện có để đối
+  // chiếu. Không tự tạo project mới từ file note.
+  const projects = IS_LOCAL
+    ? (await localReady(), engine.allProjects())
+    : await apiClient.listProjects(true);
+
+  const parsed = csvCodec.csvToNotes(text, projects);
+  const summary = await apply(
+    mode === "replace" ? projects : [],
+    // Replace từ CSV note không được xoá task.
+    mode === "replace" ? engineTasksOrEmpty() : [],
+    parsed.items,
+    mode,
+  );
+  summary.skipped.push(...parsed.skipped);
+
+  if (mode === "replace") {
+    summary.created_projects = 0;
+    summary.created_tasks = 0;
+    summary.warnings.push(
+      "Chế độ replace chỉ thay sổ tay, project và task được giữ nguyên",
+    );
+  }
+
+  return summary;
+}
+
+/** Task hiện tại ở chế độ cục bộ, mảng rỗng ở chế độ api. */
+function engineTasksOrEmpty(): StoredTask[] {
+  return IS_LOCAL ? engine.allTasks() : [];
 }

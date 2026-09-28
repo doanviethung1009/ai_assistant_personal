@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 
 if TYPE_CHECKING:
+    from app.models.note import Note
     from app.models.task import Task
 
 
@@ -22,6 +23,11 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     tasks: Mapped[list[Task]] = relationship(
+        back_populates="project",
+        passive_deletes=True,
+    )
+    # Xoá project chỉ gỡ liên kết (ondelete="SET NULL"), note vẫn còn nguyên.
+    notes: Mapped[list[Note]] = relationship(
         back_populates="project",
         passive_deletes=True,
     )

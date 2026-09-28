@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import {
   buildJson,
+  buildNotesCsv,
   buildProjectsCsv,
   buildTasksCsv,
 } from "@/lib/store/transfer";
@@ -12,6 +13,7 @@ import {
  *   GET /api/export?format=json                 toàn bộ, giữ nguyên nhật ký
  *   GET /api/export?format=csv&entity=tasks     task, mở được bằng Excel
  *   GET /api/export?format=csv&entity=projects  project
+ *   GET /api/export?format=csv&entity=notes     sổ tay
  *
  * Route này không có xác thực riêng, giống mọi trang khác của web app. Nó an
  * toàn vì cả app chỉ bind vào localhost. Nếu sau này đưa web ra mạng thì
@@ -41,6 +43,10 @@ export async function GET(request: Request): Promise<Response> {
     } else if (format === "csv" && entity === "projects") {
       body = await buildProjectsCsv();
       filename = `builder-projects-${stamp()}.csv`;
+      contentType = "text/csv; charset=utf-8";
+    } else if (format === "csv" && entity === "notes") {
+      body = await buildNotesCsv();
+      filename = `builder-notes-${stamp()}.csv`;
       contentType = "text/csv; charset=utf-8";
     } else if (format === "csv") {
       body = await buildTasksCsv();

@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { Project, Task, TaskEvent } from "../types";
+import type { Note, Project, Task, TaskEvent } from "../types";
 
 /**
  * Nguồn dữ liệu của web app.
@@ -36,6 +36,12 @@ export interface StoredTask
   events: TaskEvent[];
 }
 
+/**
+ * Note dạng lưu trong file. Cùng lý do như StoredTask: bỏ field tính toán
+ * theo thời điểm đọc. Note không có nhật ký nên không thêm gì.
+ */
+export type StoredNote = Omit<Note, "days_until_purge">;
+
 /** Số ngày giữ task đã xoá. 0 nghĩa là xoá thẳng, không qua thùng rác. */
 export function trashRetentionDays(): number {
   const raw = Number.parseInt(process.env.TRASH_RETENTION_DAYS ?? "", 10);
@@ -56,6 +62,7 @@ export interface DataFile {
   exported_at: string;
   projects: Project[];
   tasks: StoredTask[];
+  notes: StoredNote[];
   meta: {
     minutes_logged_today: number;
     /** Ngày ứng với minutes_logged_today, để reset khi sang ngày mới. */
@@ -67,5 +74,10 @@ export interface DataFile {
  * Lịch sử phiên bản cấu trúc file:
  *   1 → bản đầu
  *   2 → thêm `deleted_at` cho thùng rác
+ *   3 → thêm mảng `notes` cho sổ tay
+ *
+ * Đổi cấu trúc thì PHẢI tăng số này và viết bước migrate trong json-file.ts.
+ * Thêm field mà không backfill thì dữ liệu cũ đọc lên là `undefined`, và code
+ * so sánh `=== null` sẽ hiểu sai.
  */
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;

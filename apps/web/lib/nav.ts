@@ -26,6 +26,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Hôm nay" },
   { href: "/tasks", label: "Tất cả task", short: "Task" },
   { href: "/projects", label: "Dự án" },
+  { href: "/notes", label: "Sổ tay" },
   { href: "/trash", label: "Thùng rác", short: "Rác" },
 ];
 

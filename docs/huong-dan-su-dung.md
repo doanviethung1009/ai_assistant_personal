@@ -114,25 +114,98 @@ Tab **Dự án** để nhóm task. Mỗi dự án có:
 Xoá dự án **không** xoá task của nó. Task chỉ bị gỡ liên kết và trở thành không
 thuộc dự án nào.
 
+## Sổ tay
+
+Tab **Sổ tay** là chỗ dán lại câu lệnh, câu SQL và đoạn cấu hình đã mất công tìm
+ra, để lần sau copy chứ không phải dò lại. Khác task ở chỗ nó không có hạn và
+không có trạng thái: đây là tài liệu tham khảo, không phải việc cần làm.
+
+### Các trường khi nhập
+
+| Trường | Ý nghĩa |
+|---|---|
+| **Tiêu đề** | Tên ngắn để tìm lại, tối đa 300 ký tự |
+| **Loại** | Câu lệnh, SQL, Ghi chú, Cấu hình, Đoạn code. Chỉ để tô màu và lọc |
+| **Nội dung để copy** | Phần thật sự được copy. Giữ nguyên xuống dòng và thụt lề |
+| **Nơi áp dụng** | Chạy ở đâu: tên máy, tên database, môi trường |
+| **Vì sao cần** | Ghi lại lý do, để sáu tháng sau đọc còn hiểu |
+| **Dự án** | Gắn vào một dự án, không bắt buộc |
+| **Tag** | Cách nhau bằng dấu phẩy |
+| **Ghim lên đầu** | Cho thứ dùng hằng ngày |
+| **Đánh dấu cẩn thận** | Hỏi lại một lần trước khi copy |
+
+Tách **Nội dung** khỏi **Vì sao cần** là có lý do: bấm Copy chỉ lấy đúng phần
+nội dung, không kéo theo văn xuôi giải thích.
+
+### Tìm lại
+
+Ô tìm kiếm soi cả **nội dung**, không chỉ tiêu đề. Đây là cách dùng thật: thường
+bạn chỉ nhớ một mẩu trong câu lệnh chứ không nhớ đã đặt tên là gì. Gõ `pg_dump`
+hay `deleted_at` là ra.
+
+Sắp xếp được theo Sửa gần nhất, Hay dùng nhất, Dùng gần nhất, Mới tạo, hoặc tên
+A→Z. Mục đã ghim **luôn** đứng trước, bất kể chọn sắp xếp nào.
+
+Bộ lọc nằm trong địa chỉ trang, nên một bộ lọc hay dùng có thể bookmark lại.
+
+### Hai cảnh báo tự động
+
+**Lệnh nguy hiểm.** Khi bạn gõ nội dung, app soi vài dấu hiệu quen như `rm -rf`,
+`DROP TABLE`, `TRUNCATE`, `DELETE` thiếu `WHERE`, `docker compose down -v`. Nếu
+thấy, ô *Đánh dấu cẩn thận* được tích sẵn và hiện lý do. Đây chỉ là gợi ý: bạn bỏ
+tích được, và ngược lại tự tích cho thứ mà app không nhận ra. Mục có dấu này sẽ
+hỏi xác nhận một lần trước khi copy.
+
+**Có thể chứa bí mật.** Nếu nội dung trông như có mật khẩu, API key, hay
+connection string nhúng mật khẩu, app sẽ nhắc. Lý do thật sự quan trọng:
+
+> Sổ tay lưu **văn bản thuần, không mã hoá**, trong Postgres hoặc trong file JSON.
+> Ai đọc được database hoặc file backup là đọc được mọi thứ trong đó.
+
+Cách làm đúng là để chỗ của giá trị thật, không phải giá trị thật:
+
+```bash
+# nên
+psql -U builder -d builder_ai   # mật khẩu lấy từ $PGPASSWORD trong .env
+
+# không nên
+PGPASSWORD=matkhauthat psql -U builder -d builder_ai
+```
+
+### App không bao giờ chạy nội dung note
+
+Đây là điều cần nói thẳng: lưu một câu lệnh vào sổ tay **không** làm nó chạy.
+Không có nút nào trong app thực thi nội dung note, kể cả với loại Câu lệnh hay
+SQL. Nội dung chỉ là chuỗi ký tự trong database, và nút Copy chỉ đưa nó vào
+clipboard. Việc dán vào terminal và bấm Enter vẫn là quyết định của bạn.
+
+Một mục chứa `rm -rf /` nằm trong sổ tay là vô hại. Nó chỉ nguy hiểm khi bạn tự
+copy rồi tự chạy.
+
 ## Thùng rác
 
-Xoá task là **xoá mềm**. Task vào thùng rác và được giữ **30 ngày**. Trong thời
-gian đó nó không xuất hiện ở bất kỳ đâu ngoài tab Thùng rác: không ở agenda,
-không trong danh sách, không tính vào thống kê.
+Xoá task và xoá mục sổ tay đều là **xoá mềm**. Chúng vào thùng rác và được giữ
+**30 ngày**. Trong thời gian đó chúng không xuất hiện ở bất kỳ đâu ngoài tab
+Thùng rác: không ở agenda, không trong danh sách, không trong kết quả tìm kiếm,
+không tính vào thống kê.
 
-Ở tab **Thùng rác**:
+Tab **Thùng rác** chia hai mục riêng, **Task** và **Sổ tay**, mỗi mục có bộ nút
+của nó. Ở cả hai:
 
-- Mỗi task hiện **số ngày còn lại**. Dưới 7 ngày thì số chuyển vàng, dưới 3 ngày
-  chuyển đỏ.
-- **Phục hồi** đưa task về trạng thái trước khi xoá.
-- **Xoá vĩnh viễn** xoá hẳn một task, không hoàn tác được.
-- **Dọn task đã quá hạn** xoá những task đã hết 30 ngày.
-- **Dọn sạch thùng rác** xoá hết, không chờ hết hạn.
+- Mỗi bản ghi hiện **số ngày còn lại**. Dưới 7 ngày thì số chuyển vàng, dưới 3
+  ngày chuyển đỏ.
+- **Phục hồi** đưa nó về trạng thái trước khi xoá.
+- **Xoá vĩnh viễn** xoá hẳn một bản ghi, không hoàn tác được.
+- **Dọn đã quá hạn** xoá những bản ghi đã hết 30 ngày.
+- **Dọn sạch** xoá hết, không chờ hết hạn.
+
+Mục sổ tay trong thùng rác chỉ hiện **dòng đầu** của nội dung. Đó là đủ để nhận
+ra mình đã xoá cái gì; cần đọc đủ thì phục hồi rồi xem ở tab Sổ tay.
 
 Một điều nên biết: việc dọn tự động chỉ xảy ra khi app khởi động và khi bạn mở tab
-Thùng rác. Nghĩa là không task nào bị xoá **sớm** hơn 30 ngày, nhưng có thể bị xoá
-**muộn** hơn nếu bạn lâu không mở app. Đây là hạn chế đã biết, sẽ hết khi hệ thống
-có bộ chạy định kỳ.
+Thùng rác. Nghĩa là không bản ghi nào bị xoá **sớm** hơn 30 ngày, nhưng có thể bị
+xoá **muộn** hơn nếu bạn lâu không mở app. Đây là hạn chế đã biết, sẽ hết khi hệ
+thống có bộ chạy định kỳ.
 
 ## Sao lưu và chuyển máy
 
@@ -140,23 +213,28 @@ Tab **Dữ liệu** cho tải về hai định dạng:
 
 | Định dạng | Dùng để |
 |---|---|
-| **JSON** | Sao lưu thật. Giữ đủ tag, nhật ký thay đổi, trạng thái thùng rác |
-| **CSV** | Mở bằng Excel để xem hoặc sửa hàng loạt |
+| **JSON** | Sao lưu thật. Giữ đủ task, dự án, sổ tay, tag, nhật ký thay đổi, trạng thái thùng rác |
+| **CSV** | Mở bằng Excel để xem hoặc sửa hàng loạt. Có ba loại: task, dự án, sổ tay |
 
 CSV không giữ được nhật ký thay đổi và tag bị nối bằng dấu chấm phẩy, nên **đừng
 dùng CSV làm bản sao lưu chính**. Dùng JSON.
 
 Khi nhập lại có hai chế độ:
 
-- **Thêm vào** — giữ dữ liệu hiện có. Dự án trùng mã bị bỏ qua. Task đang ở trong
-  thùng rác của file nguồn cũng bị bỏ qua, để việc nhập không tự dựng lại thứ bạn
-  đã xoá.
+- **Thêm vào** — giữ dữ liệu hiện có. Dự án trùng mã bị bỏ qua. Mục sổ tay trùng
+  cả tiêu đề và nội dung cũng bị bỏ qua, nên nhập lại cùng một file backup hai
+  lần không làm nhân đôi sổ tay. Task và mục sổ tay đang ở trong thùng rác của
+  file nguồn thì bị bỏ qua, để việc nhập không tự dựng lại thứ bạn đã xoá.
 - **Thay toàn bộ** — xoá hết dữ liệu hiện tại rồi nạp từ file. Nên tải bản JSON về
-  trước khi làm.
+  trước khi làm. Lưu ý: thay từ **CSV task** chỉ thay task, còn dự án và sổ tay
+  giữ nguyên; thay từ **CSV sổ tay** thì ngược lại.
 
 Sửa CSV bằng Excel thì lưu ý: cột dự án là **mã dự án** chứ không phải tên, và
-nhập CSV task sẽ không tự tạo dự án mới. Nếu cần dự án mới thì nhập CSV dự án
-trước.
+nhập CSV task hay CSV sổ tay đều không tự tạo dự án mới. Nếu cần dự án mới thì
+nhập CSV dự án trước.
+
+Nội dung nhiều dòng của sổ tay được bọc trong dấu ngoặc kép theo RFC 4180, nên
+Excel mở ra vẫn thấy đúng một ô nhiều dòng.
 
 ## Ba tab để hiểu dự án đang build
 
@@ -185,6 +263,13 @@ lý do sẽ thành task bị bỏ quên.
 
 **Điền ước lượng nếu muốn số liệu tiến độ có ý nghĩa.** Không điền thì tiến độ chỉ
 đếm số lượng task, coi task 5 phút bằng task 3 ngày.
+
+**Dán vào Sổ tay ngay lúc vừa tìm ra.** Thời điểm bạn chắc chắn sẽ quên là lúc
+vừa làm xong và đang thấy nó hiển nhiên. Kèm một dòng *Vì sao cần* thì sáu tháng
+sau đọc lại còn hiểu, chứ không chỉ là một chuỗi ký tự lạ.
+
+**Ghim thứ dùng hằng ngày, đừng ghim mọi thứ.** Ghim mười lăm mục thì việc ghim
+hết ý nghĩa. Còn lại cứ để sắp xếp theo Hay dùng nhất lo.
 
 **Tag theo ngữ cảnh, không theo dự án.** Dự án đã có trường riêng. Tag hữu ích khi
 nó cắt ngang nhiều dự án, ví dụ `cần-tập-trung`, `chờ-phản-hồi`, `việc-nhanh`.

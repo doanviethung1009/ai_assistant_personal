@@ -86,6 +86,83 @@ export interface TaskDetail extends Task {
   events: TaskEvent[];
 }
 
+// ── Sổ tay ─────────────────────────────────────────────────────────────
+
+export type NoteKind = "command" | "sql" | "text" | "config" | "code";
+
+export type NoteSource = "manual" | "obsidian" | "github" | "agent";
+
+/**
+ * Một mục trong sổ tay: câu lệnh, câu SQL, đoạn cấu hình, ghi chú tự do.
+ *
+ * `content` là DỮ LIỆU. Web chỉ hiển thị và copy vào clipboard, không bao giờ
+ * thực thi. Khi render phải dùng text node (JSX `{content}`), tuyệt đối không
+ * dangerouslySetInnerHTML — nội dung do người dùng dán vào, có thể chứa HTML.
+ */
+export interface Note {
+  id: string;
+  title: string;
+  kind: NoteKind;
+  content: string;
+  description: string | null;
+  /** Nơi áp dụng: host, database, môi trường. */
+  context: string | null;
+  project_id: string | null;
+  project: ProjectSummary | null;
+  tags: string[];
+  is_pinned: boolean;
+  /** Người dùng tự đánh dấu. UI cảnh báo trước khi copy. */
+  is_dangerous: boolean;
+  use_count: number;
+  last_used_at: string | null;
+  source: NoteSource;
+  external_id: string | null;
+  created_at: string;
+  updated_at: string;
+  /** Khác null nghĩa là đang ở trong thùng rác. */
+  deleted_at: string | null;
+  /** Số ngày còn lại trước khi xoá vĩnh viễn. Null nếu chưa xoá. */
+  days_until_purge: number | null;
+}
+
+export interface NoteTrashResponse {
+  items: Note[];
+  total: number;
+  limit: number;
+  offset: number;
+  retention_days: number;
+  purged_now: number;
+}
+
+export const NOTE_KIND_LABELS: Record<NoteKind, string> = {
+  command: "Câu lệnh",
+  sql: "SQL",
+  text: "Ghi chú",
+  config: "Cấu hình",
+  code: "Đoạn code",
+};
+
+export const NOTE_KINDS: NoteKind[] = [
+  "command",
+  "sql",
+  "text",
+  "config",
+  "code",
+];
+
+/**
+ * Loại có thể chạy được ở đâu đó, nên UI nhắc đọc lại trước khi dán.
+ * Khớp với NoteKind.is_executable ở backend.
+ */
+export const EXECUTABLE_NOTE_KINDS: NoteKind[] = ["command", "sql"];
+
+export type NoteSortField =
+  | "updated_at"
+  | "created_at"
+  | "title"
+  | "use_count"
+  | "last_used_at";
+
 export interface Agenda {
   reference_date: string;
   overdue: Task[];

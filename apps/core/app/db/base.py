@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy import DateTime, Enum as SAEnum, MetaData, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -21,6 +21,26 @@ NAMING_CONVENTION = {
 
 class Base(DeclarativeBase):
     metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+def enum_column(enum_cls: type, name: str) -> SAEnum:
+    """Cột enum lưu dạng VARCHAR + CHECK, không dùng native enum của Postgres.
+
+    Lý do: thêm giá trị mới chỉ cần sửa CHECK constraint, không phải ALTER TYPE
+    với các ràng buộc về transaction mà nó kéo theo.
+
+    Helper này nằm ở đây thay vì trong một file model cụ thể, để mọi model
+    dùng chung một cấu hình. Lệch cấu hình giữa các bảng sẽ làm Alembic
+    autogenerate sinh diff nhiễu.
+    """
+    return SAEnum(
+        enum_cls,
+        native_enum=False,
+        length=32,
+        values_callable=lambda e: [member.value for member in e],
+        name=name,
+        validate_strings=True,
+    )
 
 
 class UUIDPrimaryKeyMixin:

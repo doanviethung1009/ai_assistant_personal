@@ -16,6 +16,9 @@ import "server-only";
 import { DISPLAY_TZ } from "../format";
 import type {
   Agenda,
+  Note,
+  NoteKind,
+  NoteSortField,
   Paged,
   Project,
   ProjectSummary,
@@ -30,6 +33,7 @@ import {
   SCHEMA_VERSION,
   trashRetentionDays,
   type DataFile,
+  type StoredNote,
   type StoredTask,
 } from "./types";
 
@@ -81,6 +85,7 @@ function normalizeTags(tags: readonly string[] | undefined): string[] {
 interface StoreState {
   projects: Project[];
   tasks: StoredTask[];
+  notes: StoredNote[];
   minutesLoggedToday: number;
   minutesLoggedDate: string;
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
@@ -95,6 +100,7 @@ function state(): StoreState {
   globalState.__builderStoreState ??= {
     projects: [],
     tasks: [],
+    notes: [],
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
     onChange: null,
@@ -119,6 +125,7 @@ export function snapshot(): DataFile {
     exported_at: nowIso(),
     projects: structuredClone(store.projects),
     tasks: structuredClone(store.tasks),
+    notes: structuredClone(store.notes),
     meta: {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
@@ -130,6 +137,9 @@ export function restore(data: DataFile): void {
   const store = state();
   store.projects = data.projects ?? [];
   store.tasks = data.tasks ?? [];
+  // `?? []` là lớp bảo vệ thứ hai sau bước migrate v2→v3. File v2 đọc trực
+  // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
+  store.notes = data.notes ?? [];
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();
 
@@ -142,16 +152,23 @@ export function restore(data: DataFile): void {
 
 export function isEmpty(): boolean {
   const store = state();
-  return store.projects.length === 0 && store.tasks.length === 0;
+  return (
+    store.projects.length === 0 &&
+    store.tasks.length === 0 &&
+    store.notes.length === 0
+  );
 }
 
 export function replaceAll(data: {
   projects: Project[];
   tasks: StoredTask[];
+  /** Không truyền thì giữ nguyên sổ tay hiện tại. */
+  notes?: StoredNote[];
 }): void {
   const store = state();
   store.projects = data.projects;
   store.tasks = data.tasks;
+  if (data.notes !== undefined) store.notes = data.notes;
   touched();
 }
 
@@ -200,6 +217,30 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
           created_at: created,
         },
       ],
+  };
+}
+
+function makeNote(partial: Partial<StoredNote> & { title: string; content: string }): StoredNote {
+  const created = partial.created_at ?? nowIso();
+  return {
+    id: partial.id ?? uuid(),
+    title: partial.title,
+    kind: partial.kind ?? "command",
+    content: partial.content,
+    description: partial.description ?? null,
+    context: partial.context ?? null,
+    project_id: partial.project_id ?? null,
+    project: partial.project ?? null,
+    tags: partial.tags ?? [],
+    is_pinned: partial.is_pinned ?? false,
+    is_dangerous: partial.is_dangerous ?? false,
+    use_count: partial.use_count ?? 0,
+    last_used_at: partial.last_used_at ?? null,
+    source: partial.source ?? "manual",
+    external_id: partial.external_id ?? null,
+    created_at: created,
+    updated_at: partial.updated_at ?? created,
+    deleted_at: partial.deleted_at ?? null,
   };
 }
 
@@ -301,6 +342,92 @@ export function seed(): void {
       estimate_minutes: 60,
       spent_minutes: 75,
       tags: ["dx"],
+    }),
+  ];
+
+  store.notes = [
+    makeNote({
+      title: "Dựng stack và chạy migration",
+      kind: "command",
+      content: "make bootstrap",
+      description:
+        "Sinh .env nếu chưa có, build image, dựng profile core, rồi chạy alembic upgrade head.",
+      context: "gốc repo",
+      project_id: homelab.id,
+      project: summary(homelab),
+      tags: ["docker", "setup"],
+      is_pinned: true,
+      use_count: 4,
+      last_used_at: shiftIso(-1),
+    }),
+    makeNote({
+      title: "Xem task quá hạn chưa đóng",
+      kind: "sql",
+      content: [
+        "SELECT title, due_at, priority",
+        "FROM tasks",
+        "WHERE deleted_at IS NULL",
+        "  AND status NOT IN ('done', 'cancelled')",
+        "  AND due_at < now()",
+        "ORDER BY due_at;",
+      ].join("\n"),
+      description:
+        "Nhớ điều kiện deleted_at IS NULL, nếu không sẽ đếm cả task trong thùng rác.",
+      context: "DB builder_ai",
+      project_id: ops.id,
+      project: summary(ops),
+      tags: ["database", "bao-cao"],
+      is_pinned: true,
+      use_count: 2,
+    }),
+    makeNote({
+      title: "Backup database ra file gzip",
+      kind: "command",
+      content:
+        "docker compose exec -T postgres pg_dump -U builder -d builder_ai | gzip > backups/builder_ai_$(date +%Y%m%d_%H%M%S).sql.gz",
+      description:
+        "Chạy trước mỗi lần migrate trên prod. Makefile đã gói lại thành make backup.",
+      context: "máy prod",
+      tags: ["backup", "postgres"],
+      use_count: 1,
+    }),
+    makeNote({
+      title: "Xoá sạch volume rồi dựng lại",
+      kind: "command",
+      content: "docker compose --profile llm --profile monitoring down -v",
+      description:
+        "Cờ -v xoá luôn named volume, nghĩa là mất toàn bộ dữ liệu Postgres, Redis và Grafana.",
+      context: "chỉ dùng ở máy dev",
+      tags: ["docker", "reset"],
+      is_dangerous: true,
+    }),
+    makeNote({
+      title: "Vì sao không dùng create_all",
+      kind: "text",
+      content: [
+        "Schema chỉ đổi qua Alembic. create_all lúc runtime sẽ:",
+        "- tạo bảng không khớp với lịch sử migration",
+        "- không sinh partial index và CHECK constraint",
+        "- làm hai môi trường lệch schema mà không ai biết",
+      ].join("\n"),
+      description: "Ghi lại để lần sau không phải tranh luận lại.",
+      tags: ["thiet-ke", "database"],
+    }),
+    makeNote({
+      title: "Biến môi trường cho UAT",
+      kind: "config",
+      content: [
+        "COMPOSE_PROJECT_NAME=builder-uat",
+        "ENVIRONMENT=staging",
+        "WEB_PORT=3100",
+        "API_PORT=8100",
+        "POSTGRES_PORT=5433",
+        "LOG_LEVEL=DEBUG",
+      ].join("\n"),
+      description:
+        "ENVIRONMENT phải là staging, không phải uat: config.py validate bằng Literal.",
+      context: "/srv/builder-ai/uat/.env",
+      tags: ["deploy", "uat"],
     }),
   ];
 
@@ -797,4 +924,328 @@ export function createProject(input: {
   return project;
 }
 
-export { makeTask, normalizeTags, summary, uuid, nowIso };
+// ═══════════════════════════════════════════════════════════════════════
+//  Sổ tay
+//
+//  `content` chỉ được lưu và trả về như chuỗi. Không có chỗ nào trong file
+//  này eval, exec, hay nội suy nó vào một câu lệnh.
+// ═══════════════════════════════════════════════════════════════════════
+
+function toNote(note: StoredNote): Note {
+  return { ...note, days_until_purge: daysUntilPurge(note.deleted_at) };
+}
+
+/** Note chưa bị xoá mềm. Phải dùng ở mọi truy vấn nghiệp vụ. */
+function isNoteAlive(note: StoredNote): boolean {
+  return note.deleted_at === null;
+}
+
+function aliveNotes(): StoredNote[] {
+  return state().notes.filter(isNoteAlive);
+}
+
+function findNote(id: string, includeDeleted = false): StoredNote {
+  const note = state().notes.find((n) => n.id === id);
+  if (!note || (note.deleted_at !== null && !includeDeleted)) {
+    throw new Error(`Không tìm thấy note ${id}`);
+  }
+  return note;
+}
+
+export interface ListNotesOptions {
+  kind?: NoteKind[];
+  projectId?: string;
+  tags?: string[];
+  query?: string;
+  pinnedOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  sortBy?: NoteSortField;
+  sortDesc?: boolean;
+}
+
+export function listNotes(options: ListNotesOptions = {}): Paged<Note> {
+  let result = aliveNotes();
+
+  if (options.kind && options.kind.length > 0) {
+    result = result.filter((n) => options.kind!.includes(n.kind));
+  }
+  if (options.projectId) {
+    result = result.filter((n) => n.project_id === options.projectId);
+  }
+  if (options.tags && options.tags.length > 0) {
+    // Khớp mọi tag được yêu cầu, giống toán tử @> bên Postgres
+    result = result.filter((n) =>
+      options.tags!.every((tag) => n.tags.includes(tag)),
+    );
+  }
+  if (options.pinnedOnly) {
+    result = result.filter((n) => n.is_pinned);
+  }
+  if (options.query) {
+    // Tìm cả trong content, vì thường chỉ nhớ một đoạn trong câu lệnh chứ
+    // không nhớ tiêu đề. Khớp với hành vi của note_service bên backend.
+    const needle = options.query.trim().toLowerCase();
+    result = result.filter(
+      (n) =>
+        n.title.toLowerCase().includes(needle) ||
+        n.content.toLowerCase().includes(needle) ||
+        (n.description ?? "").toLowerCase().includes(needle) ||
+        (n.context ?? "").toLowerCase().includes(needle),
+    );
+  }
+
+  const sortBy = options.sortBy ?? "updated_at";
+  const desc = options.sortDesc ?? true;
+
+  result.sort((a, b) => {
+    // Note đã ghim luôn đứng trước, bất kể sắp xếp theo gì
+    if (a.is_pinned !== b.is_pinned) return a.is_pinned ? -1 : 1;
+
+    const direction = desc ? -1 : 1;
+
+    if (sortBy === "use_count") {
+      if (a.use_count !== b.use_count) {
+        return (a.use_count - b.use_count) * direction;
+      }
+    } else if (sortBy === "title") {
+      const compared = a.title.localeCompare(b.title, "vi");
+      if (compared !== 0) return compared * direction;
+    } else {
+      // Các field còn lại đều là ISO timestamp, so sánh chuỗi là đủ.
+      // last_used_at có thể null: đẩy xuống cuối như nulls_last bên SQL.
+      const left = a[sortBy] ?? "";
+      const right = b[sortBy] ?? "";
+      if (left !== right) {
+        if (left === "") return 1;
+        if (right === "") return -1;
+        return left.localeCompare(right) * direction;
+      }
+    }
+
+    return b.created_at.localeCompare(a.created_at);
+  });
+
+  const limit = options.limit ?? 100;
+  const offset = options.offset ?? 0;
+
+  return {
+    items: result.slice(offset, offset + limit).map(toNote),
+    total: result.length,
+    limit,
+    offset,
+  };
+}
+
+export function getNote(id: string): Note {
+  return toNote(findNote(id));
+}
+
+export function allNotes(): StoredNote[] {
+  return [...state().notes];
+}
+
+export function countNotesByKind(): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const note of aliveNotes()) {
+    counts[note.kind] = (counts[note.kind] ?? 0) + 1;
+  }
+  return counts;
+}
+
+export interface CreateNoteInput {
+  title: string;
+  content: string;
+  kind?: NoteKind;
+  description?: string | null;
+  context?: string | null;
+  project_id?: string | null;
+  tags?: string[];
+  is_pinned?: boolean;
+  is_dangerous?: boolean;
+}
+
+export function createNote(input: CreateNoteInput): Note {
+  const store = state();
+  const title = input.title.trim();
+  if (!title) throw new Error("title không được rỗng");
+
+  const content = input.content.trim();
+  if (!content) throw new Error("content không được rỗng");
+
+  if (input.project_id && !store.projects.some((p) => p.id === input.project_id)) {
+    throw new Error(`project_id ${input.project_id} không tồn tại`);
+  }
+
+  const note = makeNote({
+    title,
+    content,
+    kind: input.kind ?? "command",
+    description: input.description ?? null,
+    context: input.context ?? null,
+    project_id: input.project_id ?? null,
+    project: summary(store.projects.find((p) => p.id === input.project_id)),
+    tags: normalizeTags(input.tags),
+    is_pinned: input.is_pinned ?? false,
+    is_dangerous: input.is_dangerous ?? false,
+  });
+
+  store.notes.unshift(note);
+  touched();
+  return toNote(note);
+}
+
+export function patchNote(id: string, input: Record<string, unknown>): Note {
+  const note = findNote(id);
+
+  if ("title" in input && typeof input.title === "string") {
+    const title = input.title.trim();
+    if (!title) throw new Error("title không được rỗng");
+    note.title = title;
+  }
+  if ("content" in input && typeof input.content === "string") {
+    // Chỉ trim hai đầu. Thụt lề bên trong là phần nội dung, nhất là với
+    // YAML và SQL nhiều dòng.
+    const content = input.content.trim();
+    if (!content) throw new Error("content không được rỗng");
+    note.content = content;
+  }
+  if ("kind" in input) note.kind = input.kind as NoteKind;
+  if ("description" in input) {
+    note.description = (input.description as string | null) ?? null;
+  }
+  if ("context" in input) {
+    note.context = (input.context as string | null) ?? null;
+  }
+  if ("tags" in input) {
+    note.tags = normalizeTags(input.tags as string[] | undefined);
+  }
+  if ("is_pinned" in input) note.is_pinned = Boolean(input.is_pinned);
+  if ("is_dangerous" in input) note.is_dangerous = Boolean(input.is_dangerous);
+  if ("project_id" in input) {
+    const projectId = (input.project_id as string | null) ?? null;
+    const known = state().projects;
+    if (projectId && !known.some((p) => p.id === projectId)) {
+      throw new Error(`project_id ${projectId} không tồn tại`);
+    }
+    note.project_id = projectId;
+    note.project = summary(known.find((p) => p.id === projectId));
+  }
+
+  note.updated_at = nowIso();
+  touched();
+  return toNote(note);
+}
+
+/** Ghi nhận một lần dùng. Web gọi khi người dùng bấm copy. */
+export function markNoteUsed(id: string): Note {
+  const note = findNote(id);
+  note.use_count += 1;
+  note.last_used_at = nowIso();
+  // Cố tình KHÔNG đổi updated_at: copy không phải là sửa nội dung, và nếu
+  // đổi thì mọi lần copy sẽ đẩy note lên đầu danh sách sắp xếp mặc định.
+  touched();
+  return toNote(note);
+}
+
+export function deleteNote(id: string): void {
+  const note = findNote(id);
+
+  if (trashRetentionDays() === 0) {
+    purgeNoteNow(id);
+    return;
+  }
+
+  note.deleted_at = nowIso();
+  touched();
+}
+
+export function restoreNote(id: string): Note {
+  const note = findNote(id, true);
+  if (note.deleted_at === null) {
+    throw new Error(`Note ${id} không nằm trong thùng rác`);
+  }
+
+  // Giữ đúng ràng buộc unique (source, external_id) như bên backend
+  if (note.external_id !== null) {
+    const clash = state().notes.find(
+      (other) =>
+        other.id !== note.id &&
+        other.deleted_at === null &&
+        other.source === note.source &&
+        other.external_id === note.external_id,
+    );
+    if (clash) {
+      throw new Error(
+        `Đã có note khác từ nguồn ${note.source} với external_id ` +
+        `'${note.external_id}'. Xoá note đó trước khi phục hồi.`,
+      );
+    }
+  }
+
+  note.deleted_at = null;
+  touched();
+  return toNote(note);
+}
+
+/** Xoá vĩnh viễn một note đang ở trong thùng rác. */
+export function purgeNote(id: string): void {
+  const note = findNote(id, true);
+  if (note.deleted_at === null) {
+    throw new Error(`Note ${id} chưa ở trong thùng rác`);
+  }
+  purgeNoteNow(id);
+}
+
+/** Xoá vĩnh viễn ngay, bỏ qua thùng rác. */
+export function purgeNoteNow(id: string): void {
+  const notes = state().notes;
+  const index = notes.findIndex((n) => n.id === id);
+  if (index === -1) throw new Error(`Không tìm thấy note ${id}`);
+  notes.splice(index, 1);
+  touched();
+}
+
+export function listNoteTrash(limit = 100, offset = 0): {
+  items: Note[];
+  total: number;
+} {
+  const deleted = state()
+    .notes.filter((n) => n.deleted_at !== null)
+    .sort((a, b) => (b.deleted_at ?? "").localeCompare(a.deleted_at ?? ""));
+
+  return {
+    items: deleted.slice(offset, offset + limit).map(toNote),
+    total: deleted.length,
+  };
+}
+
+/** Xoá vĩnh viễn note đã quá thời hạn giữ. Trả về số bản ghi đã xoá. */
+export function purgeExpiredNotes(): number {
+  const retention = trashRetentionDays();
+  if (retention === 0) return 0;
+
+  const store = state();
+  const cutoff = Date.now() - retention * DAY_MS;
+  const before = store.notes.length;
+
+  store.notes = store.notes.filter(
+    (note) =>
+      note.deleted_at === null || new Date(note.deleted_at).getTime() >= cutoff,
+  );
+
+  const removed = before - store.notes.length;
+  if (removed > 0) touched();
+  return removed;
+}
+
+export function emptyNoteTrash(): number {
+  const store = state();
+  const before = store.notes.length;
+  store.notes = store.notes.filter((note) => note.deleted_at === null);
+  const removed = before - store.notes.length;
+  if (removed > 0) touched();
+  return removed;
+}
+
+export { makeNote, makeTask, normalizeTags, summary, uuid, nowIso };

@@ -1,6 +1,8 @@
 import {
+  NOTE_KIND_LABELS,
   PRIORITY_LABELS,
   STATUS_LABELS,
+  type NoteKind,
   type TaskPriority,
   type TaskSource,
   type TaskStatus,
@@ -63,6 +65,34 @@ export function ProjectBadge({
       style={color ? { color } : undefined}
     >
       {projectKey}
+    </span>
+  );
+}
+
+const NOTE_KIND_STYLES: Record<NoteKind, string> = {
+  command: "bg-emerald-500/15 text-emerald-300 ring-emerald-500/30",
+  sql: "bg-sky-500/15 text-sky-300 ring-sky-500/30",
+  text: "bg-slate-500/15 text-slate-300 ring-slate-500/30",
+  config: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
+  code: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+};
+
+export function NoteKindBadge({ kind }: { kind: NoteKind }) {
+  return (
+    <span className={`${BASE} ${NOTE_KIND_STYLES[kind]}`}>
+      {NOTE_KIND_LABELS[kind]}
+    </span>
+  );
+}
+
+/** Cảnh báo nội dung có thể phá dữ liệu nếu đem chạy. */
+export function DangerBadge() {
+  return (
+    <span
+      className={`${BASE} bg-red-500/15 text-red-300 ring-red-500/40`}
+      title="Lệnh này có thể gây mất dữ liệu. Đọc lại trước khi chạy."
+    >
+      cẩn thận
     </span>
   );
 }

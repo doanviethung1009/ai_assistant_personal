@@ -8,7 +8,6 @@ from sqlalchemy import (
     CheckConstraint,
     Date,
     DateTime,
-    Enum as SAEnum,
     ForeignKey,
     Index,
     Integer,
@@ -20,22 +19,11 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, enum_column
 from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
 
 if TYPE_CHECKING:
     from app.models.project import Project
-
-
-def _enum_col(enum_cls: type, name: str) -> SAEnum:
-    return SAEnum(
-        enum_cls,
-        native_enum=False,
-        length=32,
-        values_callable=lambda e: [member.value for member in e],
-        name=name,
-        validate_strings=True,
-    )
 
 
 class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -46,13 +34,13 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     description: Mapped[str | None] = mapped_column(Text, default=None)
 
     status: Mapped[TaskStatus] = mapped_column(
-        _enum_col(TaskStatus, "task_status"),
+        enum_column(TaskStatus, "task_status"),
         default=TaskStatus.TODO,
         server_default=TaskStatus.TODO.value,
         index=True,
     )
     priority: Mapped[TaskPriority] = mapped_column(
-        _enum_col(TaskPriority, "task_priority"),
+        enum_column(TaskPriority, "task_priority"),
         default=TaskPriority.MEDIUM,
         server_default=TaskPriority.MEDIUM.value,
         index=True,
@@ -91,7 +79,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     # ── Nguồn gốc: khai báo sẵn cho integration ở Phase 2 ───────────
     source: Mapped[TaskSource] = mapped_column(
-        _enum_col(TaskSource, "task_source"),
+        enum_column(TaskSource, "task_source"),
         default=TaskSource.MANUAL,
         server_default=TaskSource.MANUAL.value,
         index=True,
@@ -167,7 +155,7 @@ class TaskEvent(UUIDPrimaryKeyMixin, Base):
         index=True,
     )
     event_type: Mapped[TaskEventType] = mapped_column(
-        _enum_col(TaskEventType, "task_event_type")
+        enum_column(TaskEventType, "task_event_type")
     )
     # "user" cho hành động thủ công, "agent:<tên>" khi agent tự làm
     actor: Mapped[str] = mapped_column(String(100), default="user", server_default="user")

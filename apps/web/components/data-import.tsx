@@ -12,6 +12,7 @@ const KINDS = [
   { value: "json", label: "JSON đầy đủ", accept: ".json,application/json" },
   { value: "tasks-csv", label: "CSV task", accept: ".csv,text/csv" },
   { value: "projects-csv", label: "CSV project", accept: ".csv,text/csv" },
+  { value: "notes-csv", label: "CSV sổ tay", accept: ".csv,text/csv" },
 ] as const;
 
 export function DataImport({ allowReplace }: { allowReplace: boolean }) {
@@ -42,8 +43,13 @@ export function DataImport({ allowReplace }: { allowReplace: boolean }) {
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
       <h2 className="text-sm font-semibold">Nhập dữ liệu</h2>
       <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-        CSV task đối chiếu project theo cột <code>project_key</code>, không tự
-        tạo project mới. Nhập CSV project trước nếu cần.
+        CSV task và CSV sổ tay đối chiếu project theo cột{" "}
+        <code>project_key</code>, không tự tạo project mới. Nhập CSV project
+        trước nếu cần.
+      </p>
+      <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+        Mục sổ tay trùng cả tiêu đề và nội dung sẽ bị bỏ qua, nên nhập lại cùng
+        một file backup hai lần không làm nhân đôi sổ tay.
       </p>
 
       <form ref={formRef} onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
@@ -104,9 +110,8 @@ export function DataImport({ allowReplace }: { allowReplace: boolean }) {
             </label>
 
             <label
-              className={`flex items-start gap-2 text-sm ${
-                allowReplace ? "" : "opacity-40"
-              }`}
+              className={`flex items-start gap-2 text-sm ${allowReplace ? "" : "opacity-40"
+                }`}
             >
               <input
                 type="radio"
@@ -153,17 +158,17 @@ export function DataImport({ allowReplace }: { allowReplace: boolean }) {
       {result ? (
         <div
           role="status"
-          className={`mt-4 rounded-md border px-3 py-2 text-sm ${
-            result.ok
-              ? "border-[var(--color-success)]/40 bg-[var(--color-success)]/10"
-              : "border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10"
-          }`}
+          className={`mt-4 rounded-md border px-3 py-2 text-sm ${result.ok
+            ? "border-[var(--color-success)]/40 bg-[var(--color-success)]/10"
+            : "border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10"
+            }`}
         >
           {result.ok && result.summary ? (
             <>
               <p className="text-[var(--color-success)]">
-                Đã nhập {result.summary.created_tasks} task và{" "}
-                {result.summary.created_projects} project.
+                Đã nhập {result.summary.created_tasks} task,{" "}
+                {result.summary.created_projects} project và{" "}
+                {result.summary.created_notes} mục sổ tay.
               </p>
 
               {result.summary.warnings.length > 0 ? (

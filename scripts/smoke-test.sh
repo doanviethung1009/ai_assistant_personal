@@ -36,6 +36,8 @@ FAIL=0
 PROJECT_ID=""
 TASK_ID=""
 DUP_ID=""
+NOTE_ID=""
+NOTE_DUP_ID=""
 
 # ── Tiện ích ───────────────────────────────────────────────────────────
 
@@ -88,6 +90,9 @@ cleanup() {
   # permanent=true để không bỏ rác lại trong thùng rác sau mỗi lần test
   [[ -n "$TASK_ID" ]] && req DELETE "/api/v1/tasks/$TASK_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$DUP_ID" ]] && req DELETE "/api/v1/tasks/$DUP_ID?permanent=true" >/dev/null 2>&1
+  [[ -n "$NOTE_ID" ]] && req DELETE "/api/v1/notes/$NOTE_ID?permanent=true" >/dev/null 2>&1
+  [[ -n "$NOTE_DUP_ID" ]] && req DELETE "/api/v1/notes/$NOTE_DUP_ID?permanent=true" >/dev/null 2>&1
+  # Project xoá sau cùng: task và note tham chiếu tới nó qua FK
   [[ -n "$PROJECT_ID" ]] && req DELETE "/api/v1/projects/$PROJECT_ID" >/dev/null 2>&1
   return 0
 }
@@ -266,7 +271,122 @@ DUP_ID="$(jget "$BODY" id)"
 req POST /api/v1/tasks "{\"title\":\"Ext trùng\",\"source\":\"jira\",\"external_id\":\"SMOKE-$STAMP\"}"
 expect "external_id trùng bị chặn 409" "409" "$STATUS"
 
-# ── Nhóm 8: xoá ────────────────────────────────────────────────────────
+# ── Nhóm 8: sổ tay ─────────────────────────────────────────────────────
+
+echo ""
+echo "${DIM}sổ tay${RESET}"
+
+# Nội dung nhiều dòng, có ký tự đặc biệt của shell và SQL. Nó phải được lưu
+# và trả về NGUYÊN VĂN: server không parse, không escape, không thực thi.
+req POST /api/v1/notes "{
+  \"title\": \"Smoke note $STAMP\",
+  \"kind\": \"sql\",
+  \"content\": \"SELECT count(*)\\nFROM tasks\\nWHERE deleted_at IS NULL;\",
+  \"description\": \"Tạo bởi scripts/smoke-test.sh\",
+  \"context\": \"DB builder_ai\",
+  \"project_id\": $PROJECT_JSON,
+  \"tags\": [\"Smoke Test\", \"smoke-test\", \"tmp\"],
+  \"is_pinned\": true
+}"
+expect "tạo note trả 201" "201" "$STATUS"
+NOTE_ID="$(jget "$BODY" id)"
+[[ "$NOTE_ID" == "<missing>" ]] && NOTE_ID=""
+expect "note lưu đúng kind" "sql" "$(jget "$BODY" kind)"
+expect "note mặc định source manual" "manual" "$(jget "$BODY" source)"
+expect "note mặc định use_count 0" "0" "$(jget "$BODY" use_count)"
+expect "tag của note được chuẩn hoá và loại trùng" "['smoke-test', 'tmp']" "$(jget "$BODY" tags)"
+expect "content giữ nguyên xuống dòng" "SELECT count(*)
+FROM tasks
+WHERE deleted_at IS NULL;" "$(jget "$BODY" content)"
+
+if [[ -z "$NOTE_ID" ]]; then
+  echo ""
+  echo "  ${RED}Không tạo được note, bỏ qua phần sổ tay còn lại.${RESET}"
+else
+  req GET /api/v1/notes
+  expect "liệt kê note trả 200" "200" "$STATUS"
+
+  # Tìm theo một đoạn nằm trong content chứ không nằm trong title. Đây là
+  # cách dùng thật: thường chỉ nhớ một mẩu câu lệnh.
+  req GET "/api/v1/notes?q=deleted_at%20IS%20NULL"
+  expect "tìm note theo nội dung trả 200" "200" "$STATUS"
+  note_found="$(jget "$BODY" total)"
+  if [[ "$note_found" =~ ^[0-9]+$ ]] && [[ "$note_found" -ge 1 ]]; then
+    expect "tìm thấy note qua content" "yes" "yes"
+  else
+    expect "tìm thấy note qua content" "yes" "no (total=$note_found)"
+  fi
+
+  req GET "/api/v1/notes?kind=sql"
+  expect "lọc note theo kind trả 200" "200" "$STATUS"
+
+  req GET "/api/v1/notes?pinned_only=true"
+  expect "lọc note đã ghim trả 200" "200" "$STATUS"
+  if grep -q "$NOTE_ID" <<<"$BODY"; then
+    expect "note đã ghim xuất hiện khi lọc pinned_only" "yes" "yes"
+  else
+    expect "note đã ghim xuất hiện khi lọc pinned_only" "yes" "no"
+  fi
+
+  req GET /api/v1/notes/stats
+  expect "thống kê note trả 200" "200" "$STATUS"
+  sql_count="$(jget "$BODY" sql)"
+  if [[ "$sql_count" =~ ^[0-9]+$ ]] && [[ "$sql_count" -ge 1 ]]; then
+    expect "stats đếm được note loại sql" "yes" "yes"
+  else
+    expect "stats đếm được note loại sql" "yes" "no (=$sql_count)"
+  fi
+
+  req GET "/api/v1/notes/$NOTE_ID"
+  expect "lấy chi tiết note trả 200" "200" "$STATUS"
+
+  req PATCH "/api/v1/notes/$NOTE_ID" '{"is_dangerous":true,"context":"máy prod"}'
+  expect "patch note trả 200" "200" "$STATUS"
+  expect "is_dangerous đã bật" "True" "$(jget "$BODY" is_dangerous)"
+  expect "context đã đổi" "máy prod" "$(jget "$BODY" context)"
+
+  req POST "/api/v1/notes/$NOTE_ID/use"
+  expect "ghi nhận lần dùng trả 200" "200" "$STATUS"
+  expect "use_count tăng lên 1" "1" "$(jget "$BODY" use_count)"
+  used_at="$(jget "$BODY" last_used_at)"
+  if [[ -n "$used_at" && "$used_at" != "<missing>" ]]; then
+    expect "last_used_at được set" "yes" "yes"
+  else
+    expect "last_used_at được set" "yes" "no"
+  fi
+
+  req POST "/api/v1/notes/$NOTE_ID/use"
+  expect "use_count tích luỹ thành 2" "2" "$(jget "$BODY" use_count)"
+fi
+
+# Ràng buộc của note
+req POST /api/v1/notes '{"title":"   ","content":"x"}'
+expect "title note toàn khoảng trắng bị chặn 422" "422" "$STATUS"
+
+req POST /api/v1/notes '{"title":"x","content":"   "}'
+expect "content note toàn khoảng trắng bị chặn 422" "422" "$STATUS"
+
+req POST /api/v1/notes '{"title":"x","content":"y","kind":"khong-ton-tai"}'
+expect "kind không hợp lệ bị chặn 422" "422" "$STATUS"
+
+req POST /api/v1/notes '{"title":"x","content":"y","project_id":"00000000-0000-0000-0000-000000000000"}'
+expect "project_id note không tồn tại bị chặn 422" "422" "$STATUS"
+
+# Unique (source, external_id) — nền tảng cho sync Obsidian ở Phase 2
+req POST /api/v1/notes "{\"title\":\"Ext note $STAMP\",\"content\":\"x\",\"source\":\"obsidian\",\"external_id\":\"SMOKE-N-$STAMP\"}"
+expect "tạo note từ nguồn ngoài trả 201" "201" "$STATUS"
+NOTE_DUP_ID="$(jget "$BODY" id)"
+[[ "$NOTE_DUP_ID" == "<missing>" ]] && NOTE_DUP_ID=""
+
+req POST /api/v1/notes "{\"title\":\"Ext note trùng\",\"content\":\"y\",\"source\":\"obsidian\",\"external_id\":\"SMOKE-N-$STAMP\"}"
+expect "external_id note trùng bị chặn 409" "409" "$STATUS"
+
+# Route tĩnh phải thắng route động: nếu /{note_id} khớp trước thì "trash"
+# sẽ bị hiểu là UUID và trả 422.
+req GET /api/v1/notes/trash
+expect "/notes/trash không bị /{note_id} bắt mất" "200" "$STATUS"
+
+# ── Nhóm 9: xoá ────────────────────────────────────────────────────────
 
 echo ""
 echo "${DIM}thùng rác${RESET}"
@@ -341,6 +461,58 @@ if [[ "$purged" =~ ^[0-9]+$ ]]; then
   expect "dọn quá hạn trả về số đếm" "yes" "yes"
 else
   expect "dọn quá hạn trả về số đếm" "yes" "no (=$purged)"
+fi
+
+# ── Thùng rác của sổ tay ───────────────────────────────────────────────
+
+if [[ -n "$NOTE_ID" ]]; then
+  echo ""
+  echo "${DIM}thùng rác sổ tay${RESET}"
+
+  req DELETE "/api/v1/notes/$NOTE_ID"
+  expect "xoá note trả 204" "204" "$STATUS"
+
+  req GET "/api/v1/notes/$NOTE_ID"
+  expect "note đã xoá không đọc được nữa, trả 404" "404" "$STATUS"
+
+  req GET /api/v1/notes/trash
+  expect "thùng rác note trả 200" "200" "$STATUS"
+  if grep -q "$NOTE_ID" <<<"$BODY"; then
+    expect "note nằm trong thùng rác" "yes" "yes"
+  else
+    expect "note nằm trong thùng rác" "yes" "no"
+  fi
+  expect "thùng rác note báo đúng thời hạn giữ" "30" "$(jget "$BODY" retention_days)"
+
+  # Note trong thùng rác không được lọt vào danh sách hay tìm kiếm
+  req GET "/api/v1/notes?q=deleted_at%20IS%20NULL"
+  if grep -q "$NOTE_ID" <<<"$BODY"; then
+    expect "note đã xoá KHÔNG xuất hiện khi tìm kiếm" "no" "yes"
+  else
+    expect "note đã xoá KHÔNG xuất hiện khi tìm kiếm" "no" "no"
+  fi
+
+  req POST "/api/v1/notes/$NOTE_ID/restore"
+  expect "phục hồi note trả 200" "200" "$STATUS"
+  note_restored="$(jget "$BODY" deleted_at)"
+  if [[ -z "$note_restored" || "$note_restored" == "<missing>" ]]; then
+    expect "deleted_at của note được xoá sau khi phục hồi" "yes" "yes"
+  else
+    expect "deleted_at của note được xoá sau khi phục hồi" "yes" "no"
+  fi
+
+  req POST "/api/v1/notes/$NOTE_ID/restore"
+  expect "phục hồi note không ở trong thùng rác trả 422" "422" "$STATUS"
+
+  req DELETE "/api/v1/notes/$NOTE_ID?permanent=true"
+  expect "xoá vĩnh viễn note trả 204" "204" "$STATUS"
+
+  req GET "/api/v1/notes/$NOTE_ID"
+  expect "note đã xoá vĩnh viễn trả 404" "404" "$STATUS"
+  NOTE_ID=""
+
+  req POST /api/v1/notes/trash/purge
+  expect "dọn quá hạn note trả 200" "200" "$STATUS"
 fi
 
 # ── Tổng kết ───────────────────────────────────────────────────────────

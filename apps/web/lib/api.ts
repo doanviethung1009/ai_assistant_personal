@@ -5,6 +5,10 @@ import { ensureLoaded } from "./store/json-file";
 import { DATA_SOURCE, trashRetentionDays } from "./store/types";
 import type {
   Agenda,
+  Note,
+  NoteKind,
+  NoteSortField,
+  NoteTrashResponse,
   Paged,
   Project,
   PurgeResponse,
@@ -301,5 +305,170 @@ export function createProject(input: {
   return coreFetch<Project>("/api/v1/projects", {
     method: "POST",
     body: JSON.stringify(input),
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Sổ tay
+//
+//  `content` của note đi qua đây nguyên văn, không escape và không biến đổi.
+//  Nó chỉ là chuỗi dữ liệu. Chỗ duy nhất phải cẩn thận là lúc render ở
+//  component: dùng text node, không dangerouslySetInnerHTML.
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface ListNotesOptions {
+  kind?: NoteKind[];
+  projectId?: string;
+  tags?: string[];
+  query?: string;
+  pinnedOnly?: boolean;
+  limit?: number;
+  offset?: number;
+  sortBy?: NoteSortField;
+  sortDesc?: boolean;
+}
+
+export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> {
+  if (IS_LOCAL) return local(() => engine.listNotes(options));
+
+  const params = new URLSearchParams();
+  options.kind?.forEach((value) => params.append("kind", value));
+  options.tags?.forEach((value) => params.append("tags", value));
+  if (options.projectId) params.set("project_id", options.projectId);
+  if (options.query) params.set("q", options.query);
+  if (options.pinnedOnly) params.set("pinned_only", "true");
+  params.set("limit", String(options.limit ?? 100));
+  params.set("offset", String(options.offset ?? 0));
+  if (options.sortBy) params.set("sort_by", options.sortBy);
+  if (options.sortDesc !== undefined) {
+    params.set("sort_desc", String(options.sortDesc));
+  }
+  return coreFetch<Paged<Note>>(`/api/v1/notes?${params.toString()}`);
+}
+
+export function getNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return local(() => engine.getNote(id));
+  return coreFetch<Note>(`/api/v1/notes/${id}`);
+}
+
+export function getNoteStats(): Promise<Record<string, number>> {
+  if (IS_LOCAL) return local(() => engine.countNotesByKind());
+  return coreFetch<Record<string, number>>("/api/v1/notes/stats");
+}
+
+export interface CreateNoteInput {
+  title: string;
+  content: string;
+  kind?: NoteKind;
+  description?: string | null;
+  context?: string | null;
+  project_id?: string | null;
+  tags?: string[];
+  is_pinned?: boolean;
+  is_dangerous?: boolean;
+}
+
+export function createNote(input: CreateNoteInput): Promise<Note> {
+  if (IS_LOCAL) return local(() => engine.createNote(input));
+  return coreFetch<Note>("/api/v1/notes", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export function patchNote(
+  id: string,
+  input: Record<string, unknown>,
+): Promise<Note> {
+  if (IS_LOCAL) return local(() => engine.patchNote(id, input));
+  return coreFetch<Note>(`/api/v1/notes/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+/**
+ * Xoá note. Mặc định là xoá mềm, note vào thùng rác và còn phục hồi được.
+ * Truyền permanent=true để xoá thẳng, không hoàn tác.
+ */
+export function deleteNote(id: string, permanent = false): Promise<void> {
+  if (IS_LOCAL) {
+    return local(() =>
+      permanent ? engine.purgeNoteNow(id) : engine.deleteNote(id),
+    );
+  }
+  const query = permanent ? "?permanent=true" : "";
+  return coreFetch<void>(`/api/v1/notes/${id}${query}`, { method: "DELETE" });
+}
+
+/** Ghi nhận một lần dùng, để sắp xếp theo mức độ hay dùng. */
+export function markNoteUsed(id: string): Promise<Note> {
+  if (IS_LOCAL) return local(() => engine.markNoteUsed(id));
+  return coreFetch<Note>(`/api/v1/notes/${id}/use`, { method: "POST" });
+}
+
+export function listNoteTrash(
+  limit = 100,
+  offset = 0,
+): Promise<NoteTrashResponse> {
+  if (IS_LOCAL) {
+    return local(() => {
+      // Dọn quá hạn ngay lúc mở thùng rác, vì chưa có scheduler
+      const purged = engine.purgeExpiredNotes();
+      const page = engine.listNoteTrash(limit, offset);
+      return {
+        items: page.items,
+        total: page.total,
+        limit,
+        offset,
+        retention_days: trashRetentionDays(),
+        purged_now: purged,
+      };
+    });
+  }
+
+  const params = new URLSearchParams({
+    limit: String(limit),
+    offset: String(offset),
+  });
+  return coreFetch<NoteTrashResponse>(
+    `/api/v1/notes/trash?${params.toString()}`,
+  );
+}
+
+export function restoreNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return local(() => engine.restoreNote(id));
+  return coreFetch<Note>(`/api/v1/notes/${id}/restore`, { method: "POST" });
+}
+
+/** Xoá vĩnh viễn một note đang ở trong thùng rác. */
+export function purgeNote(id: string): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.purgeNote(id));
+  return coreFetch<void>(`/api/v1/notes/${id}?permanent=true`, {
+    method: "DELETE",
+  });
+}
+
+export function purgeExpiredNotes(): Promise<PurgeResponse> {
+  if (IS_LOCAL) {
+    return local(() => ({
+      purged: engine.purgeExpiredNotes(),
+      retention_days: trashRetentionDays(),
+    }));
+  }
+  return coreFetch<PurgeResponse>("/api/v1/notes/trash/purge", {
+    method: "POST",
+  });
+}
+
+export function emptyNoteTrash(): Promise<PurgeResponse> {
+  if (IS_LOCAL) {
+    return local(() => ({
+      purged: engine.emptyNoteTrash(),
+      retention_days: trashRetentionDays(),
+    }));
+  }
+  return coreFetch<PurgeResponse>("/api/v1/notes/trash/empty", {
+    method: "POST",
   });
 }
