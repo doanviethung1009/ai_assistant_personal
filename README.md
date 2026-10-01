@@ -60,9 +60,8 @@ Tài liệu khác trong repo:
 | File | Dành cho ai |
 |---|---|
 | [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md) | Người dùng app |
-| `.kiro/steering/contributing.md` | Quy ước comment và quy trình commit |
 | `.kiro/steering/project.md` | Mục tiêu và nguyên tắc thiết kế |
-| `.kiro/steering/ops.md` | Bản đồ code và quy ước dễ vi phạm |
+| `.kiro/steering/ops.md` | Bản đồ code, bảng lệnh, và nơi tìm quy ước chi tiết |
 | `.kiro/steering/status.md` | Trạng thái bàn giao, phần nào chưa verify |
 
 ---
@@ -771,9 +770,19 @@ endpoint khác nhau hoàn toàn. Cloud đã xoá `/rest/api/3/search`, phải d�
 | `docs/git-workflow.md` | Mô hình nhánh main/uat/prod, hotfix, rollback | Người sửa code |
 | `docs/deploy-runbook.md` | Thứ tự lệnh deploy theo từng tình huống, troubleshooting | Người vận hành |
 | `.kiro/steering/project.md` | Mục tiêu, nguyên tắc thiết kế, ràng buộc an toàn | Người sửa code |
-| `.kiro/steering/ops.md` | Bản đồ code và các quy ước dễ vi phạm | Người sửa code |
-| `.kiro/steering/contributing.md` | Quy ước comment, Conventional Commits, hook, changelog | Người sửa code |
+| `.kiro/steering/ops.md` | Bản đồ code, bảng lệnh Makefile | Người sửa code |
 | `.kiro/steering/status.md` | Trạng thái bàn giao, phần nào đã verify, việc tiếp theo | Người bàn giao |
+
+Bốn file trên luôn nạp vào mọi phiên làm việc với agent. Phần quy ước chi
+tiết hơn được tách riêng để **chỉ nạp khi cần**, đỡ tốn token:
+
+| File | Nạp khi nào |
+|---|---|
+| `.kiro/steering/comment-style.md` | Đang sửa file `.py`/`.ts`/`.tsx`/`.sh` |
+| `.kiro/steering/backend-conventions.md` | Đang sửa file trong `apps/core/` |
+| `.kiro/steering/web-conventions.md` | Đang sửa file trong `apps/web/` |
+| `.kiro/skills/git-commit/SKILL.md` | Agent tự nhận ra khi đang commit |
+| `.kiro/skills/add-entity/SKILL.md` | Agent tự nhận ra khi thêm model/entity mới |
 
 Toàn bộ file trên đọc được ngay trong app ở tab **Tài liệu**, vì trang đó đọc
 trực tiếp file gốc chứ không phải bản chép lại.

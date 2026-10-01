@@ -48,6 +48,7 @@ services:
       - ./README.md:/docs/README.md:ro
       - ./docs:/docs/docs:ro
       - ./.kiro/steering:/docs/.kiro/steering:ro
+      - ./.kiro/skills:/docs/.kiro/skills:ro
     deploy:
       resources:
         limits:

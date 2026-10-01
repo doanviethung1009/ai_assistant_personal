@@ -17,7 +17,7 @@
 #  vào file này — làm vậy sẽ khiến hook công ty hiểu nhầm đây là bản sao của
 #  chính nó và bỏ qua, tức là tắt luôn việc kiểm tra ở đây.
 #
-#  Quy ước message: xem .kiro/steering/contributing.md
+#  Quy ước message: xem .kiro/skills/git-commit/SKILL.md
 # ═══════════════════════════════════════════════════════════════════════
 
 set -u
@@ -71,7 +71,7 @@ ${RED}✗ Message commit không theo Conventional Commits:${RESET}
     fix(core): sửa lệch timezone ở completed_last_7_days
     docs: cập nhật hướng dẫn dựng stack trên Ubuntu
 
-  Chi tiết: .kiro/steering/contributing.md
+  Chi tiết: .kiro/skills/git-commit/SKILL.md
 
 EOF
 exit 1

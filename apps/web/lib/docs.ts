@@ -61,15 +61,43 @@ export const DOCS: DocEntry[] = [
     slug: "ops",
     title: "Bản đồ code",
     description:
-      "Vị trí từng thành phần và danh sách quy ước dễ vi phạm khi sửa code.",
+      "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết (steering/skill tự nạp theo file đang sửa).",
     file: path.join(".kiro", "steering", "ops.md"),
   },
   {
-    slug: "contributing",
-    title: "Quy ước comment và commit",
+    slug: "comment-style",
+    title: "Quy ước comment",
     description:
-      "Cách viết comment/docstring, định dạng Conventional Commits, hook kiểm tra, và changelog.",
-    file: path.join(".kiro", "steering", "contributing.md"),
+      "Cách viết comment/docstring: banner section, cảnh báo an toàn, docstring giải thích WHY. Tự nạp khi sửa file code.",
+    file: path.join(".kiro", "steering", "comment-style.md"),
+  },
+  {
+    slug: "backend-conventions",
+    title: "Quy ước backend",
+    description:
+      "Route tĩnh/động, JSONB event, xoá mềm, partial unique index. Tự nạp khi sửa apps/core/.",
+    file: path.join(".kiro", "steering", "backend-conventions.md"),
+  },
+  {
+    slug: "web-conventions",
+    title: "Quy ước web",
+    description:
+      "API key không xuống browser, globalThis cho store, SCHEMA_VERSION. Tự nạp khi sửa apps/web/.",
+    file: path.join(".kiro", "steering", "web-conventions.md"),
+  },
+  {
+    slug: "skill-git-commit",
+    title: "Skill: quy trình commit",
+    description:
+      "Conventional Commits, checklist trước khi commit, hook kiểm tra, changelog.",
+    file: path.join(".kiro", "skills", "git-commit", "SKILL.md"),
+  },
+  {
+    slug: "skill-add-entity",
+    title: "Skill: thêm entity mới",
+    description:
+      "Checklist 15 bước thêm model mới xuyên suốt backend và frontend.",
+    file: path.join(".kiro", "skills", "add-entity", "SKILL.md"),
   },
   {
     slug: "status",
