@@ -680,6 +680,11 @@ make prod-build
 make prod-up
 ```
 
+Hai dòng trên là bước chung cho mọi lần deploy. Thứ tự lệnh đầy đủ theo từng
+tình huống cụ thể (lần đầu, có migration, hotfix, rollback, đổi `.env`...) nằm
+ở [docs/deploy-runbook.md](docs/deploy-runbook.md). Mô hình nhánh `main` →
+`uat` → `prod` nằm ở [docs/git-workflow.md](docs/git-workflow.md).
+
 ### Kiểm tra thay vì đoán
 
 `scripts/smoke-test.sh` gọi HTTP thật, khoảng 45 assertion, phủ healthcheck,
@@ -764,6 +769,7 @@ endpoint khác nhau hoàn toàn. Cloud đã xoá `/rest/api/3/search`, phải d�
 |---|---|---|
 | `docs/huong-dan-su-dung.md` | Cách dùng app, mẹo, xử lý sự cố | Người dùng |
 | `docs/git-workflow.md` | Mô hình nhánh main/uat/prod, hotfix, rollback | Người sửa code |
+| `docs/deploy-runbook.md` | Thứ tự lệnh deploy theo từng tình huống, troubleshooting | Người vận hành |
 | `.kiro/steering/project.md` | Mục tiêu, nguyên tắc thiết kế, ràng buộc an toàn | Người sửa code |
 | `.kiro/steering/ops.md` | Bản đồ code và các quy ước dễ vi phạm | Người sửa code |
 | `.kiro/steering/contributing.md` | Quy ước comment, Conventional Commits, hook, changelog | Người sửa code |

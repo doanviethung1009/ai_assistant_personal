@@ -44,6 +44,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "git-workflow.md"),
   },
   {
+    slug: "deploy",
+    title: "Runbook deploy",
+    description:
+      "Thứ tự lệnh cho từng tình huống: deploy lần đầu, update có migration, đổi .env, hotfix, rollback, troubleshooting.",
+    file: path.join("docs", "deploy-runbook.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:

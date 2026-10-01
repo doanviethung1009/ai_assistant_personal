@@ -1,7 +1,10 @@
 # Mô hình Git và quy trình go-live
 
 Tài liệu này mô tả cách code đi từ máy dev lên production, và tại sao chọn
-cách đó thay vì các cách khác.
+cách đó thay vì các cách khác — tức là mô hình **nhánh**, không phải thao tác
+server. Thứ tự lệnh thực thi cụ thể cho từng tình huống (deploy lần đầu,
+update có migration, hotfix, rollback, đổi `.env`...) nằm ở
+[docs/deploy-runbook.md](deploy-runbook.md).
 
 ## Tổng quan
 
