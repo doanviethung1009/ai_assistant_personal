@@ -239,6 +239,18 @@ rollback-info: ## In hướng dẫn lùi production về tag trước
 git-init-branches: ## Tạo nhánh uat và prod từ main (chỉ chạy một lần)
 	@bash scripts/init-branches.sh
 
+.PHONY: install-hooks
+install-hooks: ## Cài hook kiểm tra message commit (Conventional Commits)
+	@bash scripts/install-hooks.sh
+
+.PHONY: changelog
+changelog: ## Sinh lại CHANGELOG.md từ git log. Xem trước: make changelog-preview
+	@bash scripts/changelog.sh --write
+
+.PHONY: changelog-preview
+changelog-preview: ## In changelog ra màn hình, không ghi file
+	@bash scripts/changelog.sh
+
 # ── Dọn dẹp ────────────────────────────────────────────────────────────
 
 .PHONY: fix-eol

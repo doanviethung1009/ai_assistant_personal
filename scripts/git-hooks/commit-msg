@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# scripts/install-hooks.sh — nguồn của hook này, đừng sửa bản đã cài trong
+# .git/hooks/ trực tiếp, sửa ở đây rồi chạy lại script cài.
+# ═══════════════════════════════════════════════════════════════════════
+#  Kiểm tra message commit theo Conventional Commits.
+#
+#  File này KHÔNG được git gọi trực tiếp. Nó được cài vào
+#  .git/hooks/commit-msg bằng `bash scripts/install-hooks.sh`, rồi chạy
+#  NỐI TIẾP sau hook commit-msg của git-secrets (chính sách quét bí mật
+#  cấp công ty, trỏ qua core.hookspath). Cơ chế: hook công ty có hàm
+#  run_repo_hook() tự tìm $(git rev-parse --git-common-dir)/hooks/commit-msg
+#  và gọi nó sau khi quét xong, miễn là nội dung không chứa chữ ký
+#  "company-git-secrets-managed-hook". File này không chứa chữ ký đó, nên
+#  nó được coi là hook riêng của repo, không bị bỏ qua.
+#
+#  Vì vậy: KHÔNG xoá hay thêm dòng chứa cụm "company-git-secrets-managed-hook"
+#  vào file này — làm vậy sẽ khiến hook công ty hiểu nhầm đây là bản sao của
+#  chính nó và bỏ qua, tức là tắt luôn việc kiểm tra ở đây.
+#
+#  Quy ước message: xem .kiro/steering/contributing.md
+# ═══════════════════════════════════════════════════════════════════════
+
+set -u
+
+msg_file="${1:-}"
+if [[ -z "$msg_file" || ! -f "$msg_file" ]]; then
+  # Không có file message để đọc — không phải lỗi của hook này, bỏ qua.
+  exit 0
+fi
+
+RED=$'\033[31m'
+DIM=$'\033[2m'
+RESET=$'\033[0m'
+
+# Dòng đầu tiên không phải comment (git chèn comment bắt đầu bằng #,
+# ví dụ khi commit --verbose hoặc -v mở sẵn diff trong editor).
+subject="$(grep -v '^#' "$msg_file" | sed -n '1{/^$/d; p}')"
+
+# Không có gì để kiểm tra (message trống hẳn) — để git tự xử lý, không
+# phải việc của hook này.
+[[ -z "$subject" ]] && exit 0
+
+# Commit do git tự sinh ra, không theo quy ước type(scope): mô tả.
+case "$subject" in
+  "Merge "* | "Revert \""* | "fixup! "* | "squash! "* | "amend! "*)
+    exit 0
+    ;;
+esac
+
+# type(scope)!: mô tả     — scope và ! đều tuỳ chọn
+pattern='^(feat|fix|docs|refactor|perf|test|build|ci|chore)(\([a-z0-9/_-]+\))?!?: .+'
+
+if [[ "$subject" =~ $pattern ]]; then
+  exit 0
+fi
+
+cat >&2 <<EOF
+
+${RED}✗ Message commit không theo Conventional Commits:${RESET}
+
+    ${DIM}${subject}${RESET}
+
+  Định dạng đúng:
+
+    type(scope tuỳ chọn): mô tả ngắn
+
+  type hợp lệ: feat fix docs refactor perf test build ci chore
+
+  Ví dụ:
+    feat(web): thêm bộ lọc theo tag ở trang Sổ tay
+    fix(core): sửa lệch timezone ở completed_last_7_days
+    docs: cập nhật hướng dẫn dựng stack trên Ubuntu
+
+  Chi tiết: .kiro/steering/contributing.md
+
+EOF
+exit 1
