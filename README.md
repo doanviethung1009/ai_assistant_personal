@@ -60,6 +60,7 @@ Tài liệu khác trong repo:
 | File | Dành cho ai |
 |---|---|
 | [docs/huong-dan-su-dung.md](docs/huong-dan-su-dung.md) | Người dùng app |
+| `.kiro/steering/contributing.md` | Quy ước comment và quy trình commit |
 | `.kiro/steering/project.md` | Mục tiêu và nguyên tắc thiết kế |
 | `.kiro/steering/ops.md` | Bản đồ code và quy ước dễ vi phạm |
 | `.kiro/steering/status.md` | Trạng thái bàn giao, phần nào chưa verify |
@@ -762,9 +763,11 @@ endpoint khác nhau hoàn toàn. Cloud đã xoá `/rest/api/3/search`, phải d�
 | File | Nội dung | Dành cho |
 |---|---|---|
 | `docs/huong-dan-su-dung.md` | Cách dùng app, mẹo, xử lý sự cố | Người dùng |
+| `docs/git-workflow.md` | Mô hình nhánh main/uat/prod, hotfix, rollback | Người sửa code |
 | `.kiro/steering/project.md` | Mục tiêu, nguyên tắc thiết kế, ràng buộc an toàn | Người sửa code |
 | `.kiro/steering/ops.md` | Bản đồ code và các quy ước dễ vi phạm | Người sửa code |
+| `.kiro/steering/contributing.md` | Quy ước comment, Conventional Commits, hook, changelog | Người sửa code |
 | `.kiro/steering/status.md` | Trạng thái bàn giao, phần nào đã verify, việc tiếp theo | Người bàn giao |
 
-Cả bốn file đọc được ngay trong app ở tab **Tài liệu**, vì trang đó đọc trực tiếp
-file gốc chứ không phải bản chép lại.
+Toàn bộ file trên đọc được ngay trong app ở tab **Tài liệu**, vì trang đó đọc
+trực tiếp file gốc chứ không phải bản chép lại.

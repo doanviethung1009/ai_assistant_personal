@@ -58,6 +58,13 @@ export const DOCS: DocEntry[] = [
     file: path.join(".kiro", "steering", "ops.md"),
   },
   {
+    slug: "contributing",
+    title: "Quy ước comment và commit",
+    description:
+      "Cách viết comment/docstring, định dạng Conventional Commits, hook kiểm tra, và changelog.",
+    file: path.join(".kiro", "steering", "contributing.md"),
+  },
+  {
     slug: "status",
     title: "Trạng thái bàn giao",
     description:

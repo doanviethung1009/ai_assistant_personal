@@ -17,6 +17,10 @@ Mọi thao tác đều có target. Chạy `make` để xem danh sách. Không t�
 | Lint và typecheck | `make lint` |
 | Vào DB | `make psql` |
 | Đổi dependency Python | sửa `pyproject.toml`, `make lock`, `make build` |
+| Cài hook kiểm tra commit message | `make install-hooks` (chạy một lần) |
+| Sinh lại CHANGELOG.md | `make changelog` |
+
+Quy ước comment và commit: xem `.kiro/steering/contributing.md`.
 
 Không chạy `npm run dev` hay `uvicorn` trực tiếp trên host. Cả hai đã chạy
 trong container với hot reload.
