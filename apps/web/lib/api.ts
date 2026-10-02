@@ -593,7 +593,7 @@ export async function listAiLogs(): Promise<any[]> {
   if (IS_LOCAL) {
     return local(() => engine.snapshotAiLogs().ai_logs ?? []);
   }
-  const res = await coreFetch<any>("/api/v1/ai-logs?limit=500");
+  const res = await coreFetch<any>("/api/v1/ai-logs?limit=100");
   return res.items ?? [];
 }
 
