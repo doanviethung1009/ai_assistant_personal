@@ -214,6 +214,9 @@ async function initialiseAiLogs(): Promise<void> {
       console.error("[store] ghi file ai-logs thất bại:", error);
     });
   });
+
+  // Ghi file rỗng ra đĩa ngay lần đầu để người dùng nhìn thấy
+  await saveAiLogs();
 }
 
 export function ensureLoaded(): Promise<void> {
