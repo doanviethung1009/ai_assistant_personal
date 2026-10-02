@@ -118,6 +118,17 @@ export function migrate(data: DataFile): DataFile {
     data.schema_version = 3;
   }
 
+  // v3 → v4: bổ sung mảng `ai_logs`.
+  //
+  // Phải backfill thành mảng rỗng để engine không ném lỗi.
+  if (data.schema_version < 4) {
+    if (!Array.isArray(data.ai_logs)) {
+      data.ai_logs = [];
+      console.info("[store] migrate v3→v4: thêm mảng ai_logs rỗng");
+    }
+    data.schema_version = 4;
+  }
+
   return data;
 }
 

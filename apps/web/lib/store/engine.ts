@@ -87,6 +87,7 @@ interface StoreState {
   projects: Project[];
   tasks: StoredTask[];
   notes: StoredNote[];
+  ai_logs: any[];
   minutesLoggedToday: number;
   minutesLoggedDate: string;
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
@@ -102,6 +103,7 @@ export function state(): StoreState {
     projects: [],
     tasks: [],
     notes: [],
+    ai_logs: [],
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
     onChange: null,
@@ -127,6 +129,7 @@ export function snapshot(): DataFile {
     projects: structuredClone(store.projects),
     tasks: structuredClone(store.tasks),
     notes: structuredClone(store.notes),
+    ai_logs: structuredClone(store.ai_logs),
     meta: {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
@@ -141,6 +144,7 @@ export function restore(data: DataFile): void {
   // `?? []` là lớp bảo vệ thứ hai sau bước migrate v2→v3. File v2 đọc trực
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
+  store.ai_logs = data.ai_logs ?? [];
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();
 
