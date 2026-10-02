@@ -1,0 +1,31 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Override: mở web ra LAN để máy khác trong nhà/văn phòng dùng chung.
+#
+#  Dùng:  docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d
+#  Hoặc:  make lan-up
+#
+#  CHỈ đổi binding của `web` sang mọi interface (bỏ "127.0.0.1:" khỏi
+#  mapping cổng — Docker publish ra 0.0.0.0 khi không chỉ định IP).
+#  `api`, `postgres`, `redis` GIỮ NGUYÊN 127.0.0.1 ở docker-compose.yml: web
+#  gọi api qua network nội bộ của Docker (http://api:8000), không qua cổng
+#  đã publish ra host, nên không cần mở thêm cổng nào khác để LAN hoạt động
+#  đủ chức năng. Giữ bề mặt tiếp xúc tối thiểu — chỉ đúng một cổng ra ngoài.
+#
+#  CẢNH BÁO BẢO MẬT: Phase 1 web KHÔNG có đăng nhập hay tài khoản người
+#  dùng. Bất kỳ ai mở được cổng này trong LAN đều dùng app như chính bạn —
+#  xem, sửa, xoá mọi task và mọi mục trong sổ tay. Chỉ bật trên mạng bạn tin
+#  tưởng toàn bộ thiết bị đang nối vào (wifi nhà, VPN cá nhân như Tailscale).
+#  KHÔNG bật trên wifi công cộng hoặc mạng dùng chung với người lạ. Chi tiết
+#  và cách tìm IP LAN: README.md § Chia sẻ trong LAN.
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  web:
+    # !override thay vì merge: docker compose nối thêm (không thay thế) khi
+    # gặp key kiểu list như "ports". Không có !override thì cả hai mapping
+    # (127.0.0.1:3000 của docker-compose.yml VÀ 3000 ở đây) cùng tồn tại,
+    # dẫn tới lỗi "address already in use" vì hai mapping cùng bind cổng
+    # 3000 trên host. Cần Docker Compose ≥ 2.24 cho thẻ này (đã dùng ở
+    # docker-compose.prod.yml, kiểm tra: docker compose version --short).
+    ports: !override
+      - "${WEB_PORT:-3000}:3000"

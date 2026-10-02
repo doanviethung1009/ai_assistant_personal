@@ -49,6 +49,21 @@ down: ## Dừng stack, giữ nguyên dữ liệu
 restart: ## Khởi động lại api và web
 	$(DC) restart api web
 
+.PHONY: use-db
+use-db: ## Chuyển web sang DATA_SOURCE=api (Postgres), nguồn dữ liệu thật
+	@sed -i 's/^DATA_SOURCE=.*/DATA_SOURCE=api/' .env 2>/dev/null \
+		|| echo "DATA_SOURCE=api" >> .env
+	$(DC) up -d web
+	@echo "  Đã đổi sang DATA_SOURCE=api. Dữ liệu nằm trong Postgres."
+
+.PHONY: use-local
+use-local: ## Chuyển web sang DATA_SOURCE=file, ghi vào ./data/, không cần Postgres
+	@sed -i 's/^DATA_SOURCE=.*/DATA_SOURCE=file/' .env 2>/dev/null \
+		|| echo "DATA_SOURCE=file" >> .env
+	$(DC) up -d web
+	@echo "  Đã đổi sang DATA_SOURCE=file. Dữ liệu ghi vào ./data/builder-data.json."
+	@echo "  Lưu ý: dữ liệu ở hai nguồn KHÔNG tự đồng bộ. Xem README mục Dữ liệu."
+
 .PHONY: ps
 ps: ## Trạng thái container
 	$(DC) ps
@@ -136,6 +151,11 @@ lint: ## Ruff cho backend, tsc cho frontend
 	$(API) ruff check app migrations
 	$(DC) exec -T web npx tsc --noEmit
 
+.PHONY: gen-types
+gen-types: ## Sinh lại apps/web/lib/generated/openapi.d.ts từ /openapi.json của api đang chạy
+	$(DC) exec -T web npm run gen:types
+	@echo "Đã sinh lại openapi.d.ts. Nếu tsc báo lỗi, kiểm tra lib/types.ts có cần ép lại field nào không."
+
 .PHONY: fmt
 fmt: ## Tự sửa lỗi format backend
 	$(API) ruff check --fix app migrations
@@ -198,6 +218,22 @@ mon-down: ## Dừng riêng phần monitoring
 .PHONY: all-up
 all-up: ## Dựng cả ba profile
 	$(DC) --profile llm --profile monitoring up -d
+
+# ── Chia sẻ trong LAN ────────────────────────────────────────────────────
+
+.PHONY: lan-up
+lan-up: ## Mở web ra LAN để máy khác trong nhà dùng chung. Đọc README trước khi bật
+	$(DC) -f docker-compose.yml -f docker-compose.lan.yml up -d
+	@echo ""
+	@echo "  Web mở ra LAN. Tìm IP máy này: ip addr | grep 'inet ' (Linux) hoặc ipconfig (Windows)"
+	@echo "  Máy khác truy cập: http://<IP-may-nay>:$${WEB_PORT:-3000}"
+	@echo "  CẢNH BÁO: không có đăng nhập. Chỉ dùng trên mạng tin tưởng toàn bộ thiết bị."
+	@echo ""
+
+.PHONY: lan-down
+lan-down: ## Đóng lại, web chỉ còn truy cập từ 127.0.0.1
+	$(DC) up -d web
+	@echo "  Đã đóng. Web chỉ còn trả lời ở 127.0.0.1:$${WEB_PORT:-3000}."
 
 # ── Production ─────────────────────────────────────────────────────────
 

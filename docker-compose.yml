@@ -80,6 +80,9 @@ services:
       API_KEY: ${API_KEY}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
+      # Giới hạn request/phút theo X-API-Key, đếm ở Redis. Xem core/rate_limit.py.
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
     volumes:
@@ -109,11 +112,19 @@ services:
       NODE_ENV: development
       TZ: ${TZ}
       # Chạy phía server của Next.js, không lộ ra browser
-      # Trong compose luôn dùng core API và Postgres. Chế độ file/memory chỉ
-      # dành cho lúc chạy web trần bằng npm run dev.
-      DATA_SOURCE: api
+      # Mặc định "api" (Postgres qua core API) — đây là chế độ thật, nên
+      # giữ nguyên trừ khi có lý do cụ thể. Đặt DATA_SOURCE=file trong .env
+      # nếu muốn web ghi vào file JSON ngay cả khi chạy qua Docker (ví dụ
+      # demo nhanh không cần giữ dữ liệu qua Postgres). "memory" ít dùng khi
+      # đã có Docker vì mất dữ liệu lúc restart — hợp lý nhất khi KHÔNG dùng
+      # Docker (make web-demo). Đổi giá trị này đòi `docker compose up -d web`
+      # lại để container đọc lại .env, không chỉ sửa file là tự nhận.
+      DATA_SOURCE: ${DATA_SOURCE:-api}
       CORE_API_URL: ${CORE_API_URL:-http://api:8000}
       CORE_API_KEY: ${API_KEY}
+      # Chỉ dùng khi DATA_SOURCE=file. Mount thêm bên dưới để file JSON nằm
+      # trên host (./data), không mất khi container bị xoá.
+      DATA_DIR: /data
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
       # Cố định timezone hiển thị để SSR và hydrate ra cùng chuỗi ngày giờ
       NEXT_PUBLIC_DISPLAY_TZ: ${TZ}
@@ -125,6 +136,10 @@ services:
       - ./apps/web:/app
       - web_node_modules:/app/node_modules
       - web_next_cache:/app/.next
+      # Chỉ có tác dụng khi DATA_SOURCE=file. Mount vào host để file JSON
+      # còn sống qua lần xoá/tạo lại container (không mount thì nó nằm
+      # trong filesystem của container, mất khi container bị rm).
+      - ./data:/data
       # Tài liệu cho trang /docs, chỉ đọc
       - ./README.md:/docs/README.md:ro
       - ./docs:/docs/docs:ro
@@ -168,6 +183,8 @@ services:
     logging: *default-logging
 
   # ── Monitoring (profile: monitoring) ────────────────────────────────
+  #  Scrape /metrics của api + các exporter dưới đây, lưu timeseries 30 ngày.
+  #  Config scrape target nằm ở infra/monitoring/prometheus.yml.
   prometheus:
     image: prom/prometheus:v3.1.0
     container_name: builder-prometheus
@@ -188,6 +205,8 @@ services:
       - "host.docker.internal:host-gateway"
     logging: *default-logging
 
+  # Dashboard đọc dữ liệu từ Prometheus. Datasource provision sẵn qua
+  # infra/monitoring/grafana/provisioning, không phải tự thêm bằng UI.
   grafana:
     image: grafana/grafana:11.5.1
     container_name: builder-grafana
@@ -224,6 +243,9 @@ services:
       - "host.docker.internal:host-gateway"
     logging: *default-logging
 
+  # Expose số liệu kết nối, transaction, kích thước bảng của Postgres sang
+  # Prometheus. Không cần publish port — chỉ Prometheus trong network nội bộ
+  # mới cần gọi tới nó.
   postgres-exporter:
     image: prometheuscommunity/postgres-exporter:v0.16.0
     container_name: builder-postgres-exporter
@@ -236,6 +258,10 @@ services:
         condition: service_healthy
     logging: *default-logging
 
+  # `pid: host` + mount `rslave` cần Linux Engine thật. Trên Docker Desktop
+  # (Windows/macOS, backend WSL2/HyperKit) service này sẽ lỗi khi start —
+  # các service monitoring khác không bị ảnh hưởng, chỉ thiếu metrics host
+  # (RAM/CPU/disk). Chạy đúng trên Ubuntu production.
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: builder-node-exporter
@@ -248,6 +274,9 @@ services:
       - /:/host:ro,rslave
     logging: *default-logging
 
+  # Số liệu CPU/RAM/network theo từng container (khác node-exporter là
+  # theo cả host). privileged: true cần để đọc cgroup và /sys của mọi
+  # container khác, không riêng container của chính nó.
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.52.1
     container_name: builder-cadvisor

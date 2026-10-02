@@ -43,12 +43,15 @@ trong app.
 | Phần | Nội dung |
 |---|---|
 | [Chạy trên Ubuntu](#chạy-trên-ubuntu) | Cài Docker Engine, dựng stack, xử lý lỗi CRLF |
+| [Ba nguồn dữ liệu](#ba-nguồn-dữ-liệu--chọn-bằng-data_source) | api/file/memory, cách đổi khi dùng Docker |
 | [Chạy riêng web app](#chạy-riêng-web-app-không-cần-docker) | Ba chế độ lưu trữ, không cần Docker |
+| [Chia sẻ trong LAN](#chia-sẻ-trong-lan-dùng-chung-từ-máy-khác-không-deploy-server-riêng) | Mở cho máy khác trong nhà dùng chung, không cần dựng server riêng |
 | [Điều hướng trên web](#điều-hướng-trên-web) | Các nhóm menu và từng trang |
 | [Tab Kiến trúc](#tab-kiến-trúc) | Năm sơ đồ SVG về luồng hoạt động |
 | [Thùng rác](#thùng-rác) | Xoá mềm, giữ 30 ngày, partial unique index |
 | [Xuất và nhập dữ liệu](#xuất-và-nhập-dữ-liệu) | JSON để backup, CSV để trao đổi |
 | [Kiến trúc](#kiến-trúc) | Sơ đồ, phân lớp, mô hình dữ liệu, quyết định thiết kế |
+| [Tài khoản quản trị mặc định](#tài-khoản-quản-trị-mặc-định) | Biến giữ secret của từng hệ thống, cách tự tra giá trị |
 | [Cấu trúc thư mục](#cấu-trúc-thư-mục) | Vị trí từng thành phần |
 | [Lệnh thường dùng](#lệnh-thường-dùng) | Bảng lệnh `make` |
 | [Cấu hình LLM](#cấu-hình-llm) | LiteLLM gateway, phân bổ model, budget |
@@ -114,16 +117,33 @@ dựng API và Web, rồi tự chạy smoke test.
 | API docs | http://localhost:8000/docs |
 | Readiness | http://localhost:8000/health/ready |
 
-### Chạy riêng web app, không cần Docker
-
-Web app có ba nguồn dữ liệu, chọn bằng `DATA_SOURCE` trong
-`apps/web/.env.local`:
+### Ba nguồn dữ liệu — chọn bằng `DATA_SOURCE`
 
 | DATA_SOURCE | Lưu ở đâu | Dùng khi nào |
 |---|---|---|
-| `file` | File JSON trên đĩa, mặc định `<repo>/data/builder-data.json` | Chưa dựng được stack, vẫn muốn dữ liệu còn sau khi restart |
-| `memory` | RAM, mất khi restart | Chỉ muốn xem UI |
-| `api` | Postgres qua core API | Chế độ thật, compose luôn dùng cái này |
+| `api` | Postgres qua core API | Chế độ thật, mặc định khi dùng Docker |
+| `file` | File JSON trên đĩa, mặc định `<repo>/data/builder-data.json` | Demo nhanh không cần Postgres, cả khi dùng Docker lẫn khi chạy trần |
+| `memory` | RAM, mất khi restart | Chỉ muốn xem UI, không giữ gì |
+
+**Khi dùng Docker** (`make up`), đổi nguồn bằng lệnh, không sửa tay `.env`:
+
+```bash
+make use-db      # DATA_SOURCE=api — Postgres, chế độ thật
+make use-local   # DATA_SOURCE=file — ghi vào ./data/builder-data.json
+```
+
+Hai lệnh này sửa `.env` rồi tự `docker compose up -d web` để container nhận
+giá trị mới — chỉ sửa `.env` mà không chạy lại thì web vẫn dùng giá trị cũ.
+Không có nút đổi trên web vì Server Action không khởi động lại được
+container. Hai nguồn **không tự đồng bộ dữ liệu** với nhau; dùng JSON ở
+trang Dữ liệu để chuyển tay nếu cần. Production (`docker-compose.prod.yml`)
+chỉ nên dùng `api`.
+
+### Chạy riêng web app, không cần Docker
+
+Dùng được cả ba `DATA_SOURCE` ở trên, đặt trong `apps/web/.env.local` (file
+này đã có sẵn khi clone repo, chỉ web app chạy trực tiếp đọc — Docker Compose
+truyền env riêng, không đọc file này):
 
 ```bash
 cd apps/web
@@ -135,10 +155,64 @@ Mở http://localhost:3000. Mặc định là `file`, nên dữ liệu bạn nh�
 lại. Ghi xuống đĩa theo cách nguyên tử: ghi ra file tạm rồi rename, và giữ
 thêm một bản `.bak` của lần ghi trước.
 
+**Đổi `DATA_SOURCE` ở đây** thì sửa dòng `DATA_SOURCE=` trong
+`apps/web/.env.local` rồi **dừng và chạy lại** `npm run dev` — dev server
+không tự nạp lại biến môi trường khi file đổi, phải restart tay (khác với
+code, vốn hot reload được). Dùng `api` thì cần điền thêm `CORE_API_URL` và
+`CORE_API_KEY` trong cùng file. Trang `/data` trên web có cùng hướng dẫn này
+ở mục "Đổi nguồn dữ liệu", tách riêng theo cách bạn đang chạy (Docker hay
+`npm run dev`).
+
 Giới hạn cần biết: engine cục bộ ở `lib/store/engine.ts` đơn giản hơn backend
 thật, không có validate của Pydantic và không ghi đủ loại `task_events`. Đây là
 cách dùng tạm, không phải cách kiểm tra tính đúng đắn. Nguồn sự thật vẫn là
 `apps/core`.
+
+### Chia sẻ trong LAN (dùng chung từ máy khác, không deploy server riêng)
+
+Chạy `make up` chỉ bind cổng vào `127.0.0.1` — đúng một máy mở được, máy khác
+trong nhà hay văn phòng gọi vào sẽ bị từ chối kết nối. Nếu bạn chỉ cần vài máy
+khác (điện thoại, laptop khác) dùng chung app đang chạy trên máy này, **không
+cần dựng thêm server UAT/production** — mở thêm một override nhỏ là đủ:
+
+```bash
+make lan-up
+```
+
+Lệnh này publish cổng `web` ra mọi network interface (không chỉ `127.0.0.1`),
+dùng `docker-compose.lan.yml`. `api`, `postgres`, `redis` giữ nguyên không đổi
+— web vẫn gọi api qua network nội bộ của Docker, không qua cổng publish ra
+host, nên không cần mở thêm cổng nào khác.
+
+Tìm IP của máy đang chạy app:
+
+```bash
+# Linux
+ip addr | grep 'inet '
+# Windows (PowerShell)
+ipconfig
+```
+
+Máy khác trong cùng mạng mở `http://<IP-máy-này>:3000`. Đóng lại khi xong:
+
+```bash
+make lan-down
+```
+
+**Đọc trước khi bật — không có đăng nhập ở Phase 1.** Bất kỳ ai mở được cổng
+này sẽ dùng app như chính bạn: xem, sửa, xoá mọi task và mọi mục sổ tay, kể cả
+mục đánh dấu "cẩn thận". Chỉ bật trên mạng mà bạn tin tưởng **toàn bộ** thiết
+bị đang nối vào — wifi nhà riêng, hoặc VPN cá nhân như Tailscale. **Không bật**
+trên wifi công cộng, wifi quán cà phê, hay mạng dùng chung với người lạ hoặc
+đồng nghiệp không nên thấy dữ liệu của bạn. Nếu cần kiểm soát ai truy cập được
+(nhiều người dùng, cần tài khoản riêng), đó là nhu cầu RBAC — xem mục
+[Bảo mật đã áp dụng](#bảo-mật-đã-áp-dụng) và `.kiro/steering/status.md`, chưa
+có ở Phase 1.
+
+Nếu nhu cầu lớn hơn "cho vài máy trong nhà xem tạm" — ví dụ cần máy khác luôn
+truy cập được dù máy chính tắt, hoặc cần phân quyền nhiều người — đó mới là lúc
+cần một máy chạy riêng theo mô hình production đầy đủ ở
+[docs/deploy-runbook.md](docs/deploy-runbook.md), không phải mở LAN tạm.
 
 ### Điều hướng trên web
 
@@ -147,7 +221,7 @@ Nav **phẳng hai cấp, không dropdown**. Cấu hình ở `apps/web/lib/nav.ts
 | Cấp | Mục | Kiểu hiển thị |
 |---|---|---|
 | `PRIMARY_NAV` | Hôm nay, Tất cả task, Dự án, Thùng rác | Nút lớn, tô nền khi đang mở |
-| `SECONDARY_NAV` | Kiến trúc, Lộ trình, Tài liệu, Dữ liệu | Chữ nhỏ, cách nhau bằng dấu chấm |
+| `SECONDARY_NAV` | Kiến trúc, Lộ trình, Tài liệu, Hệ thống, Dữ liệu | Chữ nhỏ, cách nhau bằng dấu chấm |
 
 Chia cấp theo tần suất dùng: cấp một là việc hàng ngày, cấp hai là tài liệu về
 chính dự án, thỉnh thoảng mới mở.
@@ -173,6 +247,7 @@ Từng trang:
 | Kiến trúc | `/architecture` | Năm sơ đồ SVG về luồng hoạt động |
 | Lộ trình | `/roadmap` | Tiến độ 5 phase, trạng thái từng mục, số liệu sống |
 | Tài liệu | `/docs` | Đọc trực tiếp README và các steering file |
+| Hệ thống | `/system` | Tình trạng health, config vận hành (không secret), link nhanh tới tài liệu deploy |
 | Dữ liệu | `/data` | Xuất, nhập, và xem nguồn dữ liệu đang dùng |
 
 ### Tab Kiến trúc
@@ -601,9 +676,44 @@ trong code chính vì lý do này.
 - `.env` chmod 600 và nằm trong `.gitignore`.
 - Image prod chạy bằng user không phải root.
 - Header `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ở web.
+- **Rate limit** 120 request/phút (đổi bằng `RATE_LIMIT_REQUESTS_PER_MINUTE`),
+  đếm theo `X-API-Key` (hoặc IP nếu thiếu key) ở Redis, cửa sổ cố định 60s.
+  Xem `apps/core/app/core/rate_limit.py`. Fail-open khi Redis lỗi — rate
+  limiter không phải nguồn xác thực nên không được làm sập API chỉ vì Redis
+  tạm mất kết nối. Tắt bằng `RATE_LIMIT_ENABLED=false` khi cần debug.
+- **Trang `/system` không hiển thị secret.** `GET /api/v1/system/info` (yêu
+  cầu API key) chỉ trả field không nhạy cảm — version, environment, rate
+  limit, thời hạn thùng rác, CORS origins — khai rõ trong
+  `apps/core/app/schemas/system.py::SystemInfo`. `DATABASE_URL`, `API_KEY`,
+  `LITELLM_MASTER_KEY` không bao giờ có trong response này hay bất kỳ response
+  nào khác. Thêm field mới vào trang quản trị thì sửa `SystemInfo` trước,
+  không render thẳng biến môi trường ở component.
 
-Chưa có, cần làm trước khi mở cho team: **rate limiting** (Redis đã sẵn) và
-**RBAC**. Xem `.kiro/steering/status.md`.
+Chưa có, cần làm trước khi mở cho team: **RBAC**. Xem `.kiro/steering/status.md`.
+
+### Tài khoản quản trị mặc định
+
+**Không có mật khẩu mặc định đặt sẵn trong code** (không có kiểu
+`admin`/`admin123`). Lần đầu chạy `make env` hoặc `make bootstrap`,
+`scripts/gen-env.sh` sinh toàn bộ secret bằng `openssl rand` — ngẫu nhiên,
+khác nhau mỗi lần chạy và mỗi máy. Không có giá trị "mặc định ban đầu" nào để
+liệt kê sẵn ở đây; bảng dưới chỉ nói **biến nào** giữ secret của hệ thống nào
+và **lệnh để tự tra** sau khi đã dựng xong, không ghi giá trị thật vào tài
+liệu.
+
+| Hệ thống | Username | Biến giữ mật khẩu/khoá | Tra bằng |
+|---|---|---|---|
+| Core API | (không có — một khoá tĩnh) | `API_KEY` | `grep API_KEY .env` |
+| Postgres | giá trị `POSTGRES_USER` (mặc định `builder`) | `POSTGRES_PASSWORD` | `grep POSTGRES .env` |
+| Grafana | `admin` (mặc định của chính image Grafana) | `GRAFANA_ADMIN_PASSWORD` | `grep GRAFANA_ADMIN_PASSWORD .env` |
+| LiteLLM | (không có — master key) | `LITELLM_MASTER_KEY` | `grep LITELLM_MASTER_KEY .env` |
+| Web (Next.js) | — | không có | Chưa có đăng nhập ở Phase 1, xem cảnh báo ở mục Chia sẻ trong LAN |
+
+Lệnh tra phải chạy trên máy đang host container, nơi `.env` tồn tại với
+quyền `600`. Đổi một khoá: sửa dòng tương ứng trong `.env` rồi
+`docker compose up -d` lại đúng service dùng khoá đó — xem Case 4 trong
+[docs/deploy-runbook.md](docs/deploy-runbook.md). Trang `/system` trên web
+có cùng bảng này ở mục **Tài khoản**, không hiển thị giá trị thật ở đó.
 
 ### Ràng buộc an toàn cho Ops copilot
 
@@ -659,6 +769,9 @@ make smoke       # kiểm tra end-to-end qua API thật
 make psql        # mở psql
 make migrate     # áp migration
 make lint        # ruff + tsc
+make gen-types   # sinh lại apps/web/lib/generated/openapi.d.ts từ /openapi.json
+make use-db      # web dùng Postgres (chế độ thật)
+make use-local   # web dùng file JSON, không cần Postgres
 make backup      # dump database ra backups/
 make down        # dừng, giữ dữ liệu
 make reset       # XOÁ SẠCH dữ liệu rồi dựng lại
@@ -670,6 +783,8 @@ Profile phụ:
 make llm-up      # LiteLLM gateway, cổng 4000
 make mon-up      # Prometheus 9090, Grafana 3001
 make all-up      # cả ba profile
+make lan-up      # mở web ra LAN cho máy khác dùng chung — đọc cảnh báo trước
+make lan-down    # đóng lại, web chỉ còn trả lời ở 127.0.0.1
 ```
 
 Production:
@@ -733,6 +848,12 @@ process.
 | `node-exporter` | RAM, CPU, disk của host |
 | `cadvisor` | Tài nguyên từng container |
 | `postgres-exporter` | Kết nối, transaction, kích thước bảng |
+
+`node-exporter` cần `pid: host` và mount `/:/host:ro,rslave` để đọc số liệu
+host thật. Trên **Docker Desktop (Windows/macOS)**, backend WSL2/HyperKit
+không hỗ trợ `rslave` cho container — service sẽ ở trạng thái `Created` rồi
+lỗi khi start, các service còn lại không bị ảnh hưởng. Đây là giới hạn môi
+trường desktop, chỉ chạy đúng trên Linux Engine thật (Ubuntu production).
 
 Metrics của api gắn label theo **route template** (`/api/v1/tasks/{task_id}`),
 không theo URL thật, để không nổ cardinality vì UUID.

@@ -236,7 +236,7 @@ nhập CSV dự án trước.
 Nội dung nhiều dòng của sổ tay được bọc trong dấu ngoặc kép theo RFC 4180, nên
 Excel mở ra vẫn thấy đúng một ô nhiều dòng.
 
-## Ba tab để hiểu dự án đang build
+## Các tab để hiểu dự án đang build
 
 Nhóm **Dự án này** trên thanh điều hướng:
 
@@ -245,6 +245,16 @@ Nhóm **Dự án này** trên thanh điều hướng:
 - **Lộ trình** — tiến độ năm giai đoạn. Có trạng thái "Chưa verify" nghĩa là code
   đã viết nhưng chưa từng chạy, nên con số tiến độ thận trọng hơn cảm giác.
 - **Tài liệu** — đọc trực tiếp file markdown trong repo, gồm cả tài liệu này.
+- **Hệ thống** — tình trạng sống/chết của database và Redis, phiên bản đang
+  chạy, danh sách container Docker và vai trò từng cái, và vài con số cấu
+  hình (giới hạn request, số ngày giữ thùng rác). Có nút **Hiện** cho một
+  khối thông tin kỹ thuật (URL nội bộ, tên biến môi trường) — mặc định ẩn,
+  không phải vì đó là bí mật mà vì không cần thấy ngay. Mật khẩu và khoá API
+  **không** hiển thị ở đây hay bất kỳ đâu trên web — mục **Tài khoản** chỉ
+  ghi tên biến và lệnh để người có quyền truy cập máy tự tra, không có mật
+  khẩu mặc định đặt sẵn (mỗi lần dựng stack sinh khoá ngẫu nhiên riêng).
+  Trang này cũng gom sẵn link tới các tài liệu deploy nếu bạn cần dựng thêm
+  máy hoặc chia sẻ cho người khác dùng.
 
 Hai nhóm **Tích hợp** và **Vận hành** đang mờ vì thuộc giai đoạn sau, chưa có
 trang thật.
@@ -274,16 +284,38 @@ hết ý nghĩa. Còn lại cứ để sắp xếp theo Hay dùng nhất lo.
 **Tag theo ngữ cảnh, không theo dự án.** Dự án đã có trường riêng. Tag hữu ích khi
 nó cắt ngang nhiều dự án, ví dụ `cần-tập-trung`, `chờ-phản-hồi`, `việc-nhanh`.
 
+## Dùng từ máy khác trong nhà
+
+Muốn mở app trên điện thoại hoặc laptop khác, không chỉ máy đang chạy nó? Nhờ
+người quản trị máy chạy app bật chia sẻ LAN (`make lan-up` — xem README mục
+"Chia sẻ trong LAN"), rồi mở `http://<IP máy đó>:3000` trên thiết bị khác
+cùng mạng wifi/dây.
+
+Cần biết trước khi dùng theo cách này: **ai mở được địa chỉ đó cũng dùng app
+y như bạn** — không có tài khoản riêng ở giai đoạn hiện tại, nên họ xem và sửa
+được mọi task, mọi mục sổ tay, kể cả mục đánh dấu "cẩn thận". Chỉ phù hợp khi
+mọi thiết bị trong mạng đó là người bạn tin tưởng (ví dụ cả nhà dùng chung một
+danh sách việc). Nếu đang ở mạng công cộng hoặc dùng chung với người lạ, đừng
+nhờ bật chia sẻ.
+
 ## Sự cố thường gặp
 
 **Trang hiện "Không đọc được dữ liệu từ core API".**
 App đang ở chế độ `api` nhưng backend chưa chạy. Hai cách: dựng backend bằng
-`make bootstrap`, hoặc đổi `DATA_SOURCE=file` trong `apps/web/.env.local` để chạy
-độc lập với file JSON.
+`make bootstrap`, hoặc đổi `DATA_SOURCE=file` trong `apps/web/.env.local` rồi
+khởi động lại `npm run dev` để chạy độc lập với file JSON (không cần Postgres).
 
 **Có banner vàng nói dữ liệu sẽ mất khi restart.**
 Đang ở chế độ `memory`. Đổi sang `DATA_SOURCE=file` trong
 `apps/web/.env.local` rồi khởi động lại.
+
+**Không tìm thấy chỗ đổi `DATA_SOURCE` trên web, phải sửa file ở đâu?**
+Không có nút bấm đổi trên web — việc đổi cần Next.js khởi động lại để nạp
+biến môi trường mới. Chạy app qua Docker thì dùng `make use-db` /
+`make use-local` (xem tab **Dữ liệu** trên web, mục "Đổi nguồn dữ liệu", hoặc
+README mục "Ba nguồn dữ liệu"). Chạy bằng `npm run dev` không qua Docker thì
+sửa tay dòng `DATA_SOURCE=` trong `apps/web/.env.local`, rồi tắt và chạy lại
+`npm run dev` — sửa file không tự áp dụng, phải khởi động lại.
 
 **Task vừa xoá đâu rồi?**
 Ở tab Thùng rác, giữ 30 ngày. Bấm Phục hồi.

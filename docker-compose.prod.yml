@@ -40,6 +40,11 @@ services:
         NEXT_PUBLIC_DISPLAY_TZ: ${TZ:-Asia/Ho_Chi_Minh}
     environment:
       NODE_ENV: production
+      # Prod luôn phải là "api" (Postgres qua core API) — không override ở
+      # đây. Nếu .env đặt DATA_SOURCE=file, nó vẫn được container nhận
+      # (biến kế thừa từ docker-compose.yml), nhưng mount ./data đã bị
+      # !override bỏ bên dưới nên ghi sẽ lỗi. "file"/"memory" là chế độ demo
+      # không cần Postgres, không có ý nghĩa trên production.
       CORE_API_URL: ${CORE_API_URL:-http://api:8000}
       CORE_API_KEY: ${API_KEY}
       DOCS_DIR: /docs

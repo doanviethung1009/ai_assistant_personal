@@ -343,7 +343,28 @@ bạn kiểm soát, cân nhắc kỹ trước khi bật — đây là mức quy�
 `.env` rồi `make llm-up` lại — compose tự nhận diện service không đổi cấu
 hình container thì không restart, có đổi thì restart đúng service đó.
 
-## Case 10 — Deploy fail giữa chừng, cần khôi phục trạng thái chạy được
+## Case 10 — Chỉ cần máy khác trong LAN dùng chung, không phải case deploy thật
+
+Dùng khi: bạn **không** đang dựng UAT/production. Chỉ muốn điện thoại hay
+laptop khác trong nhà/văn phòng mở được app đang chạy trên máy mình, tạm thời.
+Đây không phải một "case deploy" theo nghĩa các case trên — không có git
+checkout, không có build riêng, không có environment riêng.
+
+```bash
+make lan-up     # mở cổng web ra mọi interface, không chỉ 127.0.0.1
+make lan-down   # đóng lại, về như make up (chỉ 127.0.0.1)
+```
+
+Chi tiết cơ chế, cảnh báo bảo mật (không có đăng nhập ở Phase 1, nên chỉ bật
+trên mạng tin tưởng toàn bộ thiết bị), và cách tìm IP máy đang chạy app nằm ở
+[README.md § Chia sẻ trong LAN](../README.md#chia-sẻ-trong-lan-dùng-chung-từ-máy-khác-không-deploy-server-riêng).
+
+**Khi nào thật sự cần một case deploy ở trên thay vì lệnh này**: cần máy
+khác luôn truy cập được dù máy chính của bạn tắt, cần domain thật qua
+Tailscale/Caddy, hoặc cần nhiều người dùng với quyền riêng (RBAC — chưa có ở
+Phase 1). Khi đó mới cần Case 1 (deploy lần đầu) trên một máy chạy liên tục.
+
+## Case 11 — Deploy fail giữa chừng, cần khôi phục trạng thái chạy được
 
 Dùng khi: một lệnh trong Case 2/3/6 fail và bạn cần đưa service về lại trạng
 thái phục vụ được, trước khi có thời gian điều tra kỹ.

@@ -18,6 +18,12 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   Component và Route Handler thành hai module graph riêng, nên biến ở mức
   module có thể tồn tại hai bản khác nhau. Triệu chứng đã gặp: trang hiển
   thị đủ dữ liệu nhưng `/api/export` trả về mảng rỗng. Xem `lib/store/engine.ts`.
+- **`DATA_SOURCE=file` qua Docker cần mount `./data:/data`.** Đã khai sẵn ở
+  `docker-compose.yml` và `DATA_DIR=/data`. Nếu tự viết compose khác và quên
+  mount, `lib/store/json-file.ts` vẫn ghi được nhưng dữ liệu nằm trong
+  filesystem của container — mất khi `docker compose rm`/rebuild. Đổi
+  `DATA_SOURCE` qua `.env` không tự áp dụng, phải `docker compose up -d web`
+  lại (dùng `make use-db` / `make use-local`, đã làm sẵn cả hai bước).
 - **Đọc/ghi dữ liệu chỉ qua `lib/api.ts`.** Nó điều phối ba chế độ
   `DATA_SOURCE` (api, file, memory). Đừng import `store/engine.ts` trực tiếp
   từ page hay component.
@@ -44,3 +50,29 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   phải backfill thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
 - **Nội dung note render bằng text node của JSX**, tuyệt đối không
   `dangerouslySetInnerHTML` — nội dung do người dùng dán, mở đường cho XSS.
+- **`lib/types.ts` không còn viết tay field của entity.** Nó alias sang
+  `lib/generated/openapi.d.ts`, sinh tự động từ `/openapi.json` của api đang
+  chạy bằng `make gen-types` (hay `npm run gen:types` trong container web).
+  Sửa model hay schema Pydantic ở backend thì chạy lại lệnh đó, đừng sửa tay
+  field trong `types.ts`. File generated **có commit vào git**, không
+  gitignore, để `tsc` chạy được mà không cần container `api` đang sống.
+  Field nào Pydantic khai `default=None` (ví dụ `deleted_at`, `color`,
+  `events`) thì openapi-typescript sinh ra optional (`field?: T | undefined`)
+  dù response thật luôn trả đủ field — chỉ giá trị có thể null. `types.ts`
+  dùng helper `WithRequiredDeletedAt` / `WithRequiredColor` để ép lại required
+  cho đúng với response thật, tránh `undefined` lan ra khắp component. Thêm
+  field optional kiểu mới ở backend thì nhớ kiểm tra `tsc --noEmit` có báo lỗi
+  ở component không — nếu có, mở rộng helper tương ứng trong `types.ts`, đừng
+  sửa từng component.
+  Những type không nằm trong OpenAPI (nhãn hiển thị như `STATUS_LABELS`,
+  `NOTE_KIND_LABELS`, hay field tính riêng cho UI) vẫn khai tay trong
+  `types.ts` như trước — chỉ phần trùng với schema backend là alias.
+- **Trang `/system` (Thông tin hệ thống) không bao giờ render secret thật.**
+  Trang này không có cơ chế đăng nhập riêng — ai mở được URL (kể cả qua LAN
+  nếu đã `make lan-up`) đều xem được mọi thứ ở đó. Field hiển thị PHẢI tới từ
+  `apps/core/app/schemas/system.py::SystemInfo` (đã được backend lọc chỉ còn
+  field không nhạy cảm), không tự thêm biến môi trường mới vào component.
+  Muốn thêm field thì sửa `SystemInfo` ở backend trước, chạy `make gen-types`,
+  rồi mới render. Thông tin "nội bộ nhưng không mật" (URL nội bộ, tên biến
+  đang dùng) bọc trong `<SensitiveToggle>` để không hiện ngay khi mở trang,
+  nhưng đừng dùng nó để biện minh cho việc hiện secret thật sau một cú click.
