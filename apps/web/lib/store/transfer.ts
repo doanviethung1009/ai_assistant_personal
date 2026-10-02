@@ -658,8 +658,6 @@ export async function importAiLogsJson(
     
     // Ghi đè file
     engine.restoreAiLogs({
-      schema_version: 1,
-      exported_at: new Date().toISOString(),
       ai_logs: current
     });
     

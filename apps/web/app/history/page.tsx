@@ -74,7 +74,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     // 3. Lọc theo khoảng ngày cụ thể (date picker)
     if (currentFrom || currentTo) {
       filteredItems = filteredItems.filter(item => {
-        const itemDate = item.last_visit_time.split(" ")[0]; // "YYYY-MM-DD"
+        const itemDate = item.last_visit_time?.split(" ")[0] || ""; // "YYYY-MM-DD"
         if (currentFrom && itemDate < currentFrom) return false;
         if (currentTo && itemDate > currentTo) return false;
         return true;
