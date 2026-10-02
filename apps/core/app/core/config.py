@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -31,7 +31,11 @@ class Settings(BaseSettings):
 
     # ── Bảo mật ─────────────────────────────────────────────────────
     api_key: str = Field(..., min_length=16, description="Khoá cho header X-API-Key")
-    cors_origins: list[str] = ["http://localhost:3000"]
+    # NoDecode: pydantic-settings mặc định JSON-decode field kiểu list trước
+    # khi field_validator(mode="before") chạy, nên ".env" không thể dùng
+    # chuỗi comma-separated bình thường (vd CORS_ORIGINS=a,b) mà sẽ crash
+    # vì không parse được JSON. NoDecode tắt bước đó, để validator dưới xử lý.
+    cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
 
     # ── LLM gateway (chưa dùng ở Phase 1) ───────────────────────────
     litellm_base_url: str | None = None
