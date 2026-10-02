@@ -2,23 +2,45 @@
 
 Dự án này là một hệ thống AI Assistant cá nhân, được tổ chức theo mô hình Monorepo chứa cả frontend và backend, cùng với các thư mục quản lý tài liệu, dữ liệu và thiết lập cho AI (Agentic Coding).
 
-## 📂 Tổng quan thư mục gốc
+## 📂 Cây thư mục gốc (Directory Tree)
 
-- **`apps/`**: Chứa mã nguồn chính của ứng dụng.
-  - **`apps/web/`**: Frontend xây dựng bằng Next.js (App Router), React, TailwindCSS. Đây là giao diện người dùng chính (hiển thị danh sách task, lịch sử duyệt web, biểu đồ dữ liệu, v.v.).
-  - **`apps/core/`**: Backend xây dựng bằng Python (FastAPI/SQLAlchemy). Xử lý logic nghiệp vụ, quản lý database, tương tác với các mô hình AI hoặc các logic phức tạp khác.
+Dưới đây là sơ đồ tổng quan của dự án. Mọi logic chính đều tập trung trong thư mục `apps/`.
 
-- **`data/`**: Thư mục lưu trữ dữ liệu (thường là các file JSON như `chrome-history.json`, `builder-data.json`, v.v.). Đây là nơi hệ thống trích xuất và đọc dữ liệu.
+```text
+ai_assistant_personal/
+├── .agents/           # 🤖 Cấu hình cho AI (Rules, Skills, Prompts)
+├── apps/              # 💻 Mã nguồn chính của hệ thống
+│   ├── core/          # ⚙️ Backend (Python / FastAPI / SQLAlchemy)
+│   └── web/           # 🎨 Frontend (Next.js / React / Tailwind)
+├── data/              # 🗄️ Nơi lưu trữ dữ liệu trích xuất (JSON files)
+├── docs/              # 📚 Tài liệu dự án (Markdown)
+├── infra/             # 🏗️ Cấu hình hạ tầng (Docker, Server)
+└── scripts/           # 🛠️ Script tiện ích & Các patch sửa lỗi tạm
+```
 
-- **`docs/`**: Chứa các tài liệu thiết kế, hướng dẫn (ví dụ: `AI_HANDOFF_STATE.md`, tài liệu này). Giúp theo dõi quá trình phát triển, trạng thái dự án và quy trình làm việc.
+### 🎨 Frontend (`apps/web/`)
+Giao diện người dùng chính được xây dựng bằng Next.js App Router.
 
-- **`scripts/`**: Chứa các bash script hỗ trợ (như `release.sh` để deploy hoặc các tool tự động hoá khác).
+| Thư mục/File | Chức năng chính | Ghi chú |
+|--------------|-----------------|---------|
+| `app/` | Chứa các trang (Pages) như `/history`, `/tasks`. | Mọi route web đều nằm ở đây. |
+| `components/`| Chứa các UI Components dùng chung (Button, Table). | Thiết kế độc lập, tái sử dụng. |
+| `lib/` | Chứa logic xử lý, cấu hình (như đọc Markdown, cào Chrome History). | |
+| `actions*.ts`| Các Server Actions để giao tiếp trực tiếp với Backend. | |
 
-- **`.kiro/steering/`**: Chứa các file **Steering Rules** (ví dụ: `comment-style.md`). Đây là những định nghĩa/quy tắc giúp định hướng cách AI phản hồi, cách AI viết code, comment và tài liệu trong lúc lập trình.
+### ⚙️ Backend (`apps/core/`)
+Xử lý logic nghiệp vụ và tương tác với cơ sở dữ liệu.
 
-- **`patch_*.py` / `fix_*.py`**: Các đoạn script nhỏ tạm thời được sinh ra trong quá trình AI fix bug, cập nhật hoặc cào dữ liệu nhanh. (Những file này thường mang tính chất scratchpad tạm thời).
+| Thư mục | Chức năng chính | Ghi chú |
+|---------|-----------------|---------|
+| `api/v1/` | Định nghĩa các endpoint REST API (Routes). | Điểm tiếp nhận request từ Web. |
+| `models/` | Định nghĩa cấu trúc bảng Database (SQLAlchemy). | Không dùng `create_all`, dùng Alembic. |
+| `services/` | Xử lý logic nghiệp vụ, tính toán. | Ví dụ: Logic đồng bộ, xử lý soft delete. |
 
-- **`infra/`** / **`docker-compose*.yml`**: Các tệp thiết lập hạ tầng Docker (Local / Prod) dùng để chạy toàn bộ stack dự án.
+### Các thư mục hỗ trợ khác
+- **`data/`**: Chứa các file `*.json` sinh ra từ quá trình cào dữ liệu (như `chrome-history.json`).
+- **`docs/`**: Toàn bộ tài liệu mô tả kiến trúc, hướng dẫn sử dụng và API.
+- **`scripts/`**: Chứa các bash script hỗ trợ (như `release.sh`) và đặc biệt là thư mục con `scripts/patches/` chứa các script sửa lỗi tạm thời (`patch_*.py`).
 
 ## 🤖 Các file nào tự động nạp (load) khi Prompt AI?
 
