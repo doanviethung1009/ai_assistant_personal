@@ -24,6 +24,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Sửa lỗi
 
+- force flush ai-logs.json on initialization so the file is visible (`162199d`)
 - add v4 migration and state initialization for ai_logs array in JSON data file (`c561b0c`)
 - create dedicated /ai-logs page and fix docs navigation 404 error (`ed6ca69`)
 - update docker volumes and deploy runbook to use .agents instead of .kiro (`bc1ad67`)
@@ -35,6 +36,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- add local JSON storage split vs group evaluation rule to web-conventions (`8567a3e`)
 - document local JSON storage migration and SCHEMA_VERSION mechanism (`92c77c0`)
 - enforce automatic document synchronization rule in system prompt (`1d52dd6`)
 - append latest git changelog tracking process to AI trace log (`018e2ab`)

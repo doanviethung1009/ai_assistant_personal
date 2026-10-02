@@ -86,3 +86,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Đã cập nhật file quy tắc `.agents/rules/web-conventions.md` (nơi quản lý các luật của Frontend và Local JSON).
   - Bổ sung rule **Local Storage Split vs Group**: Bắt buộc Agent từ nay về sau khi tạo Data mới, phải tự đánh giá: Nếu data dạng Append-only/kích thước lớn (như Log) thì BẮT BUỘC phải tạo file JSON riêng biệt để tránh thắt cổ chai I/O. Ngược lại, nếu data có tính ràng buộc/cập nhật liên tục (như Task, Notes) thì nhét chung vào `builder-data.json`.
 - **Phản hồi:** Đã đưa triết lý này thành một Rule bắt buộc trong hệ thống Agentic.
+
+---
+
+### [03-10-2026 01:58] | Category: [TOOL]
+- **Prompt:** "Kiểm tra xem có rule bắt buộc ghi log promt của dự án vào file json chưa?"
+- **Xử lý:**
+  - Phát hiện rule cũ `.agents/rules/ai-logger.md` mới chỉ yêu cầu AI ghi vào file `.md`.
+  - Cập nhật rule: Yêu cầu AI từ nay phải thực hiện **Ghi log kép (Dual Logging)**: Vừa viết vào Markdown (để đọc) vừa bắn vào JSON/Database (để UI render).
+  - Tạo một script tiện ích `scripts/add-ai-log.js` giúp các Agent sau này đẩy Data vào file `data/ai-logs.json` một cách an toàn mà không sợ làm hỏng định dạng JSON.
+- **Phản hồi:** Báo cáo hoàn tất việc thiết lập Rule và demo luôn bằng cách ghi chính log này vào file JSON.
