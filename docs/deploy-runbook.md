@@ -418,7 +418,7 @@ database mới.
 
 **#2 — Web chạy đúng ở local nhưng tab Tài liệu báo "không tìm thấy file" trên
 server.** Thiếu mount `DOCS_DIR`. Đảm bảo đang dùng `docker-compose.prod.yml`
-(có `volumes: !override` mount lại `README.md`, `docs/`, `.kiro/steering/`
+(có `volumes: !override` mount lại `README.md`, `docs/`, `.agents/rules/`, `.agents/skills/`
 read-only) — nếu bạn tự viết compose khác, phải tự thêm ba mount này.
 
 **#3 — Đổi `.env` nhưng container không nhận giá trị mới.** `docker compose

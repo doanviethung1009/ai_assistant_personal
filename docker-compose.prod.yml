@@ -52,8 +52,8 @@ services:
     volumes: !override
       - ./README.md:/docs/README.md:ro
       - ./docs:/docs/docs:ro
-      - ./.kiro/steering:/docs/.kiro/steering:ro
-      - ./.kiro/skills:/docs/.kiro/skills:ro
+      - ./.agents/rules:/docs/.agents/rules:ro
+      - ./.agents/skills:/docs/.agents/skills:ro
     deploy:
       resources:
         limits:

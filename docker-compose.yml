@@ -143,8 +143,8 @@ services:
       # Tài liệu cho trang /docs, chỉ đọc
       - ./README.md:/docs/README.md:ro
       - ./docs:/docs/docs:ro
-      - ./.kiro/steering:/docs/.kiro/steering:ro
-      - ./.kiro/skills:/docs/.kiro/skills:ro
+      - ./.agents/rules:/docs/.agents/rules:ro
+      - ./.agents/skills:/docs/.agents/skills:ro
     ports:
       - "127.0.0.1:${WEB_PORT:-3000}:3000"
     depends_on:
