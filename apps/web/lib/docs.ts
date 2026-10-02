@@ -54,6 +54,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "API_REFERENCE.md"),
   },
   {
+    slug: "ai-logs",
+    title: "Nhật ký AI (Task Trace & Audit)",
+    description: "Lưu vết tự động các prompt, phân tích, và kết quả thực thi của Agent để phục vụ training.",
+    category: "Tổng quan & Hướng dẫn",
+    file: path.join("docs", "ai_logs.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:
