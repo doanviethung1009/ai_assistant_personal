@@ -1,4 +1,5 @@
 import { Markdown } from "@/components/markdown";
+import { ApiTester } from "@/components/api-tester";
 import { findDoc, readDoc, stripFrontMatter } from "@/lib/docs";
 import Link from "next/link";
 
@@ -19,15 +20,7 @@ export default async function ApiDocsPage() {
           </p>
         </div>
         <div className="flex gap-2">
-          {/* Tuỳ chọn trỏ link tới Swagger UI nếu Backend đang chạy */}
-          <a
-            href="http://localhost:8000/docs"
-            target="_blank"
-            rel="noreferrer"
-            className="rounded-md bg-[var(--color-accent)] px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
-          >
-            Mở Swagger UI (Nếu Backend đang chạy)
-          </a>
+          <ApiTester />
         </div>
       </div>
 
