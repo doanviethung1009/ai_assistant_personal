@@ -25,8 +25,11 @@ export interface NavItem {
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Hôm nay" },
   { href: "/tasks", label: "Tất cả task", short: "Task" },
+  { href: "/team", label: "Team", short: "Team" },
   { href: "/projects", label: "Dự án" },
   { href: "/notes", label: "Sổ tay" },
+  { href: "/tags", label: "Quản lý Tag", short: "Tags" },
+  { href: "/history", label: "Lịch sử duyệt web", short: "Lịch sử" },
   { href: "/trash", label: "Thùng rác", short: "Rác" },
 ];
 

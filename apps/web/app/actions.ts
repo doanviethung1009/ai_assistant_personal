@@ -496,3 +496,129 @@ export async function importDataAction(
     };
   }
 }
+
+import * as XLSX from 'xlsx';
+
+function parseJiraDate(val: any): string | null {
+  if (!val || val === "No Due Date" || val === "Not Closed") return null;
+  if (typeof val === "number") {
+    const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (typeof val === "string") {
+    // 2026-10-01T18:22:05.573+0700 -> 2026-10-01T18:22:05.573+07:00 (Next.js can parse this or we insert colon)
+    const cleaned = val.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+    const d = new Date(cleaned);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
+}
+
+export async function syncFromUrlAction(url: string): Promise<ActionResult & { count?: number }> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Lỗi HTTP: ${res.status}`);
+    const buffer = await res.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    if (!sheetName) throw new Error('No sheet');
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet) throw new Error('No sheet');
+    const data = XLSX.utils.sheet_to_json(sheet) as any[];
+
+    let added = 0;
+    const projects = await api.listProjects();
+    const projectMap = Object.fromEntries(projects.map((p: any) => [p.key.toUpperCase(), p]));
+    
+    // We fetch all tasks to deduplicate by external_id
+    const { items: allTasks } = await api.listTasks();
+    const existingKeys = new Set(allTasks.filter(t => t.external_id).map(t => t.external_id));
+
+    for (const ticket of data) {
+      if (typeof ticket !== 'object' || !ticket['Issue Key']) continue;
+      const key = String(ticket['Issue Key']);
+      if (existingKeys.has(key)) continue;
+      
+      const titleRaw = `[${ticket['Projects'] || 'JIRA'}] ${ticket['Summary'] || 'No summary'}`;
+      
+      const statusMap: Record<string, any> = {
+        'To Do': 'todo',
+        'In Progress': 'in_progress',
+        'Done': 'done',
+        'Closed': 'done',
+      };
+      const status = statusMap[String(ticket['Status'])] || 'todo';
+      
+      const tags = ['jira'];
+      if (ticket['Labels']) {
+        tags.push(...String(ticket['Labels']).split(',').map(s => s.trim().toLowerCase()));
+      }
+      
+      let projectId = null;
+      let finalTitle = titleRaw;
+      
+      const match = titleRaw.match(/^\[([^\]]+)\]\s*(.*)$/);
+      if (match && match[1] && match[2]) {
+        const prefix = match[1].toUpperCase();
+        let assignedProject = null;
+        if (prefix.startsWith('MAG')) assignedProject = projectMap['MAG'];
+        else if (prefix.startsWith('OM')) assignedProject = projectMap['OM'];
+        else if (prefix.startsWith('IOTEK')) assignedProject = projectMap['IOTEK'];
+        else if (prefix.startsWith('GIAI')) assignedProject = projectMap['GIAI'];
+        
+        if (assignedProject) {
+          projectId = assignedProject.id;
+          const projectTag = assignedProject.key.toLowerCase();
+          if (!tags.includes(projectTag)) tags.push(projectTag);
+          finalTitle = match[2].trim();
+        }
+      }
+      
+      await api.createTask({
+        title: finalTitle,
+        description: ticket['Description'] ? String(ticket['Description']) : undefined,
+        status,
+        priority: 'medium',
+        project_id: projectId,
+        tags,
+        
+        source: 'jira',
+        external_id: key,
+        external_url: `https://onemount.atlassian.net/browse/${key}`,
+        assignee: ticket['Assignee'] ? String(ticket['Assignee']) : null,
+        due_at: parseJiraDate(ticket['Due Date']),
+        created_at: parseJiraDate(ticket['Created Date']) || undefined
+      });
+      added++;
+    }
+
+    revalidateAll();
+    return { ok: true, count: added };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Sync failed" };
+  }
+}
+
+import { addSyncUrlApi, removeSyncUrlApi } from "@/lib/api";
+
+export async function addSyncUrlAction(url: string) {
+  await addSyncUrlApi(url);
+  revalidateAll();
+}
+
+export async function removeSyncUrlAction(url: string) {
+  await removeSyncUrlApi(url);
+  revalidateAll();
+}
+
+import { renameGlobalTagApi, deleteGlobalTagApi } from "@/lib/api";
+
+export async function renameTagAction(oldName: string, newName: string) {
+  await renameGlobalTagApi(oldName, newName);
+  revalidateAll();
+}
+
+export async function deleteTagAction(name: string) {
+  await deleteGlobalTagApi(name);
+  revalidateAll();
+}

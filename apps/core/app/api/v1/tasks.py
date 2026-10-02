@@ -122,6 +122,7 @@ async def list_tasks(
     q: Annotated[str | None, Query(max_length=200, description="Tìm trong title và description")] = None,
     scheduled_on: Annotated[date | None, Query()] = None,
     due_before: Annotated[datetime | None, Query()] = None,
+    assignee: Annotated[str | None, Query()] = None,
     include_closed: Annotated[bool, Query(description="Gồm cả done và cancelled")] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,

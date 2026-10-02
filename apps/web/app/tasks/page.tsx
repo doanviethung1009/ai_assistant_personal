@@ -44,6 +44,7 @@ export default async function TasksPage({
     [result, projects] = await Promise.all([
       listTasks({
         query: params.q,
+        forCurrentUser: true,
         status: statuses,
         includeClosed,
         limit: PAGE_SIZE,

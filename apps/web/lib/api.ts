@@ -180,6 +180,8 @@ export interface ListTasksOptions {
   offset?: number;
   sortBy?: string;
   sortDesc?: boolean;
+  assignee?: string | null;
+  forCurrentUser?: boolean;
 }
 
 export function listTasks(options: ListTasksOptions = {}): Promise<Paged<Task>> {
@@ -219,9 +221,15 @@ export interface CreateTaskInput {
   priority?: string;
   project_id?: string | null;
   due_at?: string | null;
+  created_at?: string;
   scheduled_for?: string | null;
   estimate_minutes?: number | null;
   tags?: string[];
+  source?: string;
+  external_id?: string | null;
+  external_url?: string | null;
+  assignee?: string | null;
+  forCurrentUser?: boolean;
 }
 
 export function createTask(input: CreateTaskInput): Promise<TaskDetail> {
@@ -394,6 +402,8 @@ export interface ListNotesOptions {
   offset?: number;
   sortBy?: NoteSortField;
   sortDesc?: boolean;
+  assignee?: string | null;
+  forCurrentUser?: boolean;
 }
 
 export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> {
@@ -539,4 +549,40 @@ export function emptyNoteTrash(): Promise<PurgeResponse> {
   return coreFetch<PurgeResponse>("/api/v1/notes/trash/empty", {
     method: "POST",
   });
+}
+
+export async function getSyncUrlsApi(): Promise<string[]> {
+  if (IS_LOCAL) return local(() => engine.getSyncUrls());
+  return []; // Not implemented for core API yet
+}
+export async function addSyncUrlApi(url: string): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.addSyncUrl(url));
+}
+export async function removeSyncUrlApi(url: string): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.removeSyncUrl(url));
+}
+
+// ── Tags Management ──────────────────────────────────────────────────────
+
+export interface TagStat {
+  name: string;
+  taskCount: number;
+  noteCount: number;
+}
+
+export async function getTagsStatsApi(): Promise<TagStat[]> {
+  if (IS_LOCAL) return local(() => engine.getTagsStats());
+  return []; // TBD core API
+}
+
+export async function renameGlobalTagApi(oldName: string, newName: string): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.renameGlobalTag(oldName, newName));
+}
+
+export async function deleteGlobalTagApi(name: string): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
+}
+
+export async function wipeAllDataApi(options?: { tasks?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
+  if (IS_LOCAL) return local(() => engine.wipeAllData(options));
 }

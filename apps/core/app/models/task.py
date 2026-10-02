@@ -32,6 +32,7 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # ── Nội dung ────────────────────────────────────────────────────
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text, default=None)
+    assignee: Mapped[str | None] = mapped_column(String(200), default=None, index=True)
 
     status: Mapped[TaskStatus] = mapped_column(
         enum_column(TaskStatus, "task_status"),

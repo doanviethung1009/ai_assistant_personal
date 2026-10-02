@@ -1,5 +1,11 @@
 import { ApiErrorPanel } from "@/components/api-error";
 import { DataImport } from "@/components/data-import";
+import { UrlSyncManager } from "@/components/url-sync-manager";
+import { FileUploadManager } from "@/components/file-upload-manager";
+import { ChromeHistoryManager } from "@/components/chrome-history-manager";
+import { WipeDataManager } from "@/components/wipe-data-manager";
+import { RestoreJsonManager } from "@/components/restore-json-manager";
+import { getSyncUrlsApi } from "@/lib/api";
 import {
   DATA_SOURCE,
   IS_LOCAL,
@@ -59,6 +65,7 @@ const EXPORTS = [
 ];
 
 export default async function DataPage() {
+  const syncUrls = await getSyncUrlsApi();
   let taskCount: number;
   let projectCount: number;
   let noteCount: number;
@@ -227,6 +234,12 @@ DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
       </section>
 
       <DataImport allowReplace={IS_LOCAL} />
+
+      <UrlSyncManager initialUrls={syncUrls} />
+        <FileUploadManager />
+        <ChromeHistoryManager />
+        <RestoreJsonManager />
+        <WipeDataManager />
 
       <section className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
         <h2 className="text-sm font-semibold">Chuyển sang Postgres sau này</h2>

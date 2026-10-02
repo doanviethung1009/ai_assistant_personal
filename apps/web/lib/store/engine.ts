@@ -83,6 +83,7 @@ function normalizeTags(tags: readonly string[] | undefined): string[] {
  * state sống qua hot reload của dev server.
  */
 interface StoreState {
+  sync_urls?: string[];
   projects: Project[];
   tasks: StoredTask[];
   notes: StoredNote[];
@@ -96,7 +97,7 @@ const globalState = globalThis as typeof globalThis & {
   __builderStoreState?: StoreState;
 };
 
-function state(): StoreState {
+export function state(): StoreState {
   globalState.__builderStoreState ??= {
     projects: [],
     tasks: [],
@@ -112,7 +113,7 @@ export function setChangeHandler(handler: (() => void) | null): void {
   state().onChange = handler;
 }
 
-function touched(): void {
+export function touched(): void {
   state().onChange?.();
 }
 
@@ -164,11 +165,13 @@ export function replaceAll(data: {
   tasks: StoredTask[];
   /** Không truyền thì giữ nguyên sổ tay hiện tại. */
   notes?: StoredNote[];
+  sync_urls?: string[];
 }): void {
   const store = state();
   store.projects = data.projects;
   store.tasks = data.tasks;
   if (data.notes !== undefined) store.notes = data.notes;
+  if (data.sync_urls !== undefined) store.sync_urls = data.sync_urls;
   touched();
 }
 
@@ -185,7 +188,7 @@ function summary(project: Project | undefined): ProjectSummary | null {
 }
 
 function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask {
-  const created = partial.created_at ?? nowIso();
+  const created = (partial as any).created_at ?? nowIso();
   return {
     id: partial.id ?? uuid(),
     title: partial.title,
@@ -206,6 +209,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     created_at: created,
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
+    assignee: partial.assignee ?? null,
     events:
       partial.events ??
       [
@@ -221,7 +225,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
 }
 
 function makeNote(partial: Partial<StoredNote> & { title: string; content: string }): StoredNote {
-  const created = partial.created_at ?? nowIso();
+  const created = (partial as any).created_at ?? nowIso();
   return {
     id: partial.id ?? uuid(),
     title: partial.title,
@@ -241,6 +245,7 @@ function makeNote(partial: Partial<StoredNote> & { title: string; content: strin
     created_at: created,
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
+    assignee: partial.assignee ?? null,
   };
 }
 
@@ -487,7 +492,7 @@ function find(id: string, includeDeleted = false): StoredTask {
 export function getAgenda(): Agenda {
   const today = isoDate();
   const now = Date.now();
-  const tasks = aliveTasks();
+  const tasks = aliveTasks().filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
 
   const inProgress = tasks.filter((t) => t.status === "in_progress");
   const skip = new Set(inProgress.map((t) => t.id));
@@ -552,7 +557,7 @@ export function getStats(): Stats {
   const now = Date.now();
   const windowStart = Date.now() - 6 * DAY_MS;
   const store = state();
-  const tasks = aliveTasks();
+  const tasks = aliveTasks().filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
 
   const byStatus: Record<string, number> = {};
   for (const task of tasks) {
@@ -598,6 +603,8 @@ export interface ListOptions {
   includeClosed?: boolean;
   limit?: number;
   offset?: number;
+  assignee?: string | null;
+  forCurrentUser?: boolean;
 }
 
 export function listTasks(options: ListOptions = {}): Paged<Task> {
@@ -611,6 +618,12 @@ export function listTasks(options: ListOptions = {}): Paged<Task> {
 
   if (options.projectId) {
     result = result.filter((t) => t.project_id === options.projectId);
+  }
+  
+  if (options.forCurrentUser) {
+    result = result.filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
+  } else if (options.assignee) {
+    result = result.filter((t) => t.assignee === options.assignee);
   }
 
   if (options.query) {
@@ -723,6 +736,7 @@ export function patchTask(id: string, input: Record<string, unknown>): TaskDetai
     task.description = (input.description as string | null) ?? null;
   }
   if ("priority" in input) task.priority = input.priority as TaskPriority;
+  if ("assignee" in input) task.assignee = (input.assignee as string | null) ?? null;
   if ("due_at" in input) task.due_at = (input.due_at as string | null) ?? null;
   if ("scheduled_for" in input) {
     task.scheduled_for = (input.scheduled_for as string | null) ?? null;
@@ -964,6 +978,9 @@ export interface ListNotesOptions {
   sortDesc?: boolean;
 }
 
+export function getSyncUrls(): string[] { return state().sync_urls || []; }
+export function addSyncUrl(url: string) { const s = state(); if (!s.sync_urls) s.sync_urls = []; if (!s.sync_urls.includes(url)) s.sync_urls.push(url); touched(); }
+export function removeSyncUrl(url: string) { const s = state(); if (s.sync_urls) s.sync_urls = s.sync_urls.filter((u: string) => u !== url); touched(); }
 export function listNotes(options: ListNotesOptions = {}): Paged<Note> {
   let result = aliveNotes();
 
@@ -1299,6 +1316,144 @@ export function deleteProject(id: string): void {
   }
   for (const n of store.notes) {
     if (n.project_id === id) n.project_id = null;
+  }
+  
+  touched();
+}
+
+
+// ── Tags Management ──────────────────────────────────────────────────────
+
+export interface TagStat {
+  name: string;
+  taskCount: number;
+  noteCount: number;
+}
+
+export function getTagsStats(): TagStat[] {
+  const store = state();
+  const tagMap: Record<string, { t: number; n: number }> = {};
+  
+  for (const task of aliveTasks()) {
+    for (const tag of task.tags) {
+      if (!tagMap[tag]) tagMap[tag] = { t: 0, n: 0 };
+      tagMap[tag].t++;
+    }
+  }
+  
+  for (const note of aliveNotes()) {
+    for (const tag of note.tags) {
+      if (!tagMap[tag]) tagMap[tag] = { t: 0, n: 0 };
+      tagMap[tag].n++;
+    }
+  }
+  
+  return Object.entries(tagMap).map(([name, counts]) => ({
+    name,
+    taskCount: counts.t,
+    noteCount: counts.n
+  })).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function renameGlobalTag(oldName: string, newName: string): void {
+  const oldT = oldName.trim().toLowerCase();
+  const newT = newName.trim().toLowerCase();
+  if (!oldT || !newT || oldT === newT) return;
+  
+  let changed = false;
+  
+  for (const task of state().tasks) {
+    if (task.tags.includes(oldT)) {
+      task.tags = [...new Set(task.tags.map(t => t === oldT ? newT : t))];
+      task.updated_at = nowIso();
+      changed = true;
+    }
+  }
+  
+  for (const note of state().notes) {
+    if (note.tags.includes(oldT)) {
+      note.tags = [...new Set(note.tags.map(t => t === oldT ? newT : t))];
+      note.updated_at = nowIso();
+      changed = true;
+    }
+  }
+  
+  if (changed) touched();
+}
+
+export function deleteGlobalTag(name: string): void {
+  const target = name.trim().toLowerCase();
+  if (!target) return;
+  
+  let changed = false;
+  
+  for (const task of state().tasks) {
+    if (task.tags.includes(target)) {
+      task.tags = task.tags.filter(t => t !== target);
+      task.updated_at = nowIso();
+      changed = true;
+    }
+  }
+  
+  for (const note of state().notes) {
+    if (note.tags.includes(target)) {
+      note.tags = note.tags.filter(t => t !== target);
+      note.updated_at = nowIso();
+      changed = true;
+    }
+  }
+  
+  if (changed) touched();
+}
+
+export function wipeAllData(options?: { tasks?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
+  const store = state();
+
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const backupDir = path.join(process.cwd(), "../../data/backups");
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+    // Dọn dẹp tất cả các file backup cũ trong thư mục trước
+    const files = fs.readdirSync(backupDir);
+    for (const file of files) {
+      if (file.endsWith('.json')) {
+        fs.unlinkSync(path.join(backupDir, file));
+      }
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    
+    // Backup main database
+    const backupFile = path.join(backupDir, `builder-data-backup-${timestamp}.json`);
+    fs.writeFileSync(backupFile, JSON.stringify(store, null, 2));
+    console.log(`[Backup] Data automatically backed up to ${backupFile}`);
+
+    // Backup chrome history if it exists
+    const chromePath = path.join(process.cwd(), "../../data/chrome-history.json");
+    if (fs.existsSync(chromePath)) {
+      const chromeBackup = path.join(backupDir, `chrome-history-backup-${timestamp}.json`);
+      fs.copyFileSync(chromePath, chromeBackup);
+      console.log(`[Backup] Chrome history backed up to ${chromeBackup}`);
+    }
+  } catch (e) {
+    console.error("[Backup] Failed to create backup before wiping:", e);
+  }
+
+  if (!options || options.projects) store.projects = [];
+  if (!options || options.tasks) store.tasks = [];
+  if (!options || options.notes) store.notes = [];
+  if (!options || options.sync_urls) store.sync_urls = [];
+  
+  if (!options || options.chrome_history) {
+    const fs = require('fs');
+    const path = require('path');
+    const outPath = path.join(process.cwd(), "../../data/chrome-history.json");
+    if (fs.existsSync(outPath)) {
+      fs.unlinkSync(outPath);
+    }
   }
   
   touched();

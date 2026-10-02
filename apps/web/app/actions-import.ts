@@ -1,0 +1,244 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { IS_LOCAL } from "@/lib/api";
+import * as engine from "@/lib/store/engine";
+import { uuid, nowIso } from "@/lib/store/engine";
+
+const PALETTE = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#d946ef'];
+function getRandomColor() {
+  return PALETTE[Math.floor(Math.random() * PALETTE.length)];
+}
+
+
+function parseJiraDate(val: any): string | null {
+  if (!val || val === "No Due Date" || val === "Not Closed") return null;
+  if (typeof val === "number") {
+    const d = new Date(Math.round((val - 25569) * 86400 * 1000));
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  if (typeof val === "string") {
+    const cleaned = val.replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
+    const d = new Date(cleaned);
+    return isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  return null;
+}
+
+export async function importBulkTasksAction(rows: any[]) {
+  if (!IS_LOCAL) throw new Error("Chỉ hỗ trợ chế độ Local File");
+
+  const db = engine.state();
+  let added = 0;
+  let updated = 0;
+
+  for (const ticket of rows) {
+    const summary = ticket['Summary'] || ticket['Title'];
+    if (!summary) continue;
+
+    const key = ticket['Issue Key'] || ticket['Key'];
+    const issueKey = key ? String(key) : null;
+    
+    let rawSummary = String(ticket['Summary'] || "No Title");
+    let finalTitle = rawSummary;
+
+    // Lấy thông tin cột
+    const rawCompany = ticket['Company'] ? String(ticket['Company']).trim() : null;
+    const rawProjects = ticket['Projects'] ? String(ticket['Projects']).trim() : null;
+    const rawLabels = ticket['Labels'] ? String(ticket['Labels']).trim() : null;
+
+    const statusMap: Record<string, string> = {
+      'To Do': 'todo',
+      'In Progress': 'in_progress',
+      'Done': 'done',
+      'Closed': 'done',
+    };
+    const status = statusMap[ticket['Status']] || 'todo';
+    
+    const tags = ['jira'];
+    
+    // Thêm tag từ Company
+    if (rawCompany) {
+      tags.push(rawCompany.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    }
+    
+    // Thêm tag từ Projects
+    if (rawProjects) {
+      tags.push(...rawProjects.split(',').map(s => s.trim().toLowerCase().replace(/[^a-z0-9]/g, '')));
+    }
+
+    // Thêm tag từ Labels
+    if (rawLabels) {
+      tags.push(...rawLabels.split(',').map(s => s.trim().toLowerCase()));
+    }
+
+    let projectId = null;
+    let projectObj = null;
+
+    // DỰ ÁN được tạo TỪ CỘT COMPANY
+    if (rawCompany) {
+      const projectKey = rawCompany.toUpperCase().replace(/[^A-Z0-9]/g, '').substring(0, 20);
+      
+      let assignedProject = db.projects.find((p: any) => p.key.toUpperCase() === projectKey) as any;
+      
+      if (!assignedProject) {
+        assignedProject = {
+          id: uuid(),
+          key: projectKey,
+          name: rawCompany,
+          color: getRandomColor(),
+          created_at: nowIso(),
+          updated_at: nowIso(),
+          is_archived: false
+        };
+        db.projects.push(assignedProject);
+      }
+
+      projectId = assignedProject.id;
+      projectObj = { id: assignedProject.id, key: assignedProject.key, name: assignedProject.name, color: assignedProject.color };
+    }
+    
+    const assignee = ticket['Assignee'] ? String(ticket['Assignee']) : null;
+    const createdAt = parseJiraDate(ticket['Created Date']) || nowIso();
+    const dueAt = parseJiraDate(ticket['Due Date']);
+    const completedAt = status === 'done' ? (parseJiraDate(ticket['Closed Date']) || nowIso()) : null;
+    
+    let task = db.tasks.find((t: any) => 
+      (issueKey && t.external_id === issueKey) || 
+      (!issueKey && t.title.toLowerCase() === finalTitle.toLowerCase())
+    );
+    
+    // Lọc bỏ các tag rỗng
+    const validTags = tags.filter(t => t.length > 0);
+    
+    if (task) {
+      task.title = finalTitle;
+      task.description = ticket['Description'] || null;
+      task.status = status as any;
+      task.project_id = projectId;
+      task.project = projectObj as any;
+      task.due_at = dueAt;
+      task.completed_at = completedAt;
+      task.tags = Array.from(new Set([...task.tags.map((t: string) => t.toLowerCase()), ...validTags]));
+      task.assignee = assignee;
+      task.created_at = createdAt;
+      task.updated_at = nowIso();
+      updated++;
+    } else {
+      task = {
+        id: uuid(),
+        title: finalTitle,
+        description: ticket['Description'] || null,
+        status: status as any,
+        priority: 'medium',
+        project_id: projectId,
+        project: projectObj as any,
+        due_at: dueAt,
+        scheduled_for: null,
+        estimate_minutes: null,
+        spent_minutes: 0,
+        completed_at: completedAt,
+        tags: Array.from(new Set(validTags)),
+        source: 'jira',
+        external_id: issueKey,
+        external_url: issueKey ? `https://onemount.atlassian.net/browse/${issueKey}` : null,
+        assignee,
+        created_at: createdAt,
+        updated_at: nowIso(),
+        deleted_at: null,
+        events: [],
+      };
+      db.tasks.unshift(task as any);
+      added++;
+    }
+  }
+  
+  engine.touched();
+  revalidatePath('/', 'layout');
+  return { ok: true, added, updated };
+}
+
+import * as XLSX from "xlsx";
+export async function importBulkFileAction(formData: FormData) {
+  if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
+
+  try {
+    const file = formData.get("file") as File;
+    if (!file) return { ok: false, error: "Không tìm thấy file" };
+
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: "array" });
+    const wsname = wb.SheetNames[0];
+    if (!wsname) return { ok: false, error: "File Excel không hợp lệ" };
+    
+    const ws = wb.Sheets[wsname];
+    if (!ws) return { ok: false, error: "Không lấy được dữ liệu Sheet" };
+    
+    const rows = XLSX.utils.sheet_to_json(ws);
+    if (!rows || rows.length === 0) return { ok: false, error: "Sheet rỗng" };
+
+    return await importBulkTasksAction(rows);
+  } catch (error: any) {
+    return { ok: false, error: error.message || String(error) };
+  }
+}
+
+export async function restoreFromJsonAction(jsonData: any) {
+  if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
+
+  try {
+    if (!jsonData || typeof jsonData !== "object") {
+      return { ok: false, error: "Dữ liệu JSON không hợp lệ" };
+    }
+
+    const db = engine.state();
+    let restoredTasks = 0;
+    let restoredProjects = 0;
+    let restoredNotes = 0;
+
+    if (Array.isArray(jsonData.projects)) {
+      db.projects = jsonData.projects;
+      restoredProjects = jsonData.projects.length;
+    }
+    
+    if (Array.isArray(jsonData.tasks)) {
+      db.tasks = jsonData.tasks;
+      restoredTasks = jsonData.tasks.length;
+    }
+    
+    if (Array.isArray(jsonData.notes)) {
+      db.notes = jsonData.notes;
+      restoredNotes = jsonData.notes.length;
+    }
+    
+    if (Array.isArray(jsonData.sync_urls)) {
+      db.sync_urls = jsonData.sync_urls;
+    }
+
+    engine.touched();
+    revalidatePath('/', 'layout');
+    
+    return { 
+      ok: true, 
+      message: `Đã khôi phục thành công! (${restoredTasks} tasks, ${restoredProjects} projects, ${restoredNotes} notes)` 
+    };
+  } catch (error: any) {
+    return { ok: false, error: error.message || String(error) };
+  }
+}
+
+export async function processJsonUploadAction(formData: FormData) {
+  if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
+
+  try {
+    const file = formData.get("file") as File;
+    if (!file) return { ok: false, error: "Không tìm thấy file" };
+
+    const text = await file.text();
+    const data = JSON.parse(text);
+
+    return await restoreFromJsonAction(data);
+  } catch (error: any) {
+    return { ok: false, error: "Lỗi đọc file JSON: " + (error.message || String(error)) };
+  }
+}

@@ -16,6 +16,7 @@ from app.schemas.project import ProjectSummary
 class TaskBase(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
+    assignee: str | None = None
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     project_id: uuid.UUID | None = None
@@ -57,6 +58,7 @@ class TaskUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = None
+    assignee: str | None = None
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     project_id: uuid.UUID | None = None

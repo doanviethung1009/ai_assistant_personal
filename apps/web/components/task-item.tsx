@@ -106,6 +106,11 @@ export function TaskItem({ task }: { task: Task }) {
                 {task.external_id}
               </a>
             ) : null}
+            {task.assignee ? (
+              <span className="rounded bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400">
+                @{task.assignee}
+              </span>
+            ) : null}
             {task.tags.map((tag) => (
               <TagBadge key={tag} tag={tag} />
             ))}

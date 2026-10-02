@@ -8,7 +8,7 @@ const nextConfig: NextConfig = {
   experimental: {
     // Cho phép Server Action nhận payload lớn hơn mặc định 1MB
     serverActions: {
-      bodySizeLimit: "2mb",
+      bodySizeLimit: "100mb",
     },
   },
   async headers() {

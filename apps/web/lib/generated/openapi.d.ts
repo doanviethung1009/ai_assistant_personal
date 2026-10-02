@@ -542,6 +542,7 @@ export interface components {
              * @description Vì sao cần và khi nào dùng
              */
             description?: string | null;
+      assignee?: string | null;
             /**
              * Context
              * @description Nơi áp dụng: host, database, môi trường
@@ -608,6 +609,7 @@ export interface components {
             content: string;
             /** Description */
             description: string | null;
+      assignee: string | null;
             /** Context */
             context: string | null;
             /** Project Id */
@@ -703,6 +705,7 @@ export interface components {
             content?: string | null;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             /** Context */
             context?: string | null;
             /** Project Id */
@@ -748,6 +751,7 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             /**
              * Color
              * @description Mã hex, ví dụ #2563eb
@@ -766,6 +770,7 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             /**
              * Color
              * @description Mã hex, ví dụ #2563eb
@@ -814,6 +819,7 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             /** Color */
             color?: string | null;
             /** Is Archived */
@@ -866,6 +872,7 @@ export interface components {
             title: string;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             /** @default todo */
             status: components["schemas"]["TaskStatus"];
             /** @default medium */
@@ -908,6 +915,7 @@ export interface components {
             title: string;
             /** Description */
             description: string | null;
+      assignee: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -996,6 +1004,7 @@ export interface components {
             title: string;
             /** Description */
             description: string | null;
+      assignee: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -1102,6 +1111,7 @@ export interface components {
             title?: string | null;
             /** Description */
             description?: string | null;
+      assignee?: string | null;
             status?: components["schemas"]["TaskStatus"] | null;
             priority?: components["schemas"]["TaskPriority"] | null;
             /** Project Id */
