@@ -1,129 +1,55 @@
-// Phản chiếu schema Pydantic của core API. Khi đổi backend, sửa cả file này.
-// Về sau nên sinh tự động từ /openapi.json thay vì viết tay.
+// Alias sang schema sinh tự động từ /openapi.json (components["schemas"]).
+// KHÔNG viết tay field của entity ở đây nữa — sửa backend thì chạy lại
+// `npm run gen:types` (hoặc `make gen-types` ở gốc repo), lib/generated/openapi.d.ts
+// tự khớp lại. File này chỉ còn: alias tên ngắn, type phụ trợ cho local
+// store (file/memory), và hằng số/label chỉ UI cần (không nằm trong OpenAPI
+// vì đó là quyết định hiển thị, không phải hợp đồng dữ liệu).
+import type { components } from "./generated/openapi";
 
-export type TaskStatus =
-  | "backlog"
-  | "todo"
-  | "in_progress"
-  | "blocked"
-  | "done"
-  | "cancelled";
+type Schemas = components["schemas"];
 
-export type TaskPriority = "low" | "medium" | "high" | "urgent";
-
-export type TaskSource =
-  | "manual"
-  | "jira"
-  | "calendar"
-  | "email"
-  | "obsidian"
-  | "github"
-  | "gitlab"
-  | "agent";
-
-export type TaskEventType =
-  | "created"
-  | "updated"
-  | "status_changed"
-  | "scheduled"
-  | "time_logged"
-  | "completed"
-  | "reopened"
-  | "note_added"
-  | "synced"
-  | "deleted"
-  | "restored";
-
-export interface ProjectSummary {
-  id: string;
-  key: string;
-  name: string;
-  color: string | null;
-}
-
-export interface Project extends ProjectSummary {
-  description: string | null;
-  is_archived: boolean;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface Task {
-  id: string;
-  title: string;
-  description: string | null;
-  status: TaskStatus;
-  priority: TaskPriority;
-  project_id: string | null;
-  project: ProjectSummary | null;
-  due_at: string | null;
-  scheduled_for: string | null;
-  estimate_minutes: number | null;
-  spent_minutes: number;
-  completed_at: string | null;
-  tags: string[];
-  source: TaskSource;
-  external_id: string | null;
-  external_url: string | null;
-  created_at: string;
-  updated_at: string;
-  /** Khác null nghĩa là đang ở trong thùng rác. */
-  deleted_at: string | null;
-  is_overdue: boolean;
-  /** Số ngày còn lại trước khi xoá vĩnh viễn. Null nếu chưa xoá. */
-  days_until_purge: number | null;
-}
-
-export interface TaskEvent {
-  id: string;
-  event_type: TaskEventType;
-  actor: string;
-  payload: Record<string, unknown> | null;
-  created_at: string;
-}
-
-export interface TaskDetail extends Task {
-  events: TaskEvent[];
-}
-
-// ── Sổ tay ─────────────────────────────────────────────────────────────
-
-export type NoteKind = "command" | "sql" | "text" | "config" | "code";
-
-export type NoteSource = "manual" | "obsidian" | "github" | "agent";
+export type TaskStatus = Schemas["TaskStatus"];
+export type TaskPriority = Schemas["TaskPriority"];
+export type TaskSource = Schemas["TaskSource"];
+export type TaskEventType = Schemas["TaskEventType"];
 
 /**
- * Một mục trong sổ tay: câu lệnh, câu SQL, đoạn cấu hình, ghi chú tự do.
- *
- * `content` là DỮ LIỆU. Web chỉ hiển thị và copy vào clipboard, không bao giờ
- * thực thi. Khi render phải dùng text node (JSX `{content}`), tuyệt đối không
- * dangerouslySetInnerHTML — nội dung do người dùng dán vào, có thể chứa HTML.
+ * `color` ở Pydantic cũng `default=None` nên optional trong schema sinh.
+ * Component (ProjectBadge) khai prop `color: string | null`, không nhận
+ * `undefined` — ép required tương tự WithRequiredDeletedAt ở dưới.
  */
-export interface Note {
-  id: string;
-  title: string;
-  kind: NoteKind;
-  content: string;
-  description: string | null;
-  /** Nơi áp dụng: host, database, môi trường. */
-  context: string | null;
-  project_id: string | null;
-  project: ProjectSummary | null;
-  tags: string[];
-  is_pinned: boolean;
-  /** Người dùng tự đánh dấu. UI cảnh báo trước khi copy. */
-  is_dangerous: boolean;
-  use_count: number;
-  last_used_at: string | null;
-  source: NoteSource;
-  external_id: string | null;
-  created_at: string;
-  updated_at: string;
-  /** Khác null nghĩa là đang ở trong thùng rác. */
+type WithRequiredColor<T extends { color?: string | null }> = Omit<
+  T,
+  "color"
+> & { color: string | null };
+
+export type ProjectSummary = WithRequiredColor<Schemas["ProjectSummary"]>;
+export type Project = WithRequiredColor<Schemas["ProjectRead"]>;
+
+/**
+ * `deleted_at` ở Pydantic khai `Field(default=None, ...)`, nên
+ * openapi-typescript sinh field này dạng optional (`deleted_at?`), suy ra
+ * type `string | null | undefined`. Nhưng FastAPI luôn serialize đủ field
+ * trong response thật — giá trị có thể là null, không bao giờ bị thiếu hẳn.
+ * Ép lại required ở đây để tránh phải xử lý `undefined` lan ra khắp UI.
+ */
+type WithRequiredDeletedAt<
+  T extends { deleted_at?: string | null; project?: unknown },
+> = Omit<T, "deleted_at" | "project"> & {
   deleted_at: string | null;
-  /** Số ngày còn lại trước khi xoá vĩnh viễn. Null nếu chưa xoá. */
-  days_until_purge: number | null;
-}
+  project?: ProjectSummary | null;
+};
+
+export type Task = WithRequiredDeletedAt<Schemas["TaskRead"]>;
+export type TaskEvent = Schemas["TaskEventRead"];
+/** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
+export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
+  events: TaskEvent[];
+};
+
+export type NoteKind = Schemas["NoteKind"];
+export type NoteSource = Schemas["NoteSource"];
+export type Note = WithRequiredDeletedAt<Schemas["NoteRead"]>;
 
 export interface NoteTrashResponse {
   items: Note[];
@@ -132,6 +58,57 @@ export interface NoteTrashResponse {
   offset: number;
   retention_days: number;
   purged_now: number;
+}
+
+/**
+ * Agenda/TrashResponse/NoteTrashResponse trong schema gốc tham chiếu tới
+ * TaskRead/NoteRead CHƯA ép required (xem WithRequiredDeletedAt ở trên), vì
+ * openapi-typescript không biết các response này luôn trả đủ field. Định
+ * nghĩa lại thủ công, dùng alias Task/Note đã ép required, để component
+ * nhận mảng Task[]/Note[] đúng kiểu mà không phải tự ép lại ở từng nơi gọi.
+ *
+ * openapi-typescript cũng đánh dấu overdue/scheduled_today/... là optional
+ * vì Pydantic khai bằng default_factory=list — nhưng response thật của GET
+ * /tasks/agenda luôn trả đủ mảng (rỗng nhất là []). Khai required ở đây.
+ */
+export interface Agenda {
+  reference_date: string;
+  overdue: Task[];
+  scheduled_today: Task[];
+  in_progress: Task[];
+  due_soon: Task[];
+  completed_today: Task[];
+  totals: Record<string, number>;
+}
+
+export type Stats = Schemas["TaskStatsResponse"];
+
+export interface TrashResponse {
+  items: Task[];
+  total: number;
+  limit: number;
+  offset: number;
+  retention_days: number;
+  purged_now: number;
+}
+
+export type PurgeResponse = Schemas["PurgeResponse"];
+
+export type ComponentHealth = Schemas["ComponentHealth"];
+export type HealthResponse = Schemas["HealthResponse"];
+export type SystemInfo = Schemas["SystemInfo"];
+
+/**
+ * Page[T] của core API là generic thật (`Page_TaskRead_`, `Page_NoteRead_`),
+ * openapi-typescript sinh ra một interface riêng cho mỗi lần dùng, không
+ * phải type generic của TypeScript. Khai lại generic ở đây để code gọi
+ * API không phải biết tên cụ thể từng cái.
+ */
+export interface Paged<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
 }
 
 export const NOTE_KIND_LABELS: Record<NoteKind, string> = {
@@ -162,48 +139,6 @@ export type NoteSortField =
   | "title"
   | "use_count"
   | "last_used_at";
-
-export interface Agenda {
-  reference_date: string;
-  overdue: Task[];
-  scheduled_today: Task[];
-  in_progress: Task[];
-  due_soon: Task[];
-  completed_today: Task[];
-  totals: Record<string, number>;
-}
-
-export interface Stats {
-  reference_date: string;
-  by_status: Record<string, number>;
-  by_priority: Record<string, number>;
-  completed_last_7_days: Record<string, number>;
-  open_total: number;
-  overdue_total: number;
-  minutes_logged_today: number;
-  trash_total: number;
-}
-
-export interface TrashResponse {
-  items: Task[];
-  total: number;
-  limit: number;
-  offset: number;
-  retention_days: number;
-  purged_now: number;
-}
-
-export interface PurgeResponse {
-  purged: number;
-  retention_days: number;
-}
-
-export interface Paged<T> {
-  items: T[];
-  total: number;
-  limit: number;
-  offset: number;
-}
 
 export const STATUS_LABELS: Record<TaskStatus, string> = {
   backlog: "Chờ xử lý",

@@ -5,6 +5,7 @@ import { ensureLoaded } from "./store/json-file";
 import { DATA_SOURCE, trashRetentionDays } from "./store/types";
 import type {
   Agenda,
+  HealthResponse,
   Note,
   NoteKind,
   NoteSortField,
@@ -13,6 +14,7 @@ import type {
   Project,
   PurgeResponse,
   Stats,
+  SystemInfo,
   Task,
   TaskDetail,
   TaskStatus,
@@ -118,6 +120,42 @@ async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return body as T;
+}
+
+/**
+ * Trạng thái của core API, cho trang Thông tin hệ thống.
+ *
+ * Gọi riêng, không qua coreFetch(): /health/ready không yêu cầu X-API-Key
+ * (xem app/api/health.py — probe của Prometheus/blackbox phải gọi được mà
+ * không cần khoá), và coreFetch() sẽ throw ngay nếu thiếu CORE_API_KEY dù
+ * endpoint này không cần nó. Ở chế độ file/memory không có core API thật để
+ * hỏi, nên trả về null — trang gọi hàm này tự hiển thị "không áp dụng".
+ */
+export async function getHealth(): Promise<HealthResponse | null> {
+  if (IS_LOCAL) return null;
+
+  const response = await fetch(`${BASE_URL}/health/ready`, { cache: "no-store" });
+  const text = await response.text();
+  const body: unknown = text ? JSON.parse(text) : null;
+
+  // health.py set status 503 khi degraded nhưng vẫn trả body hợp lệ —
+  // không throw ở đây, để trang tự hiển thị "degraded" kèm chi tiết.
+  if (!body || typeof body !== "object") {
+    throw new CoreApiError(`Core API trả về ${response.status} không có body`, response.status);
+  }
+  return body as HealthResponse;
+}
+
+/**
+ * Config vận hành không nhạy cảm, cho trang Thông tin hệ thống.
+ *
+ * Dùng coreFetch() bình thường vì /api/v1/system/info YÊU CẦU X-API-Key
+ * (khác /health/ready) — tự nó đã lọc field nhạy cảm ở phía backend
+ * (xem app/schemas/system.py), nên không cần làm gì thêm ở đây.
+ */
+export function getSystemInfo(): Promise<SystemInfo | null> {
+  if (IS_LOCAL) return Promise.resolve(null);
+  return coreFetch<SystemInfo>("/api/v1/system/info");
 }
 
 // ── Đọc ────────────────────────────────────────────────────────────────
