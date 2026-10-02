@@ -28,7 +28,11 @@ npm-debug.log*
 yarn-error.log*
 
 # ── Data / runtime ────────────────────────────────────────
-data/
+# "/data/" neo vào gốc repo (nơi DATA_SOURCE=file ghi file JSON). Thiếu "/"
+# đầu sẽ khớp MỌI thư mục tên "data" ở bất kỳ cấp nào — từng vô tình che mất
+# toàn bộ apps/web/app/data/ (route Next.js của trang Dữ liệu), khiến page.tsx
+# ở đó chưa bao giờ được track.
+/data/
 backups/
 *.db
 *.sqlite3
