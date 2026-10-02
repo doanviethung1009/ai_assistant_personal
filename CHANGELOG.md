@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- enforce dual logging to both markdown and json for ai traces, add helper script (`21b6301`)
 - implement AiLog database entity and prepare frontend JSON schema for trace log import (`c82c259`)
 - add AI Trace to primary navigation and update system prompt (`059fb3a`)
 - implement AI trace logging rule and initialize ai_logs.md (`618c701`)

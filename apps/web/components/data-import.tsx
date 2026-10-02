@@ -9,7 +9,8 @@ const INPUT_CLASS =
 const LABEL_CLASS = "mb-1 block text-xs font-medium text-[var(--color-ink-muted)]";
 
 const KINDS = [
-  { value: "json", label: "JSON đầy đủ", accept: ".json,application/json" },
+  { value: "json", label: "JSON Project/Task/Note", accept: ".json,application/json" },
+  { value: "ai-logs-json", label: "JSON Nhật ký AI (AiLogs)", accept: ".json,application/json" },
   { value: "tasks-csv", label: "CSV task", accept: ".csv,text/csv" },
   { value: "projects-csv", label: "CSV project", accept: ".csv,text/csv" },
   { value: "notes-csv", label: "CSV sổ tay", accept: ".csv,text/csv" },

@@ -23,8 +23,8 @@ import {
   restoreNote,
   restoreTask,
 } from "@/lib/api";
-import {
   importJson,
+  importAiLogsJson,
   importNotesCsv,
   importProjectsCsv,
   importTasksCsv,
@@ -476,6 +476,8 @@ export async function importDataAction(
 
     if (kind === "json") {
       summary = await importJson(text, mode);
+    } else if (kind === "ai-logs-json") {
+      summary = await importAiLogsJson(text, mode);
     } else if (kind === "tasks-csv") {
       summary = await importTasksCsv(text, mode);
     } else if (kind === "projects-csv") {

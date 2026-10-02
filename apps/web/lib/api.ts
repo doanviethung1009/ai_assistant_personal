@@ -586,3 +586,26 @@ export async function deleteGlobalTagApi(name: string): Promise<void> {
 export async function wipeAllDataApi(options?: { tasks?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
   if (IS_LOCAL) return local(() => engine.wipeAllData(options));
 }
+
+// ── AI Logs ───────────────────────────────────────────────────────────────
+
+export async function listAiLogs(): Promise<any[]> {
+  if (IS_LOCAL) {
+    return local(() => engine.snapshotAiLogs().ai_logs ?? []);
+  }
+  const res = await coreFetch<any>("/api/v1/ai-logs?limit=500");
+  return res.items ?? [];
+}
+
+export async function createAiLog(input: any): Promise<any> {
+  if (IS_LOCAL) {
+    // Actually, local ai_logs uses a different flow via JSON file, but for consistency if we wanted to import we just push to the snapshot
+    // In our case, we will handle ai-logs directly in transfer.ts via read/write JSON, since it's a separate file.
+    // So this might just be a stub for API mode.
+  }
+  return coreFetch<any>("/api/v1/ai-logs", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+

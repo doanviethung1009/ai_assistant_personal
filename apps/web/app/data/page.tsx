@@ -44,8 +44,13 @@ const SOURCE_INFO: Record<
 const EXPORTS = [
   {
     href: "/api/export?format=json",
-    title: "JSON đầy đủ",
+    title: "JSON Project, Task, Sổ tay",
     note: "Giữ nguyên tags và nhật ký thay đổi. Dùng để backup và để nạp lên Postgres sau này.",
+  },
+  {
+    href: "/api/export?format=json&entity=ai_logs",
+    title: "JSON Nhật ký AI (AiLogs)",
+    note: "Dữ liệu JSON thô của file ai-logs.json. Dùng để import/migrate lịch sử AI.",
   },
   {
     href: "/api/export?format=csv&entity=tasks",

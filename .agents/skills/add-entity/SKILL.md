@@ -43,8 +43,7 @@ Tham khảo entity `Task` hoặc `Note` đã có làm mẫu cho mỗi bước.
     bỏ sót nhất.
 12. **Server Action** — thêm mutation trong `app/actions.ts` nếu cần ghi từ
     client component.
-13. **Export/Import** — thêm vào `store/csv.ts`, `store/transfer.ts`, và
-    `app/api/export/route.ts` nếu entity cần xuất CSV/JSON như Task/Note.
+13. **Data Migration (Export/Import)** — **BẮT BUỘC:** Mọi Data/Entity phát sinh đều phải có cơ chế di chuyển giữa Local JSON và Database (Postgres). Bạn phải cập nhật UI Nhập dữ liệu (`components/data-import.tsx`), logic (`app/actions.ts`), luồng Export (`app/api/export/route.ts`), và lõi xử lý (`store/transfer.ts`) để người dùng có thể import/export entity mới này. Đừng để dữ liệu mới bị kẹt chết ở một môi trường.
 14. **Nav/UI** — nếu cần trang riêng, khai báo trong `lib/nav.ts` (không sửa
     `layout.tsx` trực tiếp).
 
