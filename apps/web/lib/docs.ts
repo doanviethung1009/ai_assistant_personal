@@ -51,60 +51,72 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "deploy-runbook.md"),
   },
   {
+    slug: "project-structure",
+    title: "Cấu trúc dự án",
+    description: "Giải thích các thư mục, file quan trọng và cách các rule được load tự động.",
+    file: path.join("docs", "PROJECT_STRUCTURE.md"),
+  },
+  {
+    slug: "ai-agent-guide",
+    title: "Hướng dẫn AI Agent",
+    description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
+    file: path.join("docs", "AI_AGENT_GUIDE.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:
       "Mục tiêu, ranh giới ngôn ngữ, nguyên tắc thiết kế, ràng buộc an toàn cho phần Ops.",
-    file: path.join(".kiro", "steering", "project.md"),
+    file: path.join(".agents", "rules", "project.md"),
   },
   {
     slug: "ops",
     title: "Bản đồ code",
     description:
-      "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết (steering/skill tự nạp theo file đang sửa).",
-    file: path.join(".kiro", "steering", "ops.md"),
+      "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết.",
+    file: path.join(".agents", "rules", "ops.md"),
   },
   {
     slug: "comment-style",
     title: "Quy ước comment",
     description:
       "Cách viết comment/docstring: banner section, cảnh báo an toàn, docstring giải thích WHY. Tự nạp khi sửa file code.",
-    file: path.join(".kiro", "steering", "comment-style.md"),
+    file: path.join(".agents", "rules", "comment-style.md"),
   },
   {
     slug: "backend-conventions",
     title: "Quy ước backend",
     description:
       "Route tĩnh/động, JSONB event, xoá mềm, partial unique index. Tự nạp khi sửa apps/core/.",
-    file: path.join(".kiro", "steering", "backend-conventions.md"),
+    file: path.join(".agents", "rules", "backend-conventions.md"),
   },
   {
     slug: "web-conventions",
     title: "Quy ước web",
     description:
       "API key không xuống browser, globalThis cho store, SCHEMA_VERSION. Tự nạp khi sửa apps/web/.",
-    file: path.join(".kiro", "steering", "web-conventions.md"),
+    file: path.join(".agents", "rules", "web-conventions.md"),
   },
   {
     slug: "skill-git-commit",
     title: "Skill: quy trình commit",
     description:
       "Conventional Commits, checklist trước khi commit, hook kiểm tra, changelog.",
-    file: path.join(".kiro", "skills", "git-commit", "SKILL.md"),
+    file: path.join(".agents", "skills", "git-commit", "SKILL.md"),
   },
   {
     slug: "skill-add-entity",
     title: "Skill: thêm entity mới",
     description:
       "Checklist 15 bước thêm model mới xuyên suốt backend và frontend.",
-    file: path.join(".kiro", "skills", "add-entity", "SKILL.md"),
+    file: path.join(".agents", "skills", "add-entity", "SKILL.md"),
   },
   {
     slug: "status",
     title: "Trạng thái bàn giao",
     description:
       "Phần nào đã verify, phần nào chưa, bug đã sửa, rủi ro còn lại.",
-    file: path.join(".kiro", "steering", "status.md"),
+    file: path.join(".agents", "rules", "status.md"),
   },
 ];
 

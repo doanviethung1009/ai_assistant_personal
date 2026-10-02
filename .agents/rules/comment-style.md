@@ -127,18 +127,17 @@ Mỗi khi AI **tạo mới, sửa đổi, hoặc xoá** một chức năng (feat
 
 **Hướng dẫn dành riêng cho AI khi auto-document:**
 
-1. **Ghi nhận thay đổi vào `docs/`**: Nếu dự án có thư mục `docs/` (ví dụ
-   `docs/AI_HANDOFF_STATE.md`), AI phải cập nhật hoặc bổ sung mô tả chức năng
-   mới/đã sửa vào file tài liệu phù hợp.
+1. **Ghi nhận thay đổi vào `docs/`**: AI phải cập nhật hoặc bổ sung mô tả chức năng mới/đã sửa vào file tài liệu phù hợp trong thư mục `docs/` hoặc `.agents/rules/`.
 2. **Nội dung cần ghi**:
    - Chức năng làm gì (mô tả ngắn gọn, 1–2 câu).
    - File chính liên quan (đường dẫn).
    - Các thay đổi đáng chú ý so với phiên bản trước (nếu là cập nhật).
    - Ngày cập nhật.
-3. **Không tạo tài liệu rác**: Chỉ ghi khi thay đổi có ý nghĩa ở mức chức
+3. **Thêm vào Tab Tài liệu (Quan trọng)**: NẾU bạn tạo mới một file tài liệu markdown (ví dụ khi tạo chức năng lớn, thêm Agent rule mới, hoặc hướng dẫn task mới), bạn **BẮT BUỘC PHẢI** mở file `apps/web/lib/docs.ts` và thêm thông tin file đó vào mảng `DOCS` để file được hiển thị lên "Tab Tài Liệu" trên giao diện Web.
+4. **Không tạo tài liệu rác**: Chỉ ghi khi thay đổi có ý nghĩa ở mức chức
    năng (thêm trang mới, thêm API endpoint, đổi luồng dữ liệu). Sửa lỗi nhỏ,
    refactor nội bộ, hay đổi style không cần ghi.
-4. **Giữ tài liệu đồng bộ với code**: Nếu xoá hoặc đổi tên chức năng, phải
+5. **Giữ tài liệu đồng bộ với code**: Nếu xoá hoặc đổi tên chức năng, phải
    cập nhật lại tài liệu tương ứng — tài liệu lỗi thời còn nguy hiểm hơn
    không có tài liệu.
 
