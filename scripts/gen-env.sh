@@ -27,7 +27,7 @@ cp .env.example .env
 set_var() {
   local key="$1" value="$2"
   # Dùng | làm phân cách vì giá trị hex không chứa ký tự này
-  sed -i "s|^${key}=.*|${key}=${value}|" .env
+  sed -i '' "s|^${key}=.*|${key}=${value}|" .env
 }
 
 set_var POSTGRES_PASSWORD "$(openssl rand -hex 20)"

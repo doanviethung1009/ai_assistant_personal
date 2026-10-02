@@ -55,7 +55,7 @@ step "Chuẩn hoá line ending"
 crlf_count=0
 while IFS= read -r -d '' file; do
   if grep -qU $'\r' "$file" 2>/dev/null; then
-    sed -i 's/\r$//' "$file"
+    sed -i '' 's/\r$//' "$file"
     crlf_count=$((crlf_count + 1))
   fi
 done < <(find scripts apps infra -type f \

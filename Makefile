@@ -51,14 +51,14 @@ restart: ## Khởi động lại api và web
 
 .PHONY: use-db
 use-db: ## Chuyển web sang DATA_SOURCE=api (Postgres), nguồn dữ liệu thật
-	@sed -i 's/^DATA_SOURCE=.*/DATA_SOURCE=api/' .env 2>/dev/null \
+	@sed -i '' 's/^DATA_SOURCE=.*/DATA_SOURCE=api/' .env 2>/dev/null \
 		|| echo "DATA_SOURCE=api" >> .env
 	$(DC) up -d web
 	@echo "  Đã đổi sang DATA_SOURCE=api. Dữ liệu nằm trong Postgres."
 
 .PHONY: use-local
 use-local: ## Chuyển web sang DATA_SOURCE=file, ghi vào ./data/, không cần Postgres
-	@sed -i 's/^DATA_SOURCE=.*/DATA_SOURCE=file/' .env 2>/dev/null \
+	@sed -i '' 's/^DATA_SOURCE=.*/DATA_SOURCE=file/' .env 2>/dev/null \
 		|| echo "DATA_SOURCE=file" >> .env
 	$(DC) up -d web
 	@echo "  Đã đổi sang DATA_SOURCE=file. Dữ liệu ghi vào ./data/builder-data.json."
@@ -293,8 +293,8 @@ changelog-preview: ## In changelog ra màn hình, không ghi file
 fix-eol: ## Đổi CRLF sang LF (chạy nếu gặp lỗi 'bad interpreter' sau khi copy từ Windows)
 	@find scripts apps infra -type f \
 		\( -name '*.sh' -o -name '*.py' -o -name '*.yml' -o -name '*.yaml' -o -name 'Dockerfile' \) \
-		-exec sed -i 's/\r$$//' {} +
-	@sed -i 's/\r$$//' Makefile docker-compose.yml docker-compose.prod.yml 2>/dev/null || true
+		-exec sed -i '' 's/\r$$//' {} +
+	@sed -i '' 's/\r$$//' Makefile docker-compose.yml docker-compose.prod.yml 2>/dev/null || true
 	@echo "Đã chuẩn hoá line ending sang LF."
 
 .PHONY: clean
