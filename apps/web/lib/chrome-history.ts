@@ -13,20 +13,69 @@ export interface ChromeHistoryEntry {
   last_visit_time: string; // ISO String
 }
 
-function getChromeHistoryPath(): string {
+function getChromeBaseDir(): string {
   const platform = os.platform();
   const home = os.homedir();
 
   switch (platform) {
-    case 'darwin': // macOS
-      return path.join(home, "Library/Application Support/Google/Chrome/Default/History");
-    case 'win32': // Windows
-      return path.join(home, "AppData/Local/Google/Chrome/User Data/Default/History");
-    case 'linux': // Linux
-      return path.join(home, ".config/google-chrome/Default/History");
+    case 'darwin':
+      return path.join(home, "Library/Application Support/Google/Chrome");
+    case 'win32':
+      return path.join(home, "AppData/Local/Google/Chrome/User Data");
+    case 'linux':
+      return path.join(home, ".config/google-chrome");
     default:
       throw new Error(`Nền tảng ${platform} chưa được hỗ trợ mặc định.`);
   }
+}
+
+function getChromeHistoryPath(): string {
+  return path.join(getChromeBaseDir(), "Default/History");
+}
+
+export interface ChromeProfile {
+  folder: string;       // "Default", "Profile 1", "Profile 3", ...
+  name: string;         // Tên hiển thị ("Work", "MAS-Group", ...)
+  email: string;        // Email (Gmail) đã đăng nhập
+  historyPath: string;  // Đường dẫn tuyệt đối tới file History
+  hasHistory: boolean;  // Có file History hay không
+}
+
+/**
+ * Liệt kê tất cả Chrome profile trên máy bằng cách đọc file Local State.
+ * Trả về danh sách profile kèm tên hiển thị, email, và đường dẫn file History.
+ */
+export async function listChromeProfiles(): Promise<ChromeProfile[]> {
+  const baseDir = getChromeBaseDir();
+  const localStatePath = path.join(baseDir, "Local State");
+
+  if (!fs.existsSync(localStatePath)) {
+    throw new Error(`Không tìm thấy file Local State tại: ${localStatePath}. Chrome có thể chưa được cài đặt.`);
+  }
+
+  const raw = fs.readFileSync(localStatePath, "utf8");
+  const state = JSON.parse(raw);
+  const infoCache = state?.profile?.info_cache || {};
+
+  const profiles: ChromeProfile[] = [];
+
+  for (const [folder, info] of Object.entries(infoCache)) {
+    const profileInfo = info as Record<string, any>;
+    const historyPath = path.join(baseDir, folder, "History");
+    
+    profiles.push({
+      folder,
+      name: profileInfo.name || folder,
+      email: profileInfo.user_name || profileInfo.gaia_name || profileInfo.gaia_given_name || "",
+      historyPath,
+      hasHistory: fs.existsSync(historyPath),
+    });
+  }
+
+  // Sắp xếp: profile có History lên trước
+  profiles.sort((a, b) => (a.hasHistory === b.hasHistory ? 0 : a.hasHistory ? -1 : 1));
+
+  return profiles;
 }
 
 /**
