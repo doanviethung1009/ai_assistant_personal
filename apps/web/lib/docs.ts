@@ -63,6 +63,12 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },
   {
+    slug: "api-reference",
+    title: "Tài liệu API Backend",
+    description: "Danh sách và mô tả các endpoint (Tasks, Notes, Projects, v.v.) dành cho frontend và Agent.",
+    file: path.join("docs", "API_REFERENCE.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:
