@@ -107,3 +107,12 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Sửa lỗi dư trường `schema_version` truyền xuống `restoreAiLogs` ở `apps/web/lib/store/transfer.ts`.
   - Sửa lỗi Typescript biến `itemDate` có thể undefined ở `apps/web/app/history/page.tsx`.
 - **Phản hồi:** Đã fix toàn bộ và kiểm tra compiler báo không còn lỗi. Tiến hành ghi log.
+
+---
+
+### [03-10-2026 02:16] | Category: [TOOL]
+- **Prompt:** "Kiểm tra các promt hiện tại có tự động đuọc log vào file json không?"
+- **Xử lý:**
+  - Mở file `data/ai-logs.json` để xác minh.
+  - Phân tích cơ chế "tự động" dựa trên sự tuân thủ (obedience) của Agent đối với luật `ai-logger.md` thay vì cơ chế webhook ngầm của hệ thống.
+- **Phản hồi:** Xác nhận các log đều đang được ghi đầy đủ và giải thích cơ chế hoạt động cho user.

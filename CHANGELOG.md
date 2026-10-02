@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- render ai-logs page from data store instead of raw markdown (`76be2ec`)
 - add import/export support for ai-logs and enforce data migration rules (`996d1d2`)
 - enforce dual logging to both markdown and json for ai traces, add helper script (`21b6301`)
 - implement AiLog database entity and prepare frontend JSON schema for trace log import (`c82c259`)
@@ -39,6 +40,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- trace fix errors log (`0bc3fe2`)
 - add local JSON storage split vs group evaluation rule to web-conventions (`8567a3e`)
 - document local JSON storage migration and SCHEMA_VERSION mechanism (`92c77c0`)
 - enforce automatic document synchronization rule in system prompt (`1d52dd6`)
