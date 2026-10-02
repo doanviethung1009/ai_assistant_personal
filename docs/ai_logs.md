@@ -66,3 +66,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Cập nhật file System Prompt `AGENTS.md` (Mục 3.3).
   - Bổ sung chỉ thị "Đồng bộ Tài liệu": Bắt buộc AI phải chủ động quét và cập nhật các file như `API_REFERENCE.md`, `PROJECT_STRUCTURE.md` mỗi khi có thay đổi mã nguồn tương ứng.
 - **Phản hồi:** Đã thêm Rule vào System Prompt. Từ nay mọi Agent đều sẽ tự động làm thao tác đồng bộ hoá document.
+
+---
+
+### [03-10-2026 01:47] | Category: [WEB]
+- **Prompt:** "SCHEMA_VERSION = 4 cái này là sao vậy bạn có mô tả gì chưa."
+- **Xử lý:**
+  - Phát hiện tài liệu giải thích về cơ chế Local JSON Storage (Data Migration JSON) còn thiếu.
+  - Tự động tuân thủ theo rule Đồng bộ Tài liệu: Tạo file `docs/JSON_STORAGE.md` mô tả tường tận tại sao hệ thống không dùng Alembic cho chế độ JSON mà tự viết cơ chế vòng lặp `if schema_version < x` để vá dữ liệu (Backfill).
+  - Đăng ký file này vào danh sách `apps/web/lib/docs.ts` để hiển thị trên UI.
+- **Phản hồi:** Giải thích ngắn gọn cơ chế Schema Version cho User và hướng dẫn họ xem chi tiết ở mục Tài liệu mới được tự động sinh.

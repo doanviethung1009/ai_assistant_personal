@@ -68,6 +68,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "AI_DATA_STORAGE.md"),
   },
   {
+    slug: "json-storage",
+    title: "Cơ chế Migration JSON (SCHEMA_VERSION)",
+    description: "Giải thích cách hệ thống nạp và bảo vệ file JSON cục bộ khi app được nâng cấp tính năng.",
+    category: "Tổng quan & Hướng dẫn",
+    file: path.join("docs", "JSON_STORAGE.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:
