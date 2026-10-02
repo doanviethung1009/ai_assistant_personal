@@ -19,23 +19,32 @@ ai_assistant_personal/
 ```
 
 ### 🎨 Frontend (`apps/web/`)
-Giao diện người dùng chính được xây dựng bằng Next.js App Router.
+Giao diện người dùng chính được xây dựng bằng Next.js App Router (React, TailwindCSS).
 
-| Thư mục/File | Chức năng chính | Ghi chú |
-|--------------|-----------------|---------|
-| `app/` | Chứa các trang (Pages) như `/history`, `/tasks`. | Mọi route web đều nằm ở đây. |
-| `components/`| Chứa các UI Components dùng chung (Button, Table). | Thiết kế độc lập, tái sử dụng. |
-| `lib/` | Chứa logic xử lý, cấu hình (như đọc Markdown, cào Chrome History). | |
-| `actions*.ts`| Các Server Actions để giao tiếp trực tiếp với Backend. | |
+| Thư mục / File quan trọng | Chức năng chính (Dev logic) | Ghi chú |
+|---------------------------|-----------------------------|---------|
+| `app/layout.tsx` | Root layout bọc toàn bộ ứng dụng, nạp CSS và Font. | |
+| `app/page.tsx` | Trang chủ (Dashboard chính). | |
+| `app/globals.css` | Chứa toàn bộ Design System, biến CSS (colors, spacing, animation). | Sửa theme ở đây. |
+| `app/[module]/page.tsx` | Các trang chức năng (history, tasks, notes, v.v.). | Ví dụ: `app/history/page.tsx` |
+| `components/` | Các UI Components dùng chung (Button, Table, Markdown...). | Độc lập, tái sử dụng cao. |
+| `lib/` | Hàm tiện ích client/server, thao tác dữ liệu. | Chứa `chrome-history.ts`, `format.ts`. |
+| `actions*.ts` | Các Server Actions (Next.js) thực thi logic phía server. | Gọi thẳng từ component thay cho API REST. |
+| `next.config.mjs` | Cấu hình webpack, env, routing cho Next.js. | |
 
 ### ⚙️ Backend (`apps/core/`)
-Xử lý logic nghiệp vụ và tương tác với cơ sở dữ liệu.
+API Server xử lý logic nghiệp vụ và tương tác Database.
 
-| Thư mục | Chức năng chính | Ghi chú |
-|---------|-----------------|---------|
-| `api/v1/` | Định nghĩa các endpoint REST API (Routes). | Điểm tiếp nhận request từ Web. |
-| `models/` | Định nghĩa cấu trúc bảng Database (SQLAlchemy). | Không dùng `create_all`, dùng Alembic. |
-| `services/` | Xử lý logic nghiệp vụ, tính toán. | Ví dụ: Logic đồng bộ, xử lý soft delete. |
+| Thư mục / File quan trọng | Chức năng chính (Dev logic) | Ghi chú |
+|---------------------------|-----------------------------|---------|
+| `app/main.py` | Entrypoint khởi tạo app FastAPI, đăng ký middleware, CORS. | Nơi chạy `uvicorn`. |
+| `app/core/config.py` | Quản lý biến môi trường (Pydantic BaseSettings). | Đọc từ `.env`. |
+| `app/db/` | Cấu hình kết nối DB, session và base model SQLAlchemy. | |
+| `app/models/` | Định nghĩa các bảng Database (Tasks, Notes, Projects). | Ánh xạ trực tiếp xuống DB. |
+| `app/schemas/`| Định nghĩa Pydantic models để validate Input/Output API. | Đảm bảo an toàn dữ liệu. |
+| `app/api/v1/` | Định nghĩa các endpoint REST API (Routes). | Chứa file như `tasks.py`, `notes.py`. |
+| `app/services/`| Logic nghiệp vụ thuần (CRUD, đồng bộ, tính toán). | Không dính dáng trực tiếp tới HTTP Request. |
+| `alembic/` | Thư mục quản lý phiên bản Database (Migrations). | Dùng lệnh `alembic upgrade head`. |
 
 ### Các thư mục hỗ trợ khác
 - **`data/`**: Chứa các file `*.json` sinh ra từ quá trình cào dữ liệu (như `chrome-history.json`).

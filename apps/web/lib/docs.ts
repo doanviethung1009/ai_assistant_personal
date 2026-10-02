@@ -17,6 +17,7 @@ export interface DocEntry {
   slug: string;
   title: string;
   description: string;
+  category: string;
   /** Đường dẫn tương đối so với DOCS_DIR. */
   file: string;
 }
@@ -27,6 +28,7 @@ export const DOCS: DocEntry[] = [
     title: "Hướng dẫn sử dụng",
     description:
       "Dành cho người dùng app: nhập task, làm việc hàng ngày, thùng rác, sao lưu, xử lý sự cố.",
+    category: "Tổng quan & Hướng dẫn",
     file: path.join("docs", "huong-dan-su-dung.md"),
   },
   {
@@ -34,38 +36,21 @@ export const DOCS: DocEntry[] = [
     title: "README",
     description:
       "Cách chạy, kiến trúc, mô hình dữ liệu, quyết định thiết kế và lý do.",
+    category: "Tổng quan & Hướng dẫn",
     file: "README.md",
-  },
-  {
-    slug: "gitflow",
-    title: "Mô hình Git và go-live",
-    description:
-      "Đường đi của code từ main qua uat tới prod, quy trình hotfix, rollback và tách môi trường.",
-    file: path.join("docs", "git-workflow.md"),
-  },
-  {
-    slug: "deploy",
-    title: "Runbook deploy",
-    description:
-      "Thứ tự lệnh cho từng tình huống: deploy lần đầu, update có migration, đổi .env, hotfix, rollback, troubleshooting.",
-    file: path.join("docs", "deploy-runbook.md"),
   },
   {
     slug: "project-structure",
     title: "Cấu trúc dự án",
     description: "Giải thích các thư mục, file quan trọng và cách các rule được load tự động.",
+    category: "Tổng quan & Hướng dẫn",
     file: path.join("docs", "PROJECT_STRUCTURE.md"),
-  },
-  {
-    slug: "ai-agent-guide",
-    title: "Hướng dẫn AI Agent",
-    description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
-    file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },
   {
     slug: "api-reference",
     title: "Tài liệu API Backend",
     description: "Danh sách và mô tả các endpoint (Tasks, Notes, Projects, v.v.) dành cho frontend và Agent.",
+    category: "Tổng quan & Hướng dẫn",
     file: path.join("docs", "API_REFERENCE.md"),
   },
   {
@@ -73,20 +58,54 @@ export const DOCS: DocEntry[] = [
     title: "Bối cảnh dự án",
     description:
       "Mục tiêu, ranh giới ngôn ngữ, nguyên tắc thiết kế, ràng buộc an toàn cho phần Ops.",
+    category: "Tổng quan & Hướng dẫn",
     file: path.join(".agents", "rules", "project.md"),
+  },
+  {
+    slug: "gitflow",
+    title: "Mô hình Git và go-live",
+    description:
+      "Đường đi của code từ main qua uat tới prod, quy trình hotfix, rollback và tách môi trường.",
+    category: "DevOps & Triển khai",
+    file: path.join("docs", "git-workflow.md"),
+  },
+  {
+    slug: "deploy",
+    title: "Runbook deploy",
+    description:
+      "Thứ tự lệnh cho từng tình huống: deploy lần đầu, update có migration, đổi .env, hotfix, rollback, troubleshooting.",
+    category: "DevOps & Triển khai",
+    file: path.join("docs", "deploy-runbook.md"),
   },
   {
     slug: "ops",
     title: "Bản đồ code",
     description:
       "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết.",
+    category: "DevOps & Triển khai",
     file: path.join(".agents", "rules", "ops.md"),
+  },
+  {
+    slug: "status",
+    title: "Trạng thái bàn giao",
+    description:
+      "Phần nào đã verify, phần nào chưa, bug đã sửa, rủi ro còn lại.",
+    category: "DevOps & Triển khai",
+    file: path.join(".agents", "rules", "status.md"),
+  },
+  {
+    slug: "ai-agent-guide",
+    title: "Hướng dẫn AI Agent",
+    description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },
   {
     slug: "comment-style",
     title: "Quy ước comment",
     description:
       "Cách viết comment/docstring: banner section, cảnh báo an toàn, docstring giải thích WHY. Tự nạp khi sửa file code.",
+    category: "Quy ước Code (AI Rules)",
     file: path.join(".agents", "rules", "comment-style.md"),
   },
   {
@@ -94,6 +113,7 @@ export const DOCS: DocEntry[] = [
     title: "Quy ước backend",
     description:
       "Route tĩnh/động, JSONB event, xoá mềm, partial unique index. Tự nạp khi sửa apps/core/.",
+    category: "Quy ước Code (AI Rules)",
     file: path.join(".agents", "rules", "backend-conventions.md"),
   },
   {
@@ -101,6 +121,7 @@ export const DOCS: DocEntry[] = [
     title: "Quy ước web",
     description:
       "API key không xuống browser, globalThis cho store, SCHEMA_VERSION. Tự nạp khi sửa apps/web/.",
+    category: "Quy ước Code (AI Rules)",
     file: path.join(".agents", "rules", "web-conventions.md"),
   },
   {
@@ -108,6 +129,7 @@ export const DOCS: DocEntry[] = [
     title: "Skill: quy trình commit",
     description:
       "Conventional Commits, checklist trước khi commit, hook kiểm tra, changelog.",
+    category: "Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "git-commit", "SKILL.md"),
   },
   {
@@ -115,15 +137,9 @@ export const DOCS: DocEntry[] = [
     title: "Skill: thêm entity mới",
     description:
       "Checklist 15 bước thêm model mới xuyên suốt backend và frontend.",
+    category: "Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "add-entity", "SKILL.md"),
-  },
-  {
-    slug: "status",
-    title: "Trạng thái bàn giao",
-    description:
-      "Phần nào đã verify, phần nào chưa, bug đã sửa, rủi ro còn lại.",
-    file: path.join(".agents", "rules", "status.md"),
-  },
+  }
 ];
 
 /** Thư mục gốc chứa tài liệu. Mặc định là gốc repo, tính từ apps/web. */

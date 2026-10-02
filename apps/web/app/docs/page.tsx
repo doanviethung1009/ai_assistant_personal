@@ -30,33 +30,43 @@ export default async function DocsPage({
       </div>
 
       {/* ── Chọn tài liệu ───────────────────────────────────────────── */}
-      <nav aria-label="Chọn tài liệu">
-        <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          {DOCS.map((doc) => {
-            const isActive = doc.slug === entry.slug;
-            return (
-              <li key={doc.slug}>
-                <Link
-                  href={`/docs?doc=${doc.slug}`}
-                  aria-current={isActive ? "page" : undefined}
-                  className={`block rounded-lg border p-3 transition-colors ${
-                    isActive
-                      ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10"
-                      : "border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:bg-[var(--color-surface-hover)]"
-                  }`}
-                >
-                  <span className="block text-sm font-medium">{doc.title}</span>
-                  <span className="mt-0.5 block text-xs text-[var(--color-ink-muted)]">
-                    {doc.description}
-                  </span>
-                  <code className="mt-1.5 block truncate text-xs text-[var(--color-ink-muted)]">
-                    {doc.file.replace(/\\/g, "/")}
-                  </code>
-                </Link>
-              </li>
-            );
-          })}
-        </ul>
+      <nav aria-label="Chọn tài liệu" className="flex flex-col gap-8">
+        {Array.from(new Set(DOCS.map(doc => doc.category))).map(category => {
+          const categoryDocs = DOCS.filter(doc => doc.category === category);
+          return (
+            <div key={category}>
+              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+                {category}
+              </h2>
+              <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {categoryDocs.map((doc) => {
+                  const isActive = doc.slug === entry.slug;
+                  return (
+                    <li key={doc.slug}>
+                      <Link
+                        href={`/docs?doc=${doc.slug}`}
+                        aria-current={isActive ? "page" : undefined}
+                        className={`block rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                          isActive
+                            ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/20"
+                            : "border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:border-[var(--color-ink-muted)]/30"
+                        }`}
+                      >
+                        <span className="block text-sm font-medium">{doc.title}</span>
+                        <span className="mt-1 block text-xs text-[var(--color-ink-muted)] leading-relaxed line-clamp-2">
+                          {doc.description}
+                        </span>
+                        <code className="mt-2 block truncate text-[10px] text-[var(--color-ink-muted)] opacity-60">
+                          {doc.file.replace(/\\/g, "/")}
+                        </code>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          );
+        })}
       </nav>
 
       {/* ── Nội dung ────────────────────────────────────────────────── */}
