@@ -110,6 +110,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "AGENT_PROMPT_EXAMPLES.md"),
   },
   {
+    slug: "create-ai-customizations",
+    title: "Cách tạo Skills, Rules & Hooks",
+    description:
+      "Hướng dẫn chi tiết (step-by-step) cách tự tạo thêm Rule, Skill, Hook và cấu hình Plugin MCP cho dự án.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "CREATE_AI_CUSTOMIZATIONS.md"),
+  },
+  {
     slug: "ai-agent-guide",
     title: "Hướng dẫn AI Agent",
     description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
