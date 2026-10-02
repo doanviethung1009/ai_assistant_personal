@@ -42,21 +42,21 @@ export default async function DocsPage({
                 {categoryDocs.map((doc) => {
                   const isActive = doc.slug === entry.slug;
                   return (
-                    <li key={doc.slug}>
+                    <li key={doc.slug} className="h-full">
                       <Link
                         href={`/docs?doc=${doc.slug}`}
                         aria-current={isActive ? "page" : undefined}
-                        className={`block rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                        className={`flex flex-col h-full rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
                           isActive
                             ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/20"
                             : "border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:border-[var(--color-ink-muted)]/30"
                         }`}
                       >
                         <span className="block text-sm font-medium">{doc.title}</span>
-                        <span className="mt-1 block text-xs text-[var(--color-ink-muted)] leading-relaxed line-clamp-2">
+                        <span className="mt-1 block text-xs text-[var(--color-ink-muted)] leading-relaxed">
                           {doc.description}
                         </span>
-                        <code className="mt-2 block truncate text-[10px] text-[var(--color-ink-muted)] opacity-60">
+                        <code className="mt-auto pt-3 block truncate text-[10px] text-[var(--color-ink-muted)] opacity-60">
                           {doc.file.replace(/\\/g, "/")}
                         </code>
                       </Link>
