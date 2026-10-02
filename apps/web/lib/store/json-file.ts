@@ -30,6 +30,10 @@ export function dataFilePath(): string {
   return path.join(dataDir(), "builder-data.json");
 }
 
+export function aiLogsFilePath(): string {
+  return path.join(dataDir(), "ai-logs.json");
+}
+
 // ── Tuần tự hoá ghi ────────────────────────────────────────────────────
 
 let writeChain: Promise<unknown> = Promise.resolve();
@@ -65,6 +69,13 @@ export function save(): Promise<void> {
   return enqueue(async () => {
     const data = engine.snapshot();
     await writeAtomic(dataFilePath(), JSON.stringify(data, null, 2));
+  });
+}
+
+export function saveAiLogs(): Promise<void> {
+  return enqueue(async () => {
+    const data = engine.snapshotAiLogs();
+    await writeAtomic(aiLogsFilePath(), JSON.stringify(data, null, 2));
   });
 }
 
@@ -118,16 +129,8 @@ export function migrate(data: DataFile): DataFile {
     data.schema_version = 3;
   }
 
-  // v3 → v4: bổ sung mảng `ai_logs`.
-  //
-  // Phải backfill thành mảng rỗng để engine không ném lỗi.
-  if (data.schema_version < 4) {
-    if (!Array.isArray(data.ai_logs)) {
-      data.ai_logs = [];
-      console.info("[store] migrate v3→v4: thêm mảng ai_logs rỗng");
-    }
-    data.schema_version = 4;
-  }
+  // Không còn migrate ai_logs chung vào DataFile (SCHEMA_VERSION = 4).
+  // Đã dọn dẹp logic ai_logs.
 
   return data;
 }
@@ -189,6 +192,28 @@ async function initialise(): Promise<void> {
   });
 
   await save();
+  
+  // Khởi tạo file ai-logs.json
+  await initialiseAiLogs();
+}
+
+async function initialiseAiLogs(): Promise<void> {
+  const file = aiLogsFilePath();
+  try {
+    const raw = await readFile(file, "utf8");
+    const parsed: unknown = JSON.parse(raw);
+    engine.restoreAiLogs(parsed as { ai_logs?: any[] });
+    console.info(`[store] đã nạp ai_logs từ ${file}`);
+  } catch (error) {
+    console.info(`[store] chưa có ${file}, sẽ tạo mới khi có dữ liệu.`);
+    engine.restoreAiLogs({ ai_logs: [] });
+  }
+
+  engine.setAiLogsChangeHandler(() => {
+    void saveAiLogs().catch((error: unknown) => {
+      console.error("[store] ghi file ai-logs thất bại:", error);
+    });
+  });
 }
 
 export function ensureLoaded(): Promise<void> {

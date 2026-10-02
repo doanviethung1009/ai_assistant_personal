@@ -20,7 +20,11 @@ Mỗi khi hệ thống có thêm một tính năng mới yêu cầu thêm trư�
 - **v1**: Phiên bản sơ khai (Chỉ có `tasks` và `projects`).
 - **v2**: Thêm trường `deleted_at` vào Task để phục vụ tính năng Thùng rác.
 - **v3**: Thêm mảng `notes` để phục vụ tính năng Sổ tay (Notes).
-- **v4**: Thêm mảng `ai_logs` để chuẩn bị cho tính năng Truy vết AI.
+- **v4**: Phiên bản dọn dẹp (Lược bỏ `ai_logs` khỏi file chính).
+
+> [!NOTE]
+> **Thiết kế phân mảnh (Split Storage):** 
+> Dữ liệu `ai_logs` là dạng append-only (ghi thêm) và phình to rất nhanh. Nếu để chung trong `builder-data.json`, mỗi khi bạn đánh dấu "Done" một Task, hệ thống sẽ phải ghi đè (Atomic Write) toàn bộ 10MB dữ liệu AI, gây giật lag nghiêm trọng. Do đó, từ Schema v4 trở đi, `ai_logs` được tách ra lưu riêng tại file `data/ai-logs.json`. Khối xử lý `json-file.ts` và `engine.ts` quản lý việc ghi 2 file này hoàn toàn độc lập.
 
 ---
 

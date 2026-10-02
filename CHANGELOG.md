@@ -35,6 +35,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- document local JSON storage migration and SCHEMA_VERSION mechanism (`92c77c0`)
 - enforce automatic document synchronization rule in system prompt (`1d52dd6`)
 - append latest git changelog tracking process to AI trace log (`018e2ab`)
 - add guide on AI data storage architecture (markdown vs database) (`5d09c46`)

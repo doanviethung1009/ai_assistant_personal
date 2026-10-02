@@ -92,6 +92,7 @@ interface StoreState {
   minutesLoggedDate: string;
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
   onChange: (() => void) | null;
+  onAiLogsChange: (() => void) | null;
 }
 
 const globalState = globalThis as typeof globalThis & {
@@ -107,6 +108,7 @@ export function state(): StoreState {
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
     onChange: null,
+    onAiLogsChange: null,
   };
   return globalState.__builderStoreState;
 }
@@ -115,8 +117,16 @@ export function setChangeHandler(handler: (() => void) | null): void {
   state().onChange = handler;
 }
 
+export function setAiLogsChangeHandler(handler: (() => void) | null): void {
+  state().onAiLogsChange = handler;
+}
+
 export function touched(): void {
   state().onChange?.();
+}
+
+export function touchedAiLogs(): void {
+  state().onAiLogsChange?.();
 }
 
 // ── Snapshot / restore, dùng bởi lớp persistence ────────────────────────
@@ -129,11 +139,19 @@ export function snapshot(): DataFile {
     projects: structuredClone(store.projects),
     tasks: structuredClone(store.tasks),
     notes: structuredClone(store.notes),
-    ai_logs: structuredClone(store.ai_logs),
     meta: {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
     },
+  };
+}
+
+export function snapshotAiLogs(): { schema_version: number; exported_at: string; ai_logs: any[] } {
+  const store = state();
+  return {
+    schema_version: 1, // Phiên bản độc lập cho ai_logs.json
+    exported_at: nowIso(),
+    ai_logs: structuredClone(store.ai_logs),
   };
 }
 
@@ -144,7 +162,12 @@ export function restore(data: DataFile): void {
   // `?? []` là lớp bảo vệ thứ hai sau bước migrate v2→v3. File v2 đọc trực
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
-  store.ai_logs = data.ai_logs ?? [];
+  
+  // Tương thích ngược: Nếu file cũ v4 có chứa ai_logs (trước khi tách), ta nạp nó vào RAM tạm.
+  if ("ai_logs" in data && Array.isArray((data as any).ai_logs)) {
+    store.ai_logs = (data as any).ai_logs;
+  }
+  
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();
 
@@ -153,6 +176,11 @@ export function restore(data: DataFile): void {
     store.minutesLoggedToday = 0;
     store.minutesLoggedDate = isoDate();
   }
+}
+
+export function restoreAiLogs(data: { ai_logs?: any[] }): void {
+  const store = state();
+  store.ai_logs = data.ai_logs ?? [];
 }
 
 export function isEmpty(): boolean {
