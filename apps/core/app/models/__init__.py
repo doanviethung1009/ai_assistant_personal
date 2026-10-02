@@ -6,6 +6,7 @@ là có thể sinh migration DROP bảng đó.
 
 from app.db.base import Base
 from app.models.enums import (
+    AiLogCategory,
     NoteKind,
     NoteSource,
     TaskEventType,
@@ -13,11 +14,14 @@ from app.models.enums import (
     TaskSource,
     TaskStatus,
 )
+from app.models.ai_log import AiLog
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
 
 __all__ = [
+    "AiLog",
+    "AiLogCategory",
     "Base",
     "Note",
     "NoteKind",

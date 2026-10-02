@@ -44,3 +44,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Sửa lại đường dẫn Menu trong `apps/web/lib/nav.ts` trỏ tới đúng `/ai-logs`.
   - Sửa lại cấu hình `apps/web/lib/docs.ts`: Ở phần Tài liệu, mục AI Logs giờ đây sẽ render nội dung của file luật `.agents/rules/ai-logger.md` (giải thích chức năng và cơ chế nạp) thay vì hiển thị toàn bộ nội dung nhật ký dài ngoằng.
 - **Phản hồi:** Lỗi 404 đã được khắc phục. File tài liệu cũng đã được phân tách rõ ràng giữa "Hiển thị Dữ liệu" và "Hiển thị Luật".
+
+---
+
+### [03-10-2026 01:40] | Category: [API]
+- **Prompt:** "Data của trace log này nên lưu theo json và giống data task cần import vào."
+- **Xử lý:**
+  - Bắt đầu chuyển đổi luồng dữ liệu AI Trace sang hướng Database (DATA_SOURCE).
+  - Khởi tạo Data Model `AiLog` và schema chuẩn Pydantic.
+  - Xây dựng file Service `ai_log_service.py` hỗ trợ filter, pagination và create.
+  - Xây dựng API Route `api/v1/ai_logs.py` chuẩn REST. Đã register vào hệ thống.
+  - Thay đổi cấu trúc file `DataFile` ở phía Frontend để chuẩn bị đón file JSON chứa `ai_logs`.
+  - Cập nhật tài liệu `AI_DATA_STORAGE.md` bổ sung hướng dẫn cài đặt Docker và Migrate tiếp theo.
+- **Phản hồi:** Thông báo User rằng toàn bộ nền móng Backend và cấu trúc JSON đã làm xong, chờ môi trường có Docker chạy lệnh Migrate là sẽ có thể code nốt màn hình UI cho Dữ liệu có cấu trúc.

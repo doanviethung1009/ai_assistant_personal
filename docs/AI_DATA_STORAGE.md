@@ -41,3 +41,21 @@ Nghĩa là, dữ liệu sẽ được chia làm 3 hướng lưu trữ dựa trê
 
 - **Dùng Luồng 1 (Markdown):** Khi bạn chỉ muốn ghi chép quá trình sửa code của Agent để người khác/model khác vào đọc lại dễ hiểu.
 - **Dùng Luồng 2 (Database/JSON):** Khi bạn xây dựng một giao diện "Khung Chat AI" (Giống ChatGPT) ngay trên Web UI, cần lưu lại hàng ngàn câu hỏi của User, có chức năng tìm kiếm, phân trang và xoá lịch sử chat. (Để làm được điều này, bạn cần gọi skill `add-entity`).
+
+---
+
+## 3. Lộ trình chuyển đổi AI Trace Logs sang Database
+Hệ thống hiện tại đang trong quá trình chuyển đổi (Refactor) hệ thống lưu vết AI Logs từ Luồng 1 (Markdown) sang Luồng 2 (Database/JSON) giống như thực thể `Task` để phục vụ Import/Export.
+
+**Các bước đã hoàn thành:**
+1. Đã tạo Database Model `AiLog` (`apps/core/app/models/ai_log.py`).
+2. Đã tạo Enum, Schema (`apps/core/app/schemas/ai_log.py`).
+3. Đã tạo Service xử lý logic (`apps/core/app/services/ai_log_service.py`).
+4. Đã định nghĩa API Router (`apps/core/app/api/v1/ai_logs.py`) và gắn vào app.
+5. Đã khai báo schema `ai_logs: any[]` vào `DataFile` ở thư mục frontend (`apps/web/lib/store/types.ts`) và nâng `SCHEMA_VERSION` lên 4.
+
+**Các bước cần làm tiếp theo (Người dùng thực hiện):**
+Để hoàn thiện tính năng, hãy mở Terminal (ở nơi có cài đặt Docker/Python) và chạy các lệnh sau:
+1. Chạy `make migration m="add_ai_logs"` và `make migrate` để tạo bảng trong CSDL Postgres.
+2. Chạy `make gen-types` để tự động sinh file `openapi.d.ts` ở Frontend, giúp map kiểu dữ liệu cho giao diện.
+3. Cài đặt các hàm thao tác file tại Frontend (ví dụ: `apps/web/lib/store/json-file.ts`) để hỗ trợ Export file JSON cho `AiLogs`.

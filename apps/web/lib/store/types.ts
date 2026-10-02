@@ -63,6 +63,7 @@ export interface DataFile {
   projects: Project[];
   tasks: StoredTask[];
   notes: StoredNote[];
+  ai_logs: any[]; // Tạm thời dùng any, sẽ cập nhật type sau khi gen-types
   meta: {
     minutes_logged_today: number;
     /** Ngày ứng với minutes_logged_today, để reset khi sang ngày mới. */
@@ -75,9 +76,10 @@ export interface DataFile {
  *   1 → bản đầu
  *   2 → thêm `deleted_at` cho thùng rác
  *   3 → thêm mảng `notes` cho sổ tay
+ *   4 → thêm mảng `ai_logs`
  *
  * Đổi cấu trúc thì PHẢI tăng số này và viết bước migrate trong json-file.ts.
  * Thêm field mà không backfill thì dữ liệu cũ đọc lên là `undefined`, và code
  * so sánh `=== null` sẽ hiểu sai.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;

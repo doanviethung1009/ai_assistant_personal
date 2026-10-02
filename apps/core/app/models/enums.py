@@ -107,3 +107,11 @@ class TaskEventType(StrEnum):
     DELETED = "deleted"
     # Lấy lại từ thùng rác
     RESTORED = "restored"
+
+
+class AiLogCategory(StrEnum):
+    APP = "app"
+    API = "api"
+    WEB = "web"
+    TOOL = "tool"
+    OTHER = "other"

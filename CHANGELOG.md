@@ -23,6 +23,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Sửa lỗi
 
+- create dedicated /ai-logs page and fix docs navigation 404 error (`ed6ca69`)
 - update docker volumes and deploy runbook to use .agents instead of .kiro (`bc1ad67`)
 - restore deleted skills folder from git and move to .agents/skills (`e42b1ae`)
 - update import actions and patch scripts (`c058584`)
