@@ -61,6 +61,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "ai_logs.md"),
   },
   {
+    slug: "ai-data-storage",
+    title: "Lưu trữ Dữ liệu AI",
+    description: "Kiến trúc lưu trữ 2 luồng: Trace Log (Markdown) và Entity (Database/JSON) dành cho AI.",
+    category: "Tổng quan & Hướng dẫn",
+    file: path.join("docs", "AI_DATA_STORAGE.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:
