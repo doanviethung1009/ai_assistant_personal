@@ -50,6 +50,12 @@ class Settings(BaseSettings):
     # Đặt 0 nghĩa là xoá ngay, không qua thùng rác.
     trash_retention_days: int = Field(default=30, ge=0, le=365)
 
+    # ── Rate limit ──────────────────────────────────────────────────
+    # Đếm theo cửa sổ 60s ở Redis, xem core/rate_limit.py. Bật mặc định vì
+    # một API key tĩnh không có gì ngăn một client lỗi gọi lặp vô hạn.
+    rate_limit_enabled: bool = True
+    rate_limit_requests_per_minute: int = Field(default=120, ge=1)
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _parse_origins(cls, value: object) -> object:

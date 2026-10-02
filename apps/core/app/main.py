@@ -14,6 +14,7 @@ from app.api.v1.router import api_router
 from app.core.config import settings
 from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
+from app.core.rate_limit import setup_rate_limit
 from app.db.redis import close_redis
 from app.db.session import engine
 from app.services.errors import DomainError
@@ -57,6 +58,7 @@ app.add_middleware(
 )
 
 setup_metrics(app, version=__version__, environment=settings.environment)
+setup_rate_limit(app)
 
 
 @app.exception_handler(DomainError)
