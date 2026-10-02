@@ -33,3 +33,14 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Bổ sung luật Ghi nhật ký (AI Task Trace) vào mục 3.4 của file `AGENTS.md` (Root Protocol) để bắt buộc tất cả các AI đều phải biết quy tắc này từ khi mới vào dự án. Đánh số lại các mục.
   - Cập nhật file `apps/web/lib/nav.ts`, bổ sung một Menu Tab mới có tên là **AI Trace** điều hướng thẳng tới `/docs/ai-logs`.
 - **Phản hồi:** Tính năng truy vết đã lên sóng dưới dạng một Tab độc lập trên giao diện người dùng.
+
+---
+
+### [03-10-2026 01:34] | Category: [WEB]
+- **Prompt:** "Cái tab AI trace đang bị lỗi nên move menu Nhật ký qua tab này, chỗ tài liệu chỉ nên mô tả chức năng và rule."
+- **Xử lý:**
+  - Nhận diện lỗi: Next.js báo 404 vì đường dẫn `/docs/ai-logs` trên thanh Menu không hợp lệ (Do thư mục `docs/` dùng Search Params `/docs?doc=` chứ không phải Slug params `/docs/[slug]`).
+  - Tạo mới một Page độc lập hoàn toàn tại `apps/web/app/ai-logs/page.tsx` để chuyên render file nhật ký này.
+  - Sửa lại đường dẫn Menu trong `apps/web/lib/nav.ts` trỏ tới đúng `/ai-logs`.
+  - Sửa lại cấu hình `apps/web/lib/docs.ts`: Ở phần Tài liệu, mục AI Logs giờ đây sẽ render nội dung của file luật `.agents/rules/ai-logger.md` (giải thích chức năng và cơ chế nạp) thay vì hiển thị toàn bộ nội dung nhật ký dài ngoằng.
+- **Phản hồi:** Lỗi 404 đã được khắc phục. File tài liệu cũng đã được phân tách rõ ràng giữa "Hiển thị Dữ liệu" và "Hiển thị Luật".

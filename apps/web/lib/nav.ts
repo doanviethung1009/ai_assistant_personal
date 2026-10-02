@@ -38,7 +38,7 @@ export const SECONDARY_NAV: NavItem[] = [
   { href: "/roadmap", label: "Lộ trình" },
   { href: "/docs", label: "Tài liệu" },
   { href: "/api-docs", label: "API" },
-  { href: "/docs/ai-logs", label: "AI Trace" },
+  { href: "/ai-logs", label: "AI Trace" },
   { href: "/system", label: "Hệ thống" },
   { href: "/data", label: "Dữ liệu" },
 ];

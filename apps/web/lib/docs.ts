@@ -55,10 +55,10 @@ export const DOCS: DocEntry[] = [
   },
   {
     slug: "ai-logs",
-    title: "Nhật ký AI (Task Trace & Audit)",
-    description: "Lưu vết tự động các prompt, phân tích, và kết quả thực thi của Agent để phục vụ training.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "ai_logs.md"),
+    title: "Quy tắc Nhật ký AI (Task Trace)",
+    description: "Cơ chế tự động lưu vết các quyết định, prompt và xử lý của Agent.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join(".agents", "rules", "ai-logger.md"),
   },
   {
     slug: "ai-data-storage",
