@@ -118,6 +118,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CREATE_AI_CUSTOMIZATIONS.md"),
   },
   {
+    slug: "multi-agent-workflow",
+    title: "Demo: Multi-Agent Workflow",
+    description:
+      "Kịch bản thực tế cách chia việc (phân quyền) cho nhiều AI Agent phối hợp phát triển 1 tính năng lớn.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "MULTI_AGENT_WORKFLOW.md"),
+  },
+  {
     slug: "ai-agent-guide",
     title: "Hướng dẫn AI Agent",
     description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
