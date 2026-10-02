@@ -47,24 +47,33 @@ if [[ -z "$log_lines" ]]; then
   exit 1
 fi
 
-declare -A GROUP_TITLE=(
-  [feat]="Thêm mới"
-  [fix]="Sửa lỗi"
-  [docs]="Tài liệu"
-  [refactor]="Tái cấu trúc"
-  [perf]="Hiệu năng"
-  [test]="Kiểm tra"
-  [build]="Build"
-  [ci]="CI/CD"
-  [chore]="Dọn dẹp"
-  [other]="Khác"
-)
-# Thứ tự hiển thị cố định, không theo alphabet, để feat/fix luôn lên đầu —
-# đó là phần người đọc changelog quan tâm nhất.
-GROUP_ORDER=(feat fix docs refactor perf test build ci chore other)
+BUCKET_feat=""
+BUCKET_fix=""
+BUCKET_docs=""
+BUCKET_refactor=""
+BUCKET_perf=""
+BUCKET_test=""
+BUCKET_build=""
+BUCKET_ci=""
+BUCKET_chore=""
+BUCKET_other=""
 
-declare -A BUCKET
-for key in "${GROUP_ORDER[@]}"; do BUCKET["$key"]=""; done
+get_title() {
+  case "$1" in
+    feat) echo "Thêm mới" ;;
+    fix) echo "Sửa lỗi" ;;
+    docs) echo "Tài liệu" ;;
+    refactor) echo "Tái cấu trúc" ;;
+    perf) echo "Hiệu năng" ;;
+    test) echo "Kiểm tra" ;;
+    build) echo "Build" ;;
+    ci) echo "CI/CD" ;;
+    chore) echo "Dọn dẹp" ;;
+    *) echo "Khác" ;;
+  esac
+}
+
+GROUP_ORDER=(feat fix docs refactor perf test build ci chore other)
 
 while IFS=$'\t' read -r hash subject; do
   [[ -z "$hash" ]] && continue
@@ -74,14 +83,15 @@ while IFS=$'\t' read -r hash subject; do
 
   if [[ "$subject" =~ ^([a-z]+)(\([a-z0-9/_-]+\))?!?:[[:space:]]*(.+)$ ]]; then
     candidate="${BASH_REMATCH[1]}"
-    if [[ -n "${GROUP_TITLE[$candidate]:-}" ]]; then
+    if [[ "$candidate" == "feat" || "$candidate" == "fix" || "$candidate" == "docs" || "$candidate" == "refactor" || "$candidate" == "perf" || "$candidate" == "test" || "$candidate" == "build" || "$candidate" == "ci" || "$candidate" == "chore" ]]; then
       type="$candidate"
       desc="${BASH_REMATCH[3]}"
     fi
   fi
 
   line="- ${desc} (\`${hash}\`)"
-  BUCKET["$type"]+="${line}"$'\n'
+  eval "BUCKET_${type}=\"\${BUCKET_${type}}\${line}
+\""
 done <<< "$log_lines"
 
 today="$(date +%F)"
@@ -90,7 +100,7 @@ today="$(date +%F)"
   echo "# Changelog"
   echo ""
   echo "Sinh tự động bằng \`bash scripts/changelog.sh --write\` từ \`git log\`,"
-  echo "gom theo type của [Conventional Commits](.kiro/skills/git-commit/SKILL.md)."
+  echo "gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md)."
   echo "Đừng sửa tay — chạy lại script sau khi có commit mới."
   echo ""
   echo "## [Chưa phát hành] — cập nhật lần cuối ${today}"
@@ -98,12 +108,15 @@ today="$(date +%F)"
 
   any_section=0
   for key in "${GROUP_ORDER[@]}"; do
-    [[ -z "${BUCKET[$key]}" ]] && continue
-    any_section=1
-    echo "### ${GROUP_TITLE[$key]}"
-    echo ""
-    printf '%s' "${BUCKET[$key]}"
-    echo ""
+    eval "val=\"\${BUCKET_${key}}\""
+    if [[ -n "$val" ]]; then
+      any_section=1
+      title=$(get_title "$key")
+      echo "### ${title}"
+      echo ""
+      printf '%s' "$val"
+      echo ""
+    fi
   done
 
   [[ "$any_section" -eq 0 ]] && echo "_Không có commit nào trong khoảng đã chọn._"
