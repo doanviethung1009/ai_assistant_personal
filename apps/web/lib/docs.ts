@@ -102,6 +102,14 @@ export const DOCS: DocEntry[] = [
     file: "AGENTS.md",
   },
   {
+    slug: "agent-prompts",
+    title: "Thư viện Prompt mẫu",
+    description:
+      "Các mẫu câu lệnh giao tiếp với AI tối ưu nhất (Tạo chức năng, Debug, Refactor, Commit).",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "AGENT_PROMPT_EXAMPLES.md"),
+  },
+  {
     slug: "ai-agent-guide",
     title: "Hướng dẫn AI Agent",
     description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
