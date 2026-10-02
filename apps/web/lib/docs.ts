@@ -94,6 +94,14 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "rules", "status.md"),
   },
   {
+    slug: "agents",
+    title: "AGENTS (System Prompt)",
+    description:
+      "Luật tối cao và bản đồ tư duy bắt buộc mọi AI Agent phải đọc trước khi làm việc.",
+    category: "Quy ước Code (AI Rules)",
+    file: "AGENTS.md",
+  },
+  {
     slug: "ai-agent-guide",
     title: "Hướng dẫn AI Agent",
     description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
