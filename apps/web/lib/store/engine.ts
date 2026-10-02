@@ -1249,3 +1249,57 @@ export function emptyNoteTrash(): number {
 }
 
 export { makeNote, makeTask, normalizeTags, summary, uuid, nowIso };
+
+export function patchProject(
+  id: string,
+  input: {
+    key?: string;
+    name?: string;
+    description?: string | null;
+    color?: string | null;
+    is_archived?: boolean;
+  },
+): Project {
+  const store = state();
+  const idx = store.projects.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("Không tìm thấy project");
+
+  const project = store.projects[idx]!;
+  
+  if (input.key !== undefined) {
+    const newKey = input.key.trim().toUpperCase();
+    if (!newKey) throw new Error("key không được rỗng");
+    if (newKey !== project.key && store.projects.some((p) => p.key === newKey)) {
+      throw new Error(`Project key '${newKey}' đã tồn tại`);
+    }
+    project.key = newKey;
+  }
+  
+  if (input.name !== undefined) project.name = input.name.trim();
+  if (input.description !== undefined) project.description = input.description;
+  if (input.color !== undefined) project.color = input.color;
+  if (input.is_archived !== undefined) project.is_archived = input.is_archived;
+
+  project.updated_at = nowIso();
+  touched();
+  return { ...project };
+}
+
+export function deleteProject(id: string): void {
+  const store = state();
+  const idx = store.projects.findIndex((p) => p.id === id);
+  if (idx === -1) throw new Error("Không tìm thấy project");
+
+  // Xoá project
+  store.projects.splice(idx, 1);
+  
+  // Gỡ project_id khỏi tasks và notes
+  for (const t of store.tasks) {
+    if (t.project_id === id) t.project_id = null;
+  }
+  for (const n of store.notes) {
+    if (n.project_id === id) n.project_id = null;
+  }
+  
+  touched();
+}

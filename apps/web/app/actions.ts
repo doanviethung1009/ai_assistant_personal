@@ -1,5 +1,6 @@
 "use server";
 
+import * as api from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
 import {
@@ -194,6 +195,42 @@ export async function emptyTrashAction(): Promise<PurgeActionResult> {
     const result = await emptyTrash();
     revalidateAll();
     return { ok: true, purged: result.purged };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+
+export async function updateProjectAction(
+  id: string,
+  input: {
+    key?: string;
+    name?: string;
+    description?: string | null;
+    color?: string | null;
+    is_archived?: boolean;
+  },
+): Promise<ActionResult> {
+  try {
+    const payload = { ...input };
+    if (payload.key) payload.key = payload.key.trim().toUpperCase();
+    if (payload.name) payload.name = payload.name.trim();
+    
+    // api import is at top: import { ..., patchProject, deleteProject } from "@/lib/api" 
+    // We need to make sure patchProject and deleteProject are imported!
+    await api.patchProject(id, payload);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function deleteProjectAction(id: string): Promise<ActionResult> {
+  try {
+    await api.deleteProject(id);
+    revalidateAll();
+    return { ok: true };
   } catch (error) {
     return toResult(error);
   }

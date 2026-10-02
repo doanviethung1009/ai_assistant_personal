@@ -334,6 +334,36 @@ export function logTime(
   });
 }
 
+
+export function patchProject(
+  id: string,
+  input: {
+    key?: string;
+    name?: string;
+    description?: string | null;
+    color?: string | null;
+    is_archived?: boolean;
+  },
+): Promise<Project> {
+  if (IS_LOCAL) return local(() => engine.patchProject(id, input));
+  return coreFetch<Project>(`/api/v1/projects/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export function deleteProject(id: string): Promise<void> {
+  if (IS_LOCAL) {
+    return local(() => {
+      engine.deleteProject(id);
+      return undefined as any;
+    });
+  }
+  return coreFetch<void>(`/api/v1/projects/${id}`, {
+    method: "DELETE",
+  });
+}
+
 export function createProject(input: {
   key: string;
   name: string;

@@ -1,5 +1,6 @@
 import { ApiErrorPanel } from "@/components/api-error";
 import { ProjectForm } from "@/components/project-form";
+import { ProjectItem } from "@/components/project-item";
 import { listProjects } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
@@ -36,34 +37,7 @@ export default async function ProjectsPage() {
       ) : (
         <ul className="flex flex-col gap-2">
           {projects.map((project) => (
-            <li
-              key={project.id}
-              className="flex items-center gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3"
-            >
-              <span
-                aria-hidden="true"
-                className="size-3 shrink-0 rounded-full"
-                style={{ backgroundColor: project.color ?? "#4f8cff" }}
-              />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">
-                  <span className="text-[var(--color-ink-muted)]">
-                    {project.key}
-                  </span>{" "}
-                  {project.name}
-                </p>
-                {project.description ? (
-                  <p className="text-xs text-[var(--color-ink-muted)]">
-                    {project.description}
-                  </p>
-                ) : null}
-              </div>
-              {project.is_archived ? (
-                <span className="rounded-full bg-white/5 px-2 py-0.5 text-xs text-[var(--color-ink-muted)]">
-                  đã lưu trữ
-                </span>
-              ) : null}
-            </li>
+            <ProjectItem key={project.id} project={project} />
           ))}
         </ul>
       )}

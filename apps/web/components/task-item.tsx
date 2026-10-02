@@ -95,6 +95,17 @@ export function TaskItem({ task }: { task: Task }) {
                 color={task.project.color}
               />
             ) : null}
+            {task.external_id ? (
+              <a
+                href={task.external_url || undefined}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/30 hover:bg-blue-500/25 transition-colors"
+                title="Mở trên hệ thống gốc"
+              >
+                {task.external_id}
+              </a>
+            ) : null}
             {task.tags.map((tag) => (
               <TagBadge key={tag} tag={tag} />
             ))}
