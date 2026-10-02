@@ -96,3 +96,14 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Cập nhật rule: Yêu cầu AI từ nay phải thực hiện **Ghi log kép (Dual Logging)**: Vừa viết vào Markdown (để đọc) vừa bắn vào JSON/Database (để UI render).
   - Tạo một script tiện ích `scripts/add-ai-log.js` giúp các Agent sau này đẩy Data vào file `data/ai-logs.json` một cách an toàn mà không sợ làm hỏng định dạng JSON.
 - **Phản hồi:** Báo cáo hoàn tất việc thiết lập Rule và demo luôn bằng cách ghi chính log này vào file JSON.
+
+---
+
+### [03-10-2026 02:09] | Category: [WEB]
+- **Prompt:** "đang bị lỗi rồi"
+- **Xử lý:**
+  - Chạy compiler Typescript để tìm nguyên nhân. Phát hiện ra 3 lỗi do sơ suất khi replace code.
+  - Sửa lỗi cú pháp mất chữ `import {` trong `apps/web/app/actions.ts`.
+  - Sửa lỗi dư trường `schema_version` truyền xuống `restoreAiLogs` ở `apps/web/lib/store/transfer.ts`.
+  - Sửa lỗi Typescript biến `itemDate` có thể undefined ở `apps/web/app/history/page.tsx`.
+- **Phản hồi:** Đã fix toàn bộ và kiểm tra compiler báo không còn lỗi. Tiến hành ghi log.

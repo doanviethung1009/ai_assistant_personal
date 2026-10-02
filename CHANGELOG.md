@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- add import/export support for ai-logs and enforce data migration rules (`996d1d2`)
 - enforce dual logging to both markdown and json for ai traces, add helper script (`21b6301`)
 - implement AiLog database entity and prepare frontend JSON schema for trace log import (`c82c259`)
 - add AI Trace to primary navigation and update system prompt (`059fb3a`)
@@ -25,6 +26,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Sửa lỗi
 
+- resolve typescript and syntax errors in data import and history page (`ca11f1d`)
 - force flush ai-logs.json on initialization so the file is visible (`162199d`)
 - add v4 migration and state initialization for ai_logs array in JSON data file (`c561b0c`)
 - create dedicated /ai-logs page and fix docs navigation 404 error (`ed6ca69`)
