@@ -12,12 +12,15 @@ interface ChromeHistoryEntry {
   last_visit_time: string;
 }
 
-export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; time?: string }> }) {
+export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; time?: string; from?: string; to?: string; sort?: string }> }) {
   const sp = await searchParams;
   const currentQ = sp.q || "";
   const currentTime = sp.time || "all";
+  const currentFrom = sp.from || "";
+  const currentTo = sp.to || "";
+  const currentSort = sp.sort === "asc" ? "asc" : "desc"; // mặc định desc (mới nhất trước)
   const dataPath = path.join(process.cwd(), "../../data/chrome-history.json");
-  let data: { synced_at: string; items: ChromeHistoryEntry[] } | null = null;
+  let data: { synced_at: string; source_path?: string; items: ChromeHistoryEntry[] } | null = null;
   let errorMsg = "";
 
   try {
@@ -43,8 +46,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       );
     }
     
-    // 2. Lọc theo thời gian
-    if (currentTime !== "all") {
+    // 2. Lọc theo thời gian preset
+    if (currentTime !== "all" && !currentFrom && !currentTo) {
       const now = new Date().getTime();
       const DAY_MS = 24 * 60 * 60 * 1000;
       let cutoff = 0;
@@ -64,12 +67,34 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
         });
       }
     }
+
+    // 3. Lọc theo khoảng ngày cụ thể (date picker)
+    if (currentFrom || currentTo) {
+      filteredItems = filteredItems.filter(item => {
+        const itemDate = item.last_visit_time.split(" ")[0]; // "YYYY-MM-DD"
+        if (currentFrom && itemDate < currentFrom) return false;
+        if (currentTo && itemDate > currentTo) return false;
+        return true;
+      });
+    }
+  }
+
+  // Sắp xếp theo thời gian
+  if (filteredItems.length > 0) {
+    filteredItems.sort((a, b) => {
+      const timeA = a.last_visit_time || "";
+      const timeB = b.last_visit_time || "";
+      return currentSort === "asc" ? timeA.localeCompare(timeB) : timeB.localeCompare(timeA);
+    });
   }
 
   const makeLink = (updates: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (currentQ) q.set("q", currentQ);
     if (currentTime !== "all") q.set("time", currentTime);
+    if (currentFrom) q.set("from", currentFrom);
+    if (currentTo) q.set("to", currentTo);
+    if (currentSort !== "desc") q.set("sort", currentSort);
     
     for (const [k, v] of Object.entries(updates)) {
       if (v === undefined) q.delete(k);
@@ -84,6 +109,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
         <h1 className="text-xl font-semibold tracking-tight">Lịch sử duyệt web (Chrome)</h1>
         <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
           Danh sách các trang web bạn đã truy cập, được trích xuất từ dữ liệu cục bộ của Chrome.
+          {data?.source_path && (
+            <span className="block mt-0.5 text-xs font-mono opacity-60">Nguồn: {data.source_path}</span>
+          )}
         </p>
       </div>
 
@@ -101,8 +129,11 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
 
       {data && (
         <div className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
+          {/* Thanh tìm kiếm */}
           <form method="get" className="flex gap-2">
             {currentTime !== "all" && <input type="hidden" name="time" value={currentTime} />}
+            {currentFrom && <input type="hidden" name="from" value={currentFrom} />}
+            {currentTo && <input type="hidden" name="to" value={currentTo} />}
             <input
               type="search"
               name="q"
@@ -115,6 +146,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             </button>
           </form>
 
+          {/* Filter thời gian preset */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium w-24">Thời gian:</span>
             {[
@@ -128,9 +160,9 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             ].map(so => (
               <Link
                 key={so.id}
-                href={makeLink({ time: so.id === "all" ? undefined : so.id })}
+                href={makeLink({ time: so.id === "all" ? undefined : so.id, from: undefined, to: undefined })}
                 className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  currentTime === so.id
+                  currentTime === so.id && !currentFrom && !currentTo
                     ? "bg-[var(--color-accent)] text-white"
                     : "border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)]"
                 }`}
@@ -139,6 +171,39 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
               </Link>
             ))}
           </div>
+
+          {/* Filter theo khoảng ngày cụ thể */}
+          <form method="get" className="flex flex-wrap items-center gap-2">
+            {currentQ && <input type="hidden" name="q" value={currentQ} />}
+            <span className="text-sm font-medium w-24">Theo ngày:</span>
+            <input
+              type="date"
+              name="from"
+              defaultValue={currentFrom}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm"
+            />
+            <span className="text-xs text-[var(--color-ink-muted)]">→</span>
+            <input
+              type="date"
+              name="to"
+              defaultValue={currentTo}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm"
+            />
+            <button
+              type="submit"
+              className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]"
+            >
+              Lọc
+            </button>
+            {(currentFrom || currentTo) && (
+              <Link
+                href={makeLink({ from: undefined, to: undefined, time: undefined })}
+                className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-medium hover:bg-[var(--color-surface-hover)] transition-colors"
+              >
+                Xoá bộ lọc ngày
+              </Link>
+            )}
+          </form>
         </div>
       )}
 
@@ -155,7 +220,16 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             <table className="w-full text-left text-sm">
               <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)]">
                 <tr>
-                  <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">Thời gian</th>
+                  <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">
+                    <Link
+                      href={makeLink({ sort: currentSort === "desc" ? "asc" : undefined })}
+                      className="inline-flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
+                      title={currentSort === "desc" ? "Đang: Mới nhất trước — Bấm để đổi" : "Đang: Cũ nhất trước — Bấm để đổi"}
+                    >
+                      Thời gian
+                      <span className="text-xs">{currentSort === "desc" ? "↓" : "↑"}</span>
+                    </Link>
+                  </th>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">Tiêu đề & URL</th>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)] text-right">Lượt truy cập</th>
                 </tr>

@@ -29,8 +29,13 @@ function getChromeHistoryPath(): string {
   }
 }
 
-export async function scrapeChromeHistory(limit: number = 2000): Promise<{ count: number; savedPath: string }> {
-  const chromeHistoryPath = getChromeHistoryPath();
+/**
+ * Trích xuất lịch sử Chrome từ file SQLite.
+ * @param limit Số lượng bản ghi tối đa
+ * @param customPath Đường dẫn tuỳ chỉnh tới file History (nếu không truyền sẽ dùng path mặc định theo OS)
+ */
+export async function scrapeChromeHistory(limit: number = 2000, customPath?: string): Promise<{ count: number; savedPath: string }> {
+  const chromeHistoryPath = customPath || getChromeHistoryPath();
 
   if (!fs.existsSync(chromeHistoryPath)) {
     throw new Error(`Không tìm thấy file Chrome History tại: ${chromeHistoryPath}`);
@@ -57,10 +62,7 @@ export async function scrapeChromeHistory(limit: number = 2000): Promise<{ count
     const { stdout } = await execPromise(`sqlite3 -json "${tmpHistoryPath}" "${query}"`);
     const historyData = JSON.parse(stdout || "[]");
 
-    // Xóa file tạm
-    if (fs.existsSync(tmpHistoryPath)) fs.unlinkSync(tmpHistoryPath);
-
-    // Ghi vào file data
+    // Ghi vào file data trong thư mục dự án
     const targetDir = path.join(process.cwd(), "../../data");
     if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
 
@@ -68,6 +70,7 @@ export async function scrapeChromeHistory(limit: number = 2000): Promise<{ count
     
     const finalData = {
       synced_at: new Date().toISOString(),
+      source_path: chromeHistoryPath,
       items: historyData
     };
 
@@ -75,10 +78,19 @@ export async function scrapeChromeHistory(limit: number = 2000): Promise<{ count
 
     return { count: historyData.length, savedPath: outPath };
   } catch (err: any) {
-    if (fs.existsSync(tmpHistoryPath)) fs.unlinkSync(tmpHistoryPath);
     if (err.message.includes("sqlite3: command not found") || err.message.includes("is not recognized")) {
       throw new Error("Lỗi: Máy tính của bạn chưa cài đặt 'sqlite3' CLI. Trên Windows, hãy tải sqlite-tools và thêm vào PATH.");
     }
     throw err;
+  } finally {
+    // Luôn xóa file tạm sau khi xong (dù thành công hay lỗi) để giải phóng bộ nhớ đĩa
+    try {
+      if (fs.existsSync(tmpHistoryPath)) {
+        fs.unlinkSync(tmpHistoryPath);
+        console.log(`[chrome-history] Đã xóa file tạm: ${tmpHistoryPath}`);
+      }
+    } catch {
+      // Bỏ qua lỗi xóa file tạm
+    }
   }
 }
