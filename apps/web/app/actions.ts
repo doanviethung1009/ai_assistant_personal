@@ -514,86 +514,49 @@ function parseJiraDate(val: any): string | null {
   return null;
 }
 
+/**
+ * Convert Google Sheets URL to a direct XLSX export link.
+ * Supports formats:
+ *   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit?gid=SHEET_ID#gid=SHEET_ID
+ *   https://docs.google.com/spreadsheets/d/SPREADSHEET_ID/edit#gid=0
+ */
+function toDirectDownloadUrl(url: string): string {
+  const gsheetMatch = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+  if (gsheetMatch) {
+    const spreadsheetId = gsheetMatch[1];
+    // Try to extract gid for specific sheet
+    const gidMatch = url.match(/gid=(\d+)/);
+    const gid = gidMatch ? gidMatch[1] : '0';
+    return `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=xlsx&gid=${gid}`;
+  }
+  return url;
+}
+
 export async function syncFromUrlAction(url: string): Promise<ActionResult & { count?: number }> {
   try {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`Lỗi HTTP: ${res.status}`);
+    const downloadUrl = toDirectDownloadUrl(url);
+    
+    const res = await fetch(downloadUrl, {
+      redirect: 'follow',
+      headers: { 'Accept': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, text/csv, */*' },
+    });
+    if (!res.ok) throw new Error(`Lỗi HTTP: ${res.status} — ${res.statusText}`);
+    
     const buffer = await res.arrayBuffer();
     const workbook = XLSX.read(buffer, { type: 'array' });
     const sheetName = workbook.SheetNames[0];
-    if (!sheetName) throw new Error('No sheet');
+    if (!sheetName) throw new Error('File không chứa sheet nào');
     const sheet = workbook.Sheets[sheetName];
-    if (!sheet) throw new Error('No sheet');
-    const data = XLSX.utils.sheet_to_json(sheet) as any[];
+    if (!sheet) throw new Error('Không đọc được sheet');
+    const rows = XLSX.utils.sheet_to_json(sheet) as any[];
+    if (!rows || rows.length === 0) throw new Error('Sheet rỗng, không có dữ liệu');
 
-    let added = 0;
-    const projects = await api.listProjects();
-    const projectMap = Object.fromEntries(projects.map((p: any) => [p.key.toUpperCase(), p]));
-    
-    // We fetch all tasks to deduplicate by external_id
-    const { items: allTasks } = await api.listTasks();
-    const existingKeys = new Set(allTasks.filter(t => t.external_id).map(t => t.external_id));
-
-    for (const ticket of data) {
-      if (typeof ticket !== 'object' || !ticket['Issue Key']) continue;
-      const key = String(ticket['Issue Key']);
-      if (existingKeys.has(key)) continue;
-      
-      const titleRaw = `[${ticket['Projects'] || 'JIRA'}] ${ticket['Summary'] || 'No summary'}`;
-      
-      const statusMap: Record<string, any> = {
-        'To Do': 'todo',
-        'In Progress': 'in_progress',
-        'Done': 'done',
-        'Closed': 'done',
-      };
-      const status = statusMap[String(ticket['Status'])] || 'todo';
-      
-      const tags = ['jira'];
-      if (ticket['Labels']) {
-        tags.push(...String(ticket['Labels']).split(',').map(s => s.trim().toLowerCase()));
-      }
-      
-      let projectId = null;
-      let finalTitle = titleRaw;
-      
-      const match = titleRaw.match(/^\[([^\]]+)\]\s*(.*)$/);
-      if (match && match[1] && match[2]) {
-        const prefix = match[1].toUpperCase();
-        let assignedProject = null;
-        if (prefix.startsWith('MAG')) assignedProject = projectMap['MAG'];
-        else if (prefix.startsWith('OM')) assignedProject = projectMap['OM'];
-        else if (prefix.startsWith('IOTEK')) assignedProject = projectMap['IOTEK'];
-        else if (prefix.startsWith('GIAI')) assignedProject = projectMap['GIAI'];
-        
-        if (assignedProject) {
-          projectId = assignedProject.id;
-          const projectTag = assignedProject.key.toLowerCase();
-          if (!tags.includes(projectTag)) tags.push(projectTag);
-          finalTitle = match[2].trim();
-        }
-      }
-      
-      await api.createTask({
-        title: finalTitle,
-        description: ticket['Description'] ? String(ticket['Description']) : undefined,
-        status,
-        priority: 'medium',
-        project_id: projectId,
-        tags,
-        
-        source: 'jira',
-        external_id: key,
-        external_url: `https://onemount.atlassian.net/browse/${key}`,
-        assignee: ticket['Assignee'] ? String(ticket['Assignee']) : null,
-        due_at: parseJiraDate(ticket['Due Date']),
-        created_at: parseJiraDate(ticket['Created Date']) || undefined
-      });
-      added++;
-    }
+    // Delegate to the unified import logic (handles Company, Projects, Labels, dedup, etc.)
+    const { importBulkTasksAction } = await import("@/app/actions-import");
+    const result = await importBulkTasksAction(rows);
 
     revalidateAll();
-    return { ok: true, count: added };
+    return { ok: true, count: (result.added || 0) + (result.updated || 0) };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Sync failed" };
   }

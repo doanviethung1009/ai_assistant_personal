@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
+import * as XLSX from "xlsx";
 
 const PALETTE = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#d946ef'];
 function getRandomColor() {
@@ -158,7 +159,6 @@ export async function importBulkTasksAction(rows: any[]) {
   return { ok: true, added, updated };
 }
 
-import * as XLSX from "xlsx";
 export async function importBulkFileAction(formData: FormData) {
   if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
 
