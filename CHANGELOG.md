@@ -51,6 +51,10 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 - them runbook deploy cho tung tinh huong thuc te (`4437d2a`)
 - bo sung quy uoc comment va quy trinh commit (`b3ff039`)
 
+### Tái cấu trúc
+
+- split ai_logs out of builder-data.json into ai-logs.json to prevent I/O bottlenecks (`a5ab2c0`)
+
 ### CI/CD
 
 - them hook kiem tra commit message va script sinh changelog (`47c98e2`)

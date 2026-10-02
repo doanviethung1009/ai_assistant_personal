@@ -76,3 +76,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Tự động tuân thủ theo rule Đồng bộ Tài liệu: Tạo file `docs/JSON_STORAGE.md` mô tả tường tận tại sao hệ thống không dùng Alembic cho chế độ JSON mà tự viết cơ chế vòng lặp `if schema_version < x` để vá dữ liệu (Backfill).
   - Đăng ký file này vào danh sách `apps/web/lib/docs.ts` để hiển thị trên UI.
 - **Phản hồi:** Giải thích ngắn gọn cơ chế Schema Version cho User và hướng dẫn họ xem chi tiết ở mục Tài liệu mới được tự động sinh.
+
+---
+
+### [03-10-2026 01:54] | Category: [TOOL]
+- **Prompt:** "Tôi nghĩ bất kể data nào trong này sẽ có 2 dạng local và database, nên đấnh giá và đưa vào rule về việc data lưu ở local dạng json nên tách riêng ra hay để chung mỗi khi phát sinh function data mới."
+- **Xử lý:**
+  - Nhận thấy đây là một đúc kết cực kỳ giá trị về mặt Kiến trúc phần mềm (Software Architecture).
+  - Đã cập nhật file quy tắc `.agents/rules/web-conventions.md` (nơi quản lý các luật của Frontend và Local JSON).
+  - Bổ sung rule **Local Storage Split vs Group**: Bắt buộc Agent từ nay về sau khi tạo Data mới, phải tự đánh giá: Nếu data dạng Append-only/kích thước lớn (như Log) thì BẮT BUỘC phải tạo file JSON riêng biệt để tránh thắt cổ chai I/O. Ngược lại, nếu data có tính ràng buộc/cập nhật liên tục (như Task, Notes) thì nhét chung vào `builder-data.json`.
+- **Phản hồi:** Đã đưa triết lý này thành một Rule bắt buộc trong hệ thống Agentic.
