@@ -42,10 +42,14 @@ Nếu User yêu cầu một task phức tạp (như "Thêm bảng XYZ vào datab
 - Mọi chức năng mới hoàn thành, bạn PHẢI cập nhật file tài liệu tương ứng trong thư mục `docs/`.
 - **ĐẶC BIỆT:** Bất kỳ file Markdown (`.md`) mới nào được sinh ra, bạn PHẢI tự động vào file `apps/web/lib/docs.ts` và khai báo nó vào mảng `DOCS` để file đó hiện lên UI Tab "Tài liệu" cho User. Không làm bước này bị coi là **Lỗi Nghiêm Trọng**.
 
-### 3.4. Dữ liệu và Phân trang (Pagination)
+### 3.4. Nhật ký AI (AI Task Trace)
+- Trừ khi User chỉ hỏi một câu ngắn nghiệm thu, còn nếu User giao cho bạn một **nhiệm vụ lập trình/tạo tài liệu** (tạo app, fix bug, viết API), trước khi kết thúc lượt chat bạn **PHẢI** tự động append một Log báo cáo vào file `docs/ai_logs.md`.
+- Đọc kỹ rule `ai-logger.md` để biết cú pháp ghi log.
+
+### 3.5. Dữ liệu và Phân trang (Pagination)
 - **Tuyệt đối tuân thủ Server-side Pagination:** NẾU User yêu cầu làm một danh sách (list, bảng, lưới) hiển thị dữ liệu nhiều, THÌ mặc định bạn phải triển khai phân trang từ Backend (limit/offset) tới Frontend (truyền tham số `?page=`), mặc định 50 items/trang. Không được phép load ALL dữ liệu 1 lần.
 
-### 3.5. Sự sạch sẽ của Workspace
+### 3.6. Sự sạch sẽ của Workspace
 - Các script chạy 1 lần, file patch, file fix lỗi tạm thời PHẢI được cất vào `scripts/patches/`. Không vứt rác ra thư mục gốc (`/`).
 
 ---

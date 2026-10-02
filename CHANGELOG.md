@@ -31,6 +31,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- append latest git changelog tracking process to AI trace log (`018e2ab`)
 - add guide on AI data storage architecture (markdown vs database) (`5d09c46`)
 - add multi-agent workflow demo and scenario (`b6e35b0`)
 - add guide on how to create AI customizations (skills, rules, hooks) and register it in UI (`bc2773a`)
@@ -50,6 +51,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Dọn dẹp
 
+- fix macOS bash compatibility in changelog script and generate latest changelog (`9672eb0`)
 - migrate to .agents architecture, cleanup root patches, and update docs registry (`656d634`)
 - update project files, tasks, history and patch scripts (`ba6315f`)
 - tach steering always-include thanh fileMatch va skill (`fe825b9`)

@@ -24,3 +24,12 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Thực thi lệnh `make changelog` để cập nhật toàn bộ quá trình làm việc của mình nãy giờ vào `CHANGELOG.md`.
   - Lưu Commit & Đẩy code lên. Tự động tuân thủ rule `ai-logger.md` để ghi nhận báo cáo này.
 - **Phản hồi:** Thông báo User rằng kịch bản tạo Changelog tự động đã được bảo trì và chạy thành công.
+
+---
+
+### [03-10-2026 01:32] | Category: [APP]
+- **Prompt:** "Thêm vào rule về việc ghi nhật ký AI trace và đưa thành 1 tab chức năng đi."
+- **Xử lý:**
+  - Bổ sung luật Ghi nhật ký (AI Task Trace) vào mục 3.4 của file `AGENTS.md` (Root Protocol) để bắt buộc tất cả các AI đều phải biết quy tắc này từ khi mới vào dự án. Đánh số lại các mục.
+  - Cập nhật file `apps/web/lib/nav.ts`, bổ sung một Menu Tab mới có tên là **AI Trace** điều hướng thẳng tới `/docs/ai-logs`.
+- **Phản hồi:** Tính năng truy vết đã lên sóng dưới dạng một Tab độc lập trên giao diện người dùng.
