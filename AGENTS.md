@@ -39,8 +39,8 @@ Nếu User yêu cầu một task phức tạp (như "Thêm bảng XYZ vào datab
 - Nếu có, hãy dùng `view_file` đọc file `SKILL.md` đó, và thực hiện như một cái máy checklist (từng bước một, tuyệt đối không nhảy cóc).
 
 ### 3.3. Quy tắc Cập nhật Tài liệu (Tối quan trọng)
-- Mọi chức năng mới hoàn thành, bạn PHẢI cập nhật file tài liệu tương ứng trong thư mục `docs/`.
-- **ĐẶC BIỆT:** Bất kỳ file Markdown (`.md`) mới nào được sinh ra, bạn PHẢI tự động vào file `apps/web/lib/docs.ts` và khai báo nó vào mảng `DOCS` để file đó hiện lên UI Tab "Tài liệu" cho User. Không làm bước này bị coi là **Lỗi Nghiêm Trọng**.
+- **Đồng bộ Tài liệu:** Mỗi khi bạn tạo ra hoặc sửa đổi một App, Tool, Chức năng, hay API mới, bạn **PHẢI** chủ động cập nhật các file tài liệu liên quan trong thư mục `docs/` (Ví dụ: Cập nhật `API_REFERENCE.md` khi thêm API, cập nhật `PROJECT_STRUCTURE.md` khi thêm thư mục mới, cập nhật `AI_DATA_STORAGE.md` khi đổi flow dữ liệu).
+- **Đăng ký Tài liệu mới:** Bất kỳ file Markdown (`.md`) mới nào được sinh ra, bạn PHẢI tự động vào file `apps/web/lib/docs.ts` và khai báo nó vào mảng `DOCS` để file đó hiện lên UI Tab "Tài liệu" cho User. Không làm bước này bị coi là **Lỗi Nghiêm Trọng**.
 
 ### 3.4. Nhật ký AI (AI Task Trace)
 - Trừ khi User chỉ hỏi một câu ngắn nghiệm thu, còn nếu User giao cho bạn một **nhiệm vụ lập trình/tạo tài liệu** (tạo app, fix bug, viết API), trước khi kết thúc lượt chat bạn **PHẢI** tự động append một Log báo cáo vào file `docs/ai_logs.md`.

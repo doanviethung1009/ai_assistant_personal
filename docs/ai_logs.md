@@ -57,3 +57,12 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Thay đổi cấu trúc file `DataFile` ở phía Frontend để chuẩn bị đón file JSON chứa `ai_logs`.
   - Cập nhật tài liệu `AI_DATA_STORAGE.md` bổ sung hướng dẫn cài đặt Docker và Migrate tiếp theo.
 - **Phản hồi:** Thông báo User rằng toàn bộ nền móng Backend và cấu trúc JSON đã làm xong, chờ môi trường có Docker chạy lệnh Migrate là sẽ có thể code nốt màn hình UI cho Dữ liệu có cấu trúc.
+
+---
+
+### [03-10-2026 01:43] | Category: [TOOL]
+- **Prompt:** "Nên thêm role mỗi khi có app, tool, chức năng, hay api mới hoặc sửa đổi cập nhật thì nên update các trang liên quan."
+- **Xử lý:**
+  - Cập nhật file System Prompt `AGENTS.md` (Mục 3.3).
+  - Bổ sung chỉ thị "Đồng bộ Tài liệu": Bắt buộc AI phải chủ động quét và cập nhật các file như `API_REFERENCE.md`, `PROJECT_STRUCTURE.md` mỗi khi có thay đổi mã nguồn tương ứng.
+- **Phản hồi:** Đã thêm Rule vào System Prompt. Từ nay mọi Agent đều sẽ tự động làm thao tác đồng bộ hoá document.
