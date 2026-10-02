@@ -109,3 +109,14 @@ có tham số thì liệt kê cách gọi. Xem `scripts/release.sh`:
 
 Người chạy `cat` hoặc `head` file đó phải hiểu được công dụng mà không cần
 đọc hết logic.
+
+## AI Role: Tự động comment mô tả chức năng (Auto-commenting)
+
+Mỗi khi AI tạo mới hoặc chỉnh sửa cấu trúc một hàm, class, hoặc UI component quan trọng, AI **PHẢI TỰ ĐỘNG** thêm docstring/comment mô tả chức năng mà không cần người dùng nhắc.
+
+**Hướng dẫn dành riêng cho AI khi auto-comment:**
+1. **Tập trung vào WHY và bối cảnh nghiệp vụ**: Trả lời câu hỏi "Hàm này sinh ra để giải quyết bài toán gì ở góc độ người dùng/nghiệp vụ?", tuyệt đối không dịch từng dòng code thành tiếng Việt (không lặp lại WHAT).
+2. **Liệt kê rủi ro & cạm bẫy (nếu có)**: Nếu hàm có các edge-cases, side-effects (ví dụ: trigger event, thay đổi state global), hoặc giới hạn (ví dụ: chưa có rate limit), AI phải ghi chú rõ ràng để người sau đọc không bị dẫm mìn.
+3. **Định dạng chuẩn**: 
+   - Với **Python**: Luôn dùng Docstring (`"""..."""`) đặt ngay dưới dòng khai báo `def` hoặc `class`.
+   - Với **TypeScript/Next.js**: Luôn dùng JSDoc (`/** ... */`) đặt ngay trên dòng định nghĩa hàm hoặc component.
