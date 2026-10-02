@@ -1,6 +1,6 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "apps/web/**/*"
+fileMatchPattern: ["apps/web/**/*", "apps/**/*web*/**/*", "apps/**/*ui*/**/*", "apps/**/*admin*/**/*", "apps/**/*.tsx"]
 ---
 
 # Quy ước web dễ vi phạm

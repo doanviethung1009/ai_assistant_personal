@@ -1,6 +1,6 @@
 ---
 inclusion: fileMatch
-fileMatchPattern: "apps/core/**/*"
+fileMatchPattern: ["apps/core/**/*", "apps/**/*api*/**/*", "apps/**/*backend*/**/*", "apps/**/*.py"]
 ---
 
 # Quy ước backend dễ vi phạm

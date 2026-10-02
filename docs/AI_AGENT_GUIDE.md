@@ -33,12 +33,19 @@ Khi bạn sử dụng nhiều model (ví dụ dùng Gemini cho logic lập trìn
 
 **Mục đích:** Ép AI hành xử theo đúng coding convention của team mà không cần phải nhắc lại trong mỗi Prompt.
 
-**Cách viết Rule hiệu quả:**
+**Khả năng mở rộng tự động (Scalability):**
+Các file rules hiện tại đã được cấu hình YAML (fileMatchPattern) bằng các biểu thức chính quy (glob patterns) cực kỳ mạnh mẽ. 
+Ví dụ: 
+- `backend-conventions.md` tự động load không chỉ cho `apps/core/` mà còn cho bất kỳ thư mục nào chứa từ khoá `api`, `backend`, hoặc có file `.py`.
+- `web-conventions.md` tự động load cho bất kỳ ứng dụng mới nào có thư mục chứa `web`, `ui`, `admin` hoặc bất kỳ file `.tsx` nào.
+Nghĩa là: **Nếu ngày mai bạn tạo một ứng dụng mới (ví dụ: `apps/admin-panel` hoặc `apps/payment-api`), bạn KHÔNG CẦN phải cấu hình lại AI. Các Agent sẽ tự động nhận diện và nạp đúng các luật Backend/Frontend tương ứng vào bộ nhớ.**
+
+**Cách viết Rule hiệu quả (dành cho người tạo Rule mới):**
 - Thêm metadata ở đầu file để AI biết *khi nào* cần đọc rule này:
   ```yaml
   ---
   inclusion: fileMatch
-  fileMatchPattern: ["apps/core/**/*.py"]
+  fileMatchPattern: ["apps/core/**/*", "apps/**/*.py"]
   ---
   ```
 - **Viết theo cú pháp `NẾU ... THÌ ...`**:
