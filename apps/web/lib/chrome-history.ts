@@ -94,8 +94,9 @@ export async function scrapeChromeHistory(limit: number = 2000, customPath?: str
   const tmpHistoryPath = path.join(os.tmpdir(), "temp_chrome_history.sqlite");
   fs.copyFileSync(chromeHistoryPath, tmpHistoryPath);
 
-  // Dùng sqlite3 qua command line để đọc dữ liệu
+  // Dùng sqlite3 qua command line để đọc dữ liệu, ghi ra file tạm để tránh lỗi maxBuffer
   // Lưu ý: Trên Windows yêu cầu phải có sqlite3.exe trong PATH
+  const tmpJsonPath = path.join(os.tmpdir(), "temp_chrome_history_output.json");
   const query = `
     SELECT 
       url, 
@@ -108,8 +109,10 @@ export async function scrapeChromeHistory(limit: number = 2000, customPath?: str
   `;
 
   try {
-    const { stdout } = await execPromise(`sqlite3 -json "${tmpHistoryPath}" "${query}"`);
-    const historyData = JSON.parse(stdout || "[]");
+    // Ghi kết quả truy vấn ra file JSON tạm thay vì stdout (tránh maxBuffer exceeded)
+    await execPromise(`sqlite3 -json "${tmpHistoryPath}" "${query}" > "${tmpJsonPath}"`);
+    const rawJson = fs.readFileSync(tmpJsonPath, "utf8");
+    const historyData = JSON.parse(rawJson || "[]");
 
     // Ghi vào file data trong thư mục dự án
     const targetDir = path.join(process.cwd(), "../../data");
@@ -134,10 +137,9 @@ export async function scrapeChromeHistory(limit: number = 2000, customPath?: str
   } finally {
     // Luôn xóa file tạm sau khi xong (dù thành công hay lỗi) để giải phóng bộ nhớ đĩa
     try {
-      if (fs.existsSync(tmpHistoryPath)) {
-        fs.unlinkSync(tmpHistoryPath);
-        console.log(`[chrome-history] Đã xóa file tạm: ${tmpHistoryPath}`);
-      }
+      if (fs.existsSync(tmpHistoryPath)) fs.unlinkSync(tmpHistoryPath);
+      if (fs.existsSync(tmpJsonPath)) fs.unlinkSync(tmpJsonPath);
+      console.log("[chrome-history] Đã xóa các file tạm.");
     } catch {
       // Bỏ qua lỗi xóa file tạm
     }

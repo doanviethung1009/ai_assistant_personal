@@ -120,3 +120,45 @@ Mỗi khi AI tạo mới hoặc chỉnh sửa cấu trúc một hàm, class, ho�
 3. **Định dạng chuẩn**: 
    - Với **Python**: Luôn dùng Docstring (`"""..."""`) đặt ngay dưới dòng khai báo `def` hoặc `class`.
    - Với **TypeScript/Next.js**: Luôn dùng JSDoc (`/** ... */`) đặt ngay trên dòng định nghĩa hàm hoặc component.
+
+## AI Role: Tự động cập nhật tài liệu khi thay đổi chức năng (Auto-documenting)
+
+Mỗi khi AI **tạo mới, sửa đổi, hoặc xoá** một chức năng (feature, endpoint, page, component quan trọng), AI **PHẢI TỰ ĐỘNG** cập nhật tài liệu liên quan mà không cần người dùng nhắc.
+
+**Hướng dẫn dành riêng cho AI khi auto-document:**
+
+1. **Ghi nhận thay đổi vào `docs/`**: Nếu dự án có thư mục `docs/` (ví dụ
+   `docs/AI_HANDOFF_STATE.md`), AI phải cập nhật hoặc bổ sung mô tả chức năng
+   mới/đã sửa vào file tài liệu phù hợp.
+2. **Nội dung cần ghi**:
+   - Chức năng làm gì (mô tả ngắn gọn, 1–2 câu).
+   - File chính liên quan (đường dẫn).
+   - Các thay đổi đáng chú ý so với phiên bản trước (nếu là cập nhật).
+   - Ngày cập nhật.
+3. **Không tạo tài liệu rác**: Chỉ ghi khi thay đổi có ý nghĩa ở mức chức
+   năng (thêm trang mới, thêm API endpoint, đổi luồng dữ liệu). Sửa lỗi nhỏ,
+   refactor nội bộ, hay đổi style không cần ghi.
+4. **Giữ tài liệu đồng bộ với code**: Nếu xoá hoặc đổi tên chức năng, phải
+   cập nhật lại tài liệu tương ứng — tài liệu lỗi thời còn nguy hiểm hơn
+   không có tài liệu.
+
+## AI Role: Phân trang bắt buộc cho danh sách dữ liệu lớn (Pagination)
+
+Mọi trang hiển thị danh sách dữ liệu (task, history, team, tags, notes, ...)
+mà số lượng bản ghi có thể **vượt quá 50 dòng** thì **PHẢI CÓ phân trang**
+(pagination) — không được dump toàn bộ ra một trang.
+
+**Hướng dẫn dành riêng cho AI khi triển khai phân trang:**
+
+1. **Dùng server-side pagination qua search params**: Truyền `page` (và tuỳ
+   chọn `pageSize`) qua URL query string để server chỉ render đúng số bản ghi
+   cần hiển thị. Mặc định `pageSize = 50`.
+2. **Thanh phân trang (pagination bar)** phải có:
+   - Nút **Trước / Sau** (Previous / Next).
+   - Hiển thị **trang hiện tại / tổng số trang** (ví dụ: "Trang 3 / 12").
+   - Hiển thị **tổng số bản ghi** (ví dụ: "Tổng: 580 kết quả").
+3. **Giữ nguyên filter khi chuyển trang**: Khi bấm sang trang khác, tất cả
+   bộ lọc hiện tại (search, sort, date range, ...) phải được giữ nguyên trong
+   URL.
+4. **Không slice cứng**: Tuyệt đối không dùng `.slice(0, N)` rồi bỏ qua phần
+   còn lại — người dùng phải có cách xem toàn bộ dữ liệu thông qua phân trang.

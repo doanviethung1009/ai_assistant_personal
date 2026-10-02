@@ -12,13 +12,16 @@ interface ChromeHistoryEntry {
   last_visit_time: string;
 }
 
-export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; time?: string; from?: string; to?: string; sort?: string }> }) {
+const PAGE_SIZE = 50;
+
+export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; time?: string; from?: string; to?: string; sort?: string; page?: string }> }) {
   const sp = await searchParams;
   const currentQ = sp.q || "";
   const currentTime = sp.time || "all";
   const currentFrom = sp.from || "";
   const currentTo = sp.to || "";
-  const currentSort = sp.sort === "asc" ? "asc" : "desc"; // mặc định desc (mới nhất trước)
+  const currentSort = sp.sort === "asc" ? "asc" : "desc";
+  const currentPage = Math.max(1, parseInt(sp.page || "1", 10) || 1);
   const dataPath = path.join(process.cwd(), "../../data/chrome-history.json");
   let data: { synced_at: string; source_path?: string; items: ChromeHistoryEntry[] } | null = null;
   let errorMsg = "";
@@ -88,6 +91,13 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     });
   }
 
+  // Phân trang
+  const totalItems = filteredItems.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIdx = (safePage - 1) * PAGE_SIZE;
+  const pagedItems = filteredItems.slice(startIdx, startIdx + PAGE_SIZE);
+
   const makeLink = (updates: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (currentQ) q.set("q", currentQ);
@@ -95,6 +105,8 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
     if (currentFrom) q.set("from", currentFrom);
     if (currentTo) q.set("to", currentTo);
     if (currentSort !== "desc") q.set("sort", currentSort);
+    // Giữ page khi chỉ thay đổi filter khác, nhưng cho phép override
+    if (safePage > 1 && !('page' in updates)) q.set("page", String(safePage));
     
     for (const [k, v] of Object.entries(updates)) {
       if (v === undefined) q.delete(k);
@@ -210,7 +222,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       {data && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Tổng cộng: {filteredItems.length} bản ghi</span>
+            <span className="text-sm font-medium">Tổng cộng: {totalItems} bản ghi</span>
             <span className="text-xs text-[var(--color-ink-muted)]">
               Đồng bộ lần cuối: {formatDateTime(data.synced_at)}
             </span>
@@ -222,7 +234,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                 <tr>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">
                     <Link
-                      href={makeLink({ sort: currentSort === "desc" ? "asc" : undefined })}
+                      href={makeLink({ sort: currentSort === "desc" ? "asc" : undefined, page: "1" })}
                       className="inline-flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
                       title={currentSort === "desc" ? "Đang: Mới nhất trước — Bấm để đổi" : "Đang: Cũ nhất trước — Bấm để đổi"}
                     >
@@ -235,7 +247,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
-                {filteredItems.slice(0, 1000).map((item, idx) => (
+                {pagedItems.map((item, idx) => (
                   <tr key={idx} className="hover:bg-[var(--color-surface-hover)] transition-colors">
                     <td className="px-4 py-3 align-top whitespace-nowrap text-xs text-[var(--color-ink-muted)]">
                       {item.last_visit_time}
@@ -263,12 +275,41 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
                 ))}
               </tbody>
             </table>
-            {filteredItems.length > 1000 && (
-              <div className="p-4 text-center text-xs text-[var(--color-ink-muted)] border-t border-[var(--color-border)]">
-                Hiển thị 1000 bản ghi gần nhất. Xem toàn bộ trong file data/chrome-history.json.
-              </div>
-            )}
           </div>
+
+          {/* Thanh phân trang */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-3">
+              <span className="text-xs text-[var(--color-ink-muted)]">
+                Hiển thị {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} / {totalItems} bản ghi
+              </span>
+              <div className="flex items-center gap-2">
+                {safePage > 1 ? (
+                  <Link
+                    href={makeLink({ page: String(safePage - 1) })}
+                    className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-medium hover:bg-[var(--color-surface-hover)] transition-colors"
+                  >
+                    ← Trước
+                  </Link>
+                ) : (
+                  <span className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-medium opacity-40 cursor-not-allowed">← Trước</span>
+                )}
+                <span className="text-sm font-medium">
+                  Trang {safePage} / {totalPages}
+                </span>
+                {safePage < totalPages ? (
+                  <Link
+                    href={makeLink({ page: String(safePage + 1) })}
+                    className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-medium hover:bg-[var(--color-surface-hover)] transition-colors"
+                  >
+                    Sau →
+                  </Link>
+                ) : (
+                  <span className="rounded-md border border-[var(--color-border)] px-3 py-1 text-xs font-medium opacity-40 cursor-not-allowed">Sau →</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
