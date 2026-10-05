@@ -158,6 +158,17 @@ export function getSystemInfo(): Promise<SystemInfo | null> {
   return coreFetch<SystemInfo>("/api/v1/system/info");
 }
 
+// ── Settings ─────────────────────────────────────────────────────────────
+
+export async function getCurrentUsersApi(): Promise<string[]> {
+  if (IS_LOCAL) return local(() => engine.getCurrentUsers());
+  return [];
+}
+
+export async function setCurrentUsersApi(names: string[]): Promise<void> {
+  if (IS_LOCAL) return local(() => { engine.setCurrentUsers(names); return undefined as any; });
+}
+
 // ── Đọc ────────────────────────────────────────────────────────────────
 
 export function getAgenda(referenceDate?: string): Promise<Agenda> {
@@ -583,7 +594,7 @@ export async function deleteGlobalTagApi(name: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
 }
 
-export async function wipeAllDataApi(options?: { tasks?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
+export async function wipeAllDataApi(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
   if (IS_LOCAL) return local(() => engine.wipeAllData(options));
 }
 

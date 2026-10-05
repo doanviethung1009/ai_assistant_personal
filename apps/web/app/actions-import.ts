@@ -197,17 +197,29 @@ export async function restoreFromJsonAction(jsonData: any) {
     let restoredNotes = 0;
 
     if (Array.isArray(jsonData.projects)) {
-      db.projects = jsonData.projects;
+      for (const p of jsonData.projects) {
+        const idx = db.projects.findIndex((x: any) => x.id === p.id);
+        if (idx !== -1) db.projects[idx] = p;
+        else db.projects.push(p);
+      }
       restoredProjects = jsonData.projects.length;
     }
     
     if (Array.isArray(jsonData.tasks)) {
-      db.tasks = jsonData.tasks;
+      for (const t of jsonData.tasks) {
+        const idx = db.tasks.findIndex((x: any) => x.id === t.id || (t.external_id && x.external_id === t.external_id));
+        if (idx !== -1) db.tasks[idx] = t;
+        else db.tasks.push(t);
+      }
       restoredTasks = jsonData.tasks.length;
     }
     
     if (Array.isArray(jsonData.notes)) {
-      db.notes = jsonData.notes;
+      for (const n of jsonData.notes) {
+        const idx = db.notes.findIndex((x: any) => x.id === n.id);
+        if (idx !== -1) db.notes[idx] = n;
+        else db.notes.push(n);
+      }
       restoredNotes = jsonData.notes.length;
     }
     

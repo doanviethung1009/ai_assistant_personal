@@ -1,17 +1,14 @@
-import { listTasks } from "@/lib/api";
+import { listTasks, getCurrentUsersApi } from "@/lib/api";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
 import Link from "next/link";
 import { OPEN_STATUSES, TaskStatus } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
-
-const PAGE_SIZE = 50;
-
 export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: Promise<{ assignee?: string; status?: string; sort?: string; page?: string; q?: string }>;
+  searchParams: Promise<{ assignee?: string; status?: string; sort?: string; page?: string; q?: string; size?: string }>;
 }) {
   const sp = await searchParams;
   const currentAssignee = sp.assignee;
@@ -19,27 +16,42 @@ export default async function TeamPage({
   const currentSort = sp.sort || "all";
   const currentQ = sp.q || "";
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1); // "newest", "oldest"
+  
+  // Tối ưu pageSize: hỗ trợ chọn 50, 100, 200, 500
+  const PAGE_SIZE = Math.max(10, Math.min(1000, Number.parseInt(sp.size ?? "50", 10) || 50));
 
   try {
-    // limit cao để demo, thực tế nên có pagination
-    const { items: allTasks } = await listTasks({ limit: 5000, includeClosed: true });
+    const [tasksRes, currentUsers] = await Promise.all([
+      listTasks({ limit: 10000, includeClosed: true }),
+      getCurrentUsersApi()
+    ]);
+    const allTasks = tasksRes.items;
     
     // Lọc ra các assignee duy nhất (bỏ null)
-    // Tính tổng số task cho từng người (ngoại trừ "Đoàn Việt Hưng")
+    // Tính tổng số task cho từng người (ngoại trừ các currentUsers)
     const assigneeCounts: Record<string, number> = {};
     for (const t of allTasks) {
-      if (t.assignee && t.assignee !== "Đoàn Việt Hưng") {
+      if (t.assignee && (currentUsers.length === 0 || !currentUsers.includes(t.assignee))) {
         assigneeCounts[t.assignee] = (assigneeCounts[t.assignee] || 0) + 1;
+      } else if (!t.assignee && t.source === 'jira') {
+        assigneeCounts["Unassigned (Jira)"] = (assigneeCounts["Unassigned (Jira)"] || 0) + 1;
       }
     }
     const assignees = Object.keys(assigneeCounts).sort();
 
     // Lọc task theo điều kiện
-    let teamTasks = allTasks.filter(t => t.assignee && t.assignee !== "Đoàn Việt Hưng");
+    let teamTasks = allTasks.filter(t => {
+      if (t.assignee) return currentUsers.length === 0 || !currentUsers.includes(t.assignee);
+      return t.source === 'jira'; // Task Jira chưa ai nhận thì nằm ở backlog Team
+    });
     
     // 1. Theo assignee
     if (currentAssignee) {
-      teamTasks = teamTasks.filter(t => t.assignee === currentAssignee);
+      if (currentAssignee === "Unassigned (Jira)") {
+        teamTasks = teamTasks.filter(t => !t.assignee && t.source === 'jira');
+      } else {
+        teamTasks = teamTasks.filter(t => t.assignee === currentAssignee);
+      }
     }
     
     // 2. Theo status
@@ -157,6 +169,29 @@ export default async function TeamPage({
             ))}
           </div>
 
+          {/* Hiển thị trên mỗi trang */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium w-24">Hiển thị:</span>
+            {[
+              { id: "50", label: "50 / trang" },
+              { id: "100", label: "100 / trang" },
+              { id: "200", label: "200 / trang" },
+              { id: "500", label: "500 / trang" }
+            ].map(sz => (
+              <Link
+                key={sz.id}
+                href={makeLink({ size: sz.id })}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  PAGE_SIZE === Number(sz.id)
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)]"
+                }`}
+              >
+                {sz.label}
+              </Link>
+            ))}
+          </div>
+
           {/* Lọc Người */}
           {assignees.length > 0 && (
             <div className="flex items-start gap-2">
@@ -248,6 +283,7 @@ function PageLink({
   if (sp.status) query.set("status", sp.status);
   if (sp.sort) query.set("sort", sp.sort);
   if (sp.q) query.set("q", sp.q);
+  if (sp.size) query.set("size", sp.size);
   query.set("page", String(page));
 
   return (

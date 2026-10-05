@@ -28,6 +28,8 @@ export function WipeDataManager() {
       if (wipeTarget !== "all") {
         options = {
           tasks: wipeTarget === "tasks",
+          tasks_personal: wipeTarget === "tasks_personal",
+          tasks_team: wipeTarget === "tasks_team",
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
           vault: wipeTarget === "vault",
@@ -59,7 +61,9 @@ export function WipeDataManager() {
           className="rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
         >
           <option value="all">Xoá TOÀN BỘ dữ liệu (Tất cả)</option>
-          <option value="tasks">Chỉ xoá Task (bao gồm Tags)</option>
+          <option value="tasks">Chỉ xoá TẤT CẢ Task (cả Team & Cá nhân)</option>
+          <option value="tasks_personal">Chỉ xoá Task CÁ NHÂN (Hôm nay)</option>
+          <option value="tasks_team">Chỉ xoá Task TEAM (Của người khác)</option>
           <option value="projects">Chỉ xoá Dự án (Projects)</option>
           <option value="notes">Chỉ xoá Sổ tay (Notes)</option>
           <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>

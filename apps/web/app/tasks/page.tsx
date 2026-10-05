@@ -8,13 +8,12 @@ import { OPEN_STATUSES, STATUS_LABELS, type Paged, type Project, type Task, type
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 50;
-
 interface SearchParams {
   q?: string;
   status?: string;
   closed?: string;
   page?: string;
+  size?: string;
 }
 
 function parseStatuses(raw: string | undefined): TaskStatus[] | undefined {
@@ -36,6 +35,7 @@ export default async function TasksPage({
   const includeClosed = params.closed === "1";
   const statuses = parseStatuses(params.status);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
+  const PAGE_SIZE = Math.max(10, Math.min(1000, Number.parseInt(params.size ?? "50", 10) || 50));
 
   let result: Paged<Task>;
   let projects: Project[];
@@ -135,9 +135,27 @@ export default async function TasksPage({
           </label>
         </div>
 
+        <div>
+          <label htmlFor="filter-size" className="mb-1 block text-xs font-medium text-[var(--color-ink-muted)]">
+            Hiển thị
+          </label>
+          <select
+            id="filter-size"
+            name="size"
+            defaultValue={PAGE_SIZE.toString()}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+          >
+            <option value="20">20 / trang</option>
+            <option value="50">50 / trang</option>
+            <option value="100">100 / trang</option>
+            <option value="200">200 / trang</option>
+            <option value="500">500 / trang</option>
+          </select>
+        </div>
+
         <button
           type="submit"
-          className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white"
+          className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white mb-[1px]"
         >
           Lọc
         </button>
@@ -204,6 +222,7 @@ function PageLink({
   if (params.q) query.set("q", params.q);
   if (params.status) query.set("status", params.status);
   if (params.closed) query.set("closed", params.closed);
+  if (params.size) query.set("size", params.size);
   query.set("page", String(page));
 
   return (

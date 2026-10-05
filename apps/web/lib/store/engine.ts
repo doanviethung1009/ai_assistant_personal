@@ -90,6 +90,7 @@ interface StoreState {
   ai_logs: any[];
   minutesLoggedToday: number;
   minutesLoggedDate: string;
+  currentUsers: string[];
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
   onChange: (() => void) | null;
   onAiLogsChange: (() => void) | null;
@@ -107,6 +108,7 @@ export function state(): StoreState {
     ai_logs: [],
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
+    currentUsers: ["Đoàn Việt Hưng"], // Giá trị mặc định
     onChange: null,
     onAiLogsChange: null,
   };
@@ -129,6 +131,16 @@ export function touchedAiLogs(): void {
   state().onAiLogsChange?.();
 }
 
+export function getCurrentUsers(): string[] {
+  return state().currentUsers || ["Đoàn Việt Hưng"];
+}
+
+export function setCurrentUsers(names: string[]): void {
+  const store = state();
+  store.currentUsers = names.map(n => n.trim()).filter(Boolean);
+  touched();
+}
+
 // ── Snapshot / restore, dùng bởi lớp persistence ────────────────────────
 
 export function snapshot(): DataFile {
@@ -142,6 +154,7 @@ export function snapshot(): DataFile {
     meta: {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
+      current_users: store.currentUsers,
     },
   };
 }
@@ -170,6 +183,14 @@ export function restore(data: DataFile): void {
   
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();
+  
+  if (data.meta?.current_users && Array.isArray(data.meta.current_users)) {
+    store.currentUsers = data.meta.current_users;
+  } else if ((data.meta as any)?.current_user) {
+    store.currentUsers = [(data.meta as any).current_user]; // migrate từ bản cũ
+  } else {
+    store.currentUsers = ["Đoàn Việt Hưng"];
+  }
 
   // Đồng hồ đã sang ngày mới thì số phút của hôm qua không còn ý nghĩa
   if (store.minutesLoggedDate !== isoDate()) {
@@ -524,7 +545,13 @@ function find(id: string, includeDeleted = false): StoredTask {
 export function getAgenda(): Agenda {
   const today = isoDate();
   const now = Date.now();
-  const tasks = aliveTasks().filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
+  const store = state();
+  const users = store.currentUsers || ["Đoàn Việt Hưng"];
+  const isMyTask = (t: any) => {
+    if (t.assignee) return users.length > 0 && users.includes(t.assignee);
+    return t.source !== 'jira'; // Task Jira không có người nhận thì không phải của mình
+  };
+  const tasks = aliveTasks().filter(isMyTask);
 
   const inProgress = tasks.filter((t) => t.status === "in_progress");
   const skip = new Set(inProgress.map((t) => t.id));
@@ -589,7 +616,12 @@ export function getStats(): Stats {
   const now = Date.now();
   const windowStart = Date.now() - 6 * DAY_MS;
   const store = state();
-  const tasks = aliveTasks().filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
+  const users = store.currentUsers || ["Đoàn Việt Hưng"];
+  const isMyTask = (t: any) => {
+    if (t.assignee) return users.length > 0 && users.includes(t.assignee);
+    return t.source !== 'jira';
+  };
+  const tasks = aliveTasks().filter(isMyTask);
 
   const byStatus: Record<string, number> = {};
   for (const task of tasks) {
@@ -653,7 +685,13 @@ export function listTasks(options: ListOptions = {}): Paged<Task> {
   }
   
   if (options.forCurrentUser) {
-    result = result.filter((t) => t.assignee === null || t.assignee === "Đoàn Việt Hưng");
+    const store = state();
+    const users = store.currentUsers || ["Đoàn Việt Hưng"];
+    const isMyTask = (t: any) => {
+      if (t.assignee) return users.length > 0 && users.includes(t.assignee);
+      return t.source !== 'jira';
+    };
+    result = result.filter(isMyTask);
   } else if (options.assignee) {
     result = result.filter((t) => t.assignee === options.assignee);
   }
@@ -1438,7 +1476,7 @@ export function deleteGlobalTag(name: string): void {
   if (changed) touched();
 }
 
-export function wipeAllData(options?: { tasks?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
+export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
   const store = state();
 
   try {
@@ -1476,6 +1514,22 @@ export function wipeAllData(options?: { tasks?: boolean, projects?: boolean, not
 
   if (!options || options.projects) store.projects = [];
   if (!options || options.tasks) store.tasks = [];
+  if (options && options.tasks_personal) {
+    const users = store.currentUsers || ["Đoàn Việt Hưng"];
+    const isMyTask = (t: any) => {
+      if (t.assignee) return users.length > 0 && users.includes(t.assignee);
+      return t.source !== 'jira';
+    };
+    store.tasks = store.tasks.filter(t => !isMyTask(t));
+  }
+  if (options && options.tasks_team) {
+    const users = store.currentUsers || ["Đoàn Việt Hưng"];
+    const isTeamTask = (t: any) => {
+      if (t.assignee) return users.length === 0 || !users.includes(t.assignee);
+      return t.source === 'jira';
+    };
+    store.tasks = store.tasks.filter(t => !isTeamTask(t));
+  }
   if (!options || options.notes) store.notes = [];
   if (!options || options.sync_urls) store.sync_urls = [];
   

@@ -6,6 +6,7 @@ import { ChromeHistoryManager } from "@/components/chrome-history-manager";
 import { WipeDataManager } from "@/components/wipe-data-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
 import { VaultImportManager } from "@/components/vault-import-manager";
+import { JiraSyncManager } from "@/components/jira-sync-manager";
 import { getSyncUrlsApi } from "@/lib/api";
 import {
   DATA_SOURCE,
@@ -75,8 +76,12 @@ const EXPORTS = [
   },
 ];
 
+import { CurrentUserManager } from "@/components/current-user-manager";
+import { getCurrentUsersApi } from "@/lib/api";
+
 export default async function DataPage() {
   const syncUrls = await getSyncUrlsApi();
+  const currentUsers = await getCurrentUsersApi();
   let taskCount: number;
   let projectCount: number;
   let noteCount: number;
@@ -104,12 +109,13 @@ export default async function DataPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-xl font-semibold tracking-tight">Dữ liệu</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Dữ liệu & Cấu hình</h1>
         <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          Xuất ra JSON hoặc CSV để backup, nhập lại để phục hồi hoặc chuyển
-          sang máy khác.
+          Cấu hình cá nhân, xuất dữ liệu, backup và nhập liệu.
         </p>
       </div>
+
+      <CurrentUserManager initialUsers={currentUsers} />
 
       <section
         className={`rounded-lg border p-4 ${info.tone === "warn"
@@ -247,6 +253,7 @@ DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
       <DataImport allowReplace={IS_LOCAL} />
 
       <UrlSyncManager initialUrls={syncUrls} />
+        <JiraSyncManager />
         <FileUploadManager />
         <ChromeHistoryManager />
         <VaultImportManager />

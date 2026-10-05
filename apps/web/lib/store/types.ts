@@ -68,6 +68,8 @@ export interface DataFile {
     minutes_logged_today: number;
     /** Ngày ứng với minutes_logged_today, để reset khi sang ngày mới. */
     minutes_logged_date: string;
+    /** Danh sách người dùng (để lọc task của mình) */
+    current_users?: string[];
   };
 }
 
