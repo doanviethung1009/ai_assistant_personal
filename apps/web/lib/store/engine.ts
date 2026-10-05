@@ -175,8 +175,23 @@ export function snapshotAiLogs(): { schema_version: number; exported_at: string;
 
 export function restore(data: DataFile): void {
   const store = state();
-  store.projects = data.projects ?? [];
-  store.tasks = data.tasks ?? [];
+  const projMap = new Map<string, Project>();
+  store.projects = (data.projects ?? []).map(p => {
+    if (!p.color) {
+      p.color = stringToColor(p.key);
+    }
+    projMap.set(p.id, p);
+    return p;
+  });
+  store.tasks = (data.tasks ?? []).map(t => {
+    if (t.project_id && t.project && !t.project.color) {
+       const p = projMap.get(t.project_id);
+       if (p) {
+          t.project.color = p.color;
+       }
+    }
+    return t;
+  });
   // `?? []` là lớp bảo vệ thứ hai sau bước migrate v2→v3. File v2 đọc trực
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
@@ -986,6 +1001,15 @@ export function logTime(
   return toDetail(task);
 }
 
+function stringToColor(str: string): string {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 70%, 65%)`;
+}
+
 export function createProject(input: {
   key: string;
   name: string;
@@ -1003,7 +1027,7 @@ export function createProject(input: {
     key,
     name: input.name.trim(),
     description: null,
-    color: input.color ?? null,
+    color: input.color || stringToColor(key),
     is_archived: false,
     created_at: nowIso(),
     updated_at: nowIso(),

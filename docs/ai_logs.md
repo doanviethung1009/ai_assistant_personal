@@ -253,3 +253,11 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 - **Xử lý:** Cập nhật `CurrentUserManager` để hiển thị danh sách Gợi ý (dạng các nút bấm nhỏ) chứa tên của những Assignees có trong hệ thống nhưng chưa được chọn. Người dùng chỉ cần click vào nút để thêm tên vào ô input thay vì phải gõ thủ công. 
 - **Phản hồi:** Đã thêm danh sách Gợi ý tên bằng các nút bấm bên dưới ô "Tên người dùng cá nhân" để dễ dàng click chọn.
 
+
+---
+
+### [06-10-2026 00:20] | Category: [APP]
+- **Prompt:** "sao data project lại cùng 1 màu vậy hãy tách biệt đi"
+- **Xử lý:** Bổ sung hàm `stringToColor` trong `engine.ts` để tự động băm (hash) mã dự án thành một mã màu HSL riêng biệt và dễ nhìn trên giao diện dark mode. Đã cập nhật hàm `createProject` để tự tạo màu nếu không được truyền vào, đồng thời gắn hook vào `restore()` để tự động fill màu cho các project cũ đang bị thiếu màu.
+- **Phản hồi:** Các dự án đã có màu riêng biệt dựa trên tên của chúng.
+
