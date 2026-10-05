@@ -17,7 +17,7 @@
 - `apps/core/`: Chứa toàn bộ Backend (Python, FastAPI, SQLAlchemy, Alembic).
 - `docs/`: Chứa tài liệu thiết kế. Mọi tính năng lớn tạo ra đều phải ghi log vào đây.
 - `.agents/rules/`: Luật code bắt buộc phải tuân theo.
-- `.agents/skills/`: Các kỹ năng đóng gói sẵn (ví dụ: tạo bảng mới, quy trình commit git).
+- `.agents/skills/`: Các kỹ năng đóng gói sẵn (ví dụ: tạo bảng mới, quy trình commit git, triển khai phân quyền RBAC).
 
 *💡 Tip cho Agent: Nếu bạn chưa rõ cấu trúc chi tiết, hãy lập tức đọc `docs/PROJECT_STRUCTURE.md`.*
 

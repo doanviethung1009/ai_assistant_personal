@@ -14,9 +14,11 @@ Hầu hết các nền tảng Agentic Coding hiện nay (như Antigravity) đề
   │   ├── comment-style.md   # Luật về comment, document
   │   └── backend-conventions.md # Luật chuyên biệt cho backend
   ├── skills/                # Các kỹ năng/quy trình mẫu (Checklist tự động)
-  │   ├── deploy-prod/       # Skill: Hướng dẫn AI cách deploy
+  │   ├── add-entity/        # Skill: Tạo model/bảng mới xuyên suốt stack
   │   │   └── SKILL.md
-  │   └── review-code/       # Skill: Hướng dẫn AI cách review PR
+  │   ├── git-commit/        # Skill: Quy trình commit và changelog
+  │   │   └── SKILL.md
+  │   └── rbac-implementation/ # Skill: Chuẩn mực viết code phân quyền (Role, Rule)
   │       └── SKILL.md
   └── plugins/               # Tích hợp sâu hơn (nếu có)
 ```
