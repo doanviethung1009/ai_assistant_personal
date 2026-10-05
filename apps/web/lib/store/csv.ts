@@ -407,6 +407,9 @@ const VALID_NOTE_KIND: readonly NoteKind[] = [
   "text",
   "config",
   "code",
+  "system_info",
+  "system_flow",
+  "knowledge",
 ];
 const VALID_NOTE_SOURCE: readonly NoteSource[] = [
   "manual",

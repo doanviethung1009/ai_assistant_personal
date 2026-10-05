@@ -219,6 +219,32 @@ async function initialiseAiLogs(): Promise<void> {
   await saveAiLogs();
 }
 
+/**
+ * Nạp lại ai-logs.json từ đĩa vào RAM.
+ *
+ * File này được ghi từ NGOÀI process web (scripts/add-ai-log.js, Agent, sửa
+ * tay), trong khi engine chỉ nạp một lần lúc khởi động nên trang AI Trace sẽ
+ * hiện dữ liệu cũ. Đọc lại trước mỗi lần liệt kê để đĩa là nguồn sự thật.
+ *
+ * Không gọi change handler: đây là đọc, ghi ngược lại ra đĩa là thừa và còn
+ * có nguy cơ đè mất lần ghi của tiến trình khác.
+ */
+export async function reloadAiLogsFromDisk(): Promise<void> {
+  try {
+    const raw = await readFile(aiLogsFilePath(), "utf8");
+    const parsed = JSON.parse(raw) as { ai_logs?: unknown };
+    engine.restoreAiLogs({
+      ai_logs: Array.isArray(parsed.ai_logs) ? parsed.ai_logs : [],
+    });
+  } catch (error) {
+    // Chưa có file thì giữ nguyên RAM. File đang bị ghi dở (JSON lỗi) thì
+    // cũng giữ bản cũ thay vì làm trang sập.
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      console.warn("[store] không đọc lại được ai-logs.json:", error);
+    }
+  }
+}
+
 export function ensureLoaded(): Promise<void> {
   globalCache.__builderStoreReady ??= initialise();
   return globalCache.__builderStoreReady;

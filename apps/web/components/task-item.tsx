@@ -209,6 +209,18 @@ export function TaskItem({ task }: { task: Task }) {
               </button>
             ) : null}
 
+            {!isClosed ? (
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => run(() => setStatusAction(task.id, "done"))}
+                className={ICON_BUTTON}
+                title="Đánh dấu hoàn thành"
+              >
+                Xong
+              </button>
+            ) : null}
+
             {confirmingDelete ? (
               <>
                 <button

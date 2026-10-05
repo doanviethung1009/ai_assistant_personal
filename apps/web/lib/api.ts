@@ -1,7 +1,7 @@
 import "server-only";
 
 import * as engine from "./store/engine";
-import { ensureLoaded } from "./store/json-file";
+import { ensureLoaded, reloadAiLogsFromDisk } from "./store/json-file";
 import { DATA_SOURCE, trashRetentionDays } from "./store/types";
 import type {
   Agenda,
@@ -591,6 +591,9 @@ export async function wipeAllDataApi(options?: { tasks?: boolean, projects?: boo
 
 export async function listAiLogs(): Promise<any[]> {
   if (IS_LOCAL) {
+    await ready();
+    // Chế độ file: log được ghi từ ngoài process, phải đọc lại từ đĩa
+    if (DATA_SOURCE === "file") await reloadAiLogsFromDisk();
     return local(() => engine.snapshotAiLogs().ai_logs ?? []);
   }
   const res = await coreFetch<any>("/api/v1/ai-logs?limit=100");

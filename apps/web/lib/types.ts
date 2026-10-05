@@ -117,6 +117,9 @@ export const NOTE_KIND_LABELS: Record<NoteKind, string> = {
   text: "Ghi chú",
   config: "Cấu hình",
   code: "Đoạn code",
+  system_info: "Hệ thống",
+  system_flow: "Luồng hệ thống",
+  knowledge: "Kiến thức",
 };
 
 export const NOTE_KINDS: NoteKind[] = [
@@ -125,6 +128,9 @@ export const NOTE_KINDS: NoteKind[] = [
   "text",
   "config",
   "code",
+  "system_info",
+  "system_flow",
+  "knowledge",
 ];
 
 /**

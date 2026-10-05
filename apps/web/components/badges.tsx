@@ -75,6 +75,9 @@ const NOTE_KIND_STYLES: Record<NoteKind, string> = {
   text: "bg-slate-500/15 text-slate-300 ring-slate-500/30",
   config: "bg-amber-500/15 text-amber-300 ring-amber-500/30",
   code: "bg-violet-500/15 text-violet-300 ring-violet-500/30",
+  system_info: "bg-teal-500/15 text-teal-300 ring-teal-500/30",
+  system_flow: "bg-fuchsia-500/15 text-fuchsia-300 ring-fuchsia-500/30",
+  knowledge: "bg-indigo-500/15 text-indigo-300 ring-indigo-500/30",
 };
 
 export function NoteKindBadge({ kind }: { kind: NoteKind }) {

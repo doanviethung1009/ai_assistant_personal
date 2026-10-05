@@ -584,7 +584,7 @@ export interface components {
          *     được gì ở tầng nghiệp vụ.
          * @enum {string}
          */
-        NoteKind: "command" | "sql" | "text" | "config" | "code";
+        NoteKind: "command" | "sql" | "text" | "config" | "code" | "system_info" | "system_flow" | "knowledge";
         /** NotePurgeResponse */
         NotePurgeResponse: {
             /**

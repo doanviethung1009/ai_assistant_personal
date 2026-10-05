@@ -65,6 +65,9 @@ class NoteKind(StrEnum):
     TEXT = "text"
     CONFIG = "config"
     CODE = "code"
+    SYSTEM_INFO = "system_info"
+    SYSTEM_FLOW = "system_flow"
+    KNOWLEDGE = "knowledge"
 
     @property
     def is_executable(self) -> bool:
