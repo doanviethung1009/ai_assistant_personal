@@ -5,6 +5,24 @@ import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
 
+// Tên custom field Jira được coi là thông tin phân nhóm dự án
+const CUSTOM_TAG_FIELD = /company|group|customer|client|team|squad|tribe|department|công ty|nhóm|khách|dự án/i;
+
+function slug(s: unknown): string {
+  return String(s ?? "").trim().toLowerCase().replace(/\s+/g, "-");
+}
+
+function customValueToStrings(val: unknown): string[] {
+  if (typeof val === "string") return [val];
+  if (Array.isArray(val)) return val.flatMap(customValueToStrings);
+  if (val && typeof val === "object") {
+    const o = val as any;
+    const v = o.value ?? o.name ?? o.displayName;
+    return typeof v === "string" ? [v] : [];
+  }
+  return [];
+}
+
 export async function syncJiraAction(formData: FormData) {
   if (!IS_LOCAL) {
     return { ok: false, error: "Chỉ hỗ trợ chế độ Local File (Jira Sync ở Phase 1 chỉ hỗ trợ local engine)" };
@@ -14,6 +32,9 @@ export async function syncJiraAction(formData: FormData) {
   const email = formData.get("email") as string;
   const token = formData.get("token") as string;
   const customJql = formData.get("jql") as string;
+  // Dự án (entity Project) sẽ được gắn vào mọi task kéo về; tự tạo nếu chưa có mã này
+  const projectKey = String(formData.get("projectKey") || "").trim().toUpperCase();
+  const projectName = String(formData.get("projectName") || "").trim();
   
   if (!url || !email || !token) {
     return { ok: false, error: "Thiếu URL, Email hoặc Token" };
@@ -45,12 +66,24 @@ export async function syncJiraAction(formData: FormData) {
     }
   }
   
+  // Chế độ cập nhật nhanh: chỉ lấy issue thay đổi từ lần đồng bộ trước (JQL tương đối, không lệch múi giờ)
+  const since = formData.get("since") as string | null;
+  if (since) {
+    const sinceMs = new Date(since).getTime();
+    if (!Number.isNaN(sinceMs)) {
+      const minutes = Math.max(1, Math.ceil((Date.now() - sinceMs) / 60000) + 5);
+      const base = jql.replace(/\s+order\s+by[\s\S]*$/i, "").trim();
+      jql = `(${base}) AND updated >= -${minutes}m ORDER BY updated DESC`;
+    }
+  }
+
   const searchUrl = `${baseUrl}/rest/api/3/search/jql`;
   
   try {
     const authHeader = `Basic ${Buffer.from(`${email.trim()}:${token.trim()}`).toString('base64')}`;
     
     let allIssues: any[] = [];
+    const fieldNames: Record<string, string> = {};
     let nextPageToken: string | undefined = undefined;
     let hasMore = true;
     let pagesFetched = 0;
@@ -59,7 +92,9 @@ export async function syncJiraAction(formData: FormData) {
       const body: any = {
         jql: jql,
         maxResults: 100, // Tối ưu: Lấy 100 kết quả mỗi trang thay vì 50
-        fields: ["summary", "status", "created", "updated", "resolutiondate", "duedate", "assignee", "project", "labels", "description"]
+        // *all + expand names: lấy cả custom field (Company/Group/Team...) và tên hiển thị của chúng để tự nhận diện
+        fields: ["*all"],
+        expand: "names"
       };
       
       if (nextPageToken) {
@@ -86,6 +121,7 @@ export async function syncJiraAction(formData: FormData) {
       }
       
       const data = await res.json();
+      if (data.names) Object.assign(fieldNames, data.names);
       const issues = data.issues || [];
       allIssues = allIssues.concat(issues);
       
@@ -100,6 +136,16 @@ export async function syncJiraAction(formData: FormData) {
     
     const db = engine.state();
     let added = 0;
+
+    // Tìm hoặc tạo dự án theo mã để gắn vào task
+    let projectRef: { id: string; key: string; name: string; color: string | null } | null = null;
+    if (projectKey) {
+      let proj = db.projects.find((p: any) => p.key === projectKey);
+      if (!proj) {
+        proj = engine.createProject({ key: projectKey, name: projectName || projectKey });
+      }
+      projectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
+    }
     let updated = 0;
     
     for (const issue of allIssues) {
@@ -130,7 +176,23 @@ export async function syncJiraAction(formData: FormData) {
         tags.push(fields.project.key.toLowerCase());
       }
       if (Array.isArray(fields.labels)) {
-         fields.labels.forEach((l: string) => tags.push(l.toLowerCase()));
+         fields.labels.forEach((l: string) => tags.push(slug(l)));
+      }
+      // Component, Fix version, loại issue, Epic/parent
+      (fields.components || []).forEach((c: any) => tags.push(slug(c?.name)));
+      (fields.fixVersions || []).forEach((v: any) => tags.push(slug(v?.name)));
+      if (fields.issuetype?.name) tags.push(slug(fields.issuetype.name));
+      if (fields.parent?.key) tags.push(slug(fields.parent.key));
+      let extractedProjectKey = "";
+      // Custom field có tên kiểu Company/Group/Customer/Team...
+      for (const [fid, val] of Object.entries(fields)) {
+        if (!fid.startsWith("customfield_") || val == null) continue;
+        if (!CUSTOM_TAG_FIELD.test(fieldNames[fid] || "")) continue;
+        const vals = customValueToStrings(val);
+        for (const t of vals) {
+          if (!extractedProjectKey) extractedProjectKey = t.trim();
+          tags.push(slug(t));
+        }
       }
       
       const validTags = tags.filter(t => t.length > 0);
@@ -147,6 +209,20 @@ export async function syncJiraAction(formData: FormData) {
         task.status = status as any;
         task.tags = Array.from(new Set([...task.tags, ...validTags]));
         task.updated_at = nowIso();
+        let issueProjectRef = projectRef;
+        const jKey = (extractedProjectKey || fields.project?.key || issueKey.split('-')[0]).toUpperCase();
+        if (jKey) {
+          let proj = db.projects.find((p: any) => p.key === jKey);
+          if (!proj) {
+            proj = engine.createProject({ key: jKey, name: extractedProjectKey || fields.project?.name || jKey });
+          }
+          issueProjectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
+        }
+
+        if (issueProjectRef) {
+          task.project_id = issueProjectRef.id;
+          task.project = issueProjectRef;
+        }
         if (status === 'done') {
            // Luôn lấy ngày hoàn thành chính xác từ Jira đè lên ngày hiện tại
            task.completed_at = resolvedAt;
@@ -178,6 +254,22 @@ export async function syncJiraAction(formData: FormData) {
           deleted_at: null,
           events: [],
         };
+        
+        let issueProjectRef = projectRef;
+        const jKey = (extractedProjectKey || fields.project?.key || issueKey.split('-')[0]).toUpperCase();
+        if (jKey) {
+          let proj = db.projects.find((p: any) => p.key === jKey);
+          if (!proj) {
+            proj = engine.createProject({ key: jKey, name: extractedProjectKey || fields.project?.name || jKey });
+          }
+          issueProjectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
+        }
+        
+        if (issueProjectRef) {
+          task.project_id = issueProjectRef.id;
+          task.project = issueProjectRef;
+        }
+        
         db.tasks.unshift(task);
         added++;
       }

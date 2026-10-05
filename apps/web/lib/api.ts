@@ -165,6 +165,11 @@ export async function getCurrentUsersApi(): Promise<string[]> {
   return [];
 }
 
+export async function getAssigneesApi(): Promise<string[]> {
+  if (IS_LOCAL) return local(() => engine.getAssignees());
+  return []; // Tương lai: gọi API lấy ds assignees từ Postgres nếu chạy thật
+}
+
 export async function setCurrentUsersApi(names: string[]): Promise<void> {
   if (IS_LOCAL) return local(() => { engine.setCurrentUsers(names); return undefined as any; });
 }

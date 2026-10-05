@@ -4,9 +4,9 @@ import { useState, useTransition } from "react";
 import { wipeAllDataAction } from "@/app/actions-danger";
 import { useRouter } from "next/navigation";
 
-export function WipeDataManager() {
+export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
   const [confirmText, setConfirmText] = useState("");
-  const [wipeTarget, setWipeTarget] = useState<string>("all");
+  const [wipeTarget, setWipeTarget] = useState<string>("tasks");
   const [assignee, setAssignee] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -33,9 +33,9 @@ export function WipeDataManager() {
       if (wipeTarget !== "all") {
         options = {
           tasks: wipeTarget === "tasks",
-          tasks_personal: wipeTarget === "tasks_personal",
-          tasks_team: wipeTarget === "tasks_team",
-          tasks_assignee: wipeTarget === "tasks_assignee" ? assignee.trim() : undefined,
+          tasks_personal: wipeTarget === "tasks_personal" && !assignee.trim(),
+          tasks_team: wipeTarget === "tasks_team" && !assignee.trim(),
+          tasks_assignee: ["tasks_personal", "tasks_team", "tasks_assignee"].includes(wipeTarget) && assignee.trim() ? assignee.trim() : undefined,
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
           vault: wipeTarget === "vault",
@@ -66,8 +66,7 @@ export function WipeDataManager() {
           disabled={pending}
           className="rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
         >
-          <option value="all">Xoá TOÀN BỘ dữ liệu (Tất cả)</option>
-          <option value="tasks">Chỉ xoá TẤT CẢ Task (cả Team & Cá nhân)</option>
+          <option value="tasks">Xoá TẤT CẢ Task (cả Team &amp; Cá nhân)</option>
           <option value="tasks_personal">Chỉ xoá Task CÁ NHÂN (Hôm nay)</option>
           <option value="tasks_team">Chỉ xoá Task TEAM (Của người khác)</option>
           <option value="tasks_assignee">Xoá Task theo 1 NGƯỜI cụ thể (nhập tên)</option>
@@ -76,16 +75,25 @@ export function WipeDataManager() {
           <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>
           <option value="sync_urls">Chỉ xoá Danh sách URL Cào dữ liệu</option>
           <option value="chrome_history">Chỉ xoá Lịch sử Chrome History</option>
+          <option value="all">⚠️ Xoá TOÀN BỘ dữ liệu (Tất cả, nguy hiểm)</option>
         </select>
-        {wipeTarget === "tasks_assignee" && (
-          <input
-            type="text"
-            placeholder="Tên người được giao (assignee), vd: Đoàn Việt Hưng"
-            value={assignee}
-            onChange={(e) => setAssignee(e.target.value)}
-            disabled={pending}
-            className="mt-2 block w-full rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
-          />
+        {["tasks_personal", "tasks_team", "tasks_assignee"].includes(wipeTarget) && (
+          <div className="relative mt-2">
+            <input
+              type="text"
+              list="assignees-list"
+              placeholder={wipeTarget === "tasks_assignee" ? "Tên người (nhiều người cách nhau dấu phẩy)" : "Nhập tên người cần xoá (để trống = xoá theo mặc định)"}
+              value={assignee}
+              onChange={(e) => setAssignee(e.target.value)}
+              disabled={pending}
+              className="block w-full rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
+            />
+            <datalist id="assignees-list">
+              {assignees.map((a) => (
+                <option key={a} value={a} />
+              ))}
+            </datalist>
+          </div>
         )}
       </div>
 

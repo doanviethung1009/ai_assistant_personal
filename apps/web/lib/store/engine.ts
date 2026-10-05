@@ -141,6 +141,11 @@ export function setCurrentUsers(names: string[]): void {
   touched();
 }
 
+export function getAssignees(): string[] {
+  const assignees = state().tasks.map(t => t.assignee).filter(Boolean) as string[];
+  return Array.from(new Set(assignees)).sort();
+}
+
 // ── Snapshot / restore, dùng bởi lớp persistence ────────────────────────
 
 export function snapshot(): DataFile {
@@ -1523,8 +1528,8 @@ export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolea
     store.tasks = store.tasks.filter(t => !isMyTask(t));
   }
   if (options && options.tasks_assignee) {
-    const name = options.tasks_assignee.trim().toLowerCase();
-    store.tasks = store.tasks.filter(t => (t.assignee || "").trim().toLowerCase() !== name);
+    const names = options.tasks_assignee.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+    store.tasks = store.tasks.filter(t => !names.includes((t.assignee || "").trim().toLowerCase()));
   }
   if (options && options.tasks_team) {
     const users = store.currentUsers || ["Đoàn Việt Hưng"];

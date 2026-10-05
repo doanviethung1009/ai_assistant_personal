@@ -14,6 +14,7 @@ import {
   listNotes,
   listProjects,
   listTasks,
+  getAssigneesApi,
 } from "@/lib/api";
 import { dataFilePath } from "@/lib/store/json-file";
 
@@ -82,8 +83,10 @@ import { getCurrentUsersApi } from "@/lib/api";
 export default async function DataPage() {
   const syncUrls = await getSyncUrlsApi();
   const currentUsers = await getCurrentUsersApi();
+  const assignees = await getAssigneesApi();
   let taskCount: number;
   let projectCount: number;
+  let projectList: Awaited<ReturnType<typeof listProjects>> = [];
   let noteCount: number;
 
   try {
@@ -95,6 +98,7 @@ export default async function DataPage() {
     ]);
     taskCount = tasks.total;
     projectCount = projects.length;
+    projectList = projects.filter((p) => !p.is_archived);
     noteCount = notes.total;
   } catch (error) {
     return (
@@ -115,7 +119,7 @@ export default async function DataPage() {
         </p>
       </div>
 
-      <CurrentUserManager initialUsers={currentUsers} />
+      <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
 
       <section
         className={`rounded-lg border p-4 ${info.tone === "warn"
@@ -157,8 +161,8 @@ export default async function DataPage() {
         </dl>
       </section>
 
-      <section className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
-        <h2 className="text-sm font-semibold">Đổi nguồn dữ liệu</h2>
+      <details className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
+        <summary className="cursor-pointer text-sm font-semibold select-none">Đổi nguồn dữ liệu</summary>
         <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
           Không có nút bấm trên web — đổi <code>DATA_SOURCE</code> cần
           Next.js khởi động lại để đọc biến môi trường mới, một Server Action
@@ -222,7 +226,7 @@ DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
           này không tự xuất hiện ở chế độ khác. Dùng JSON ở mục Xuất dữ liệu
           bên dưới để chuyển tay giữa hai nguồn.
         </p>
-      </section>
+      </details>
 
       <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
         <h2 className="text-sm font-semibold">Xuất dữ liệu</h2>
@@ -250,15 +254,23 @@ DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
         </ul>
       </section>
 
-      <DataImport allowReplace={IS_LOCAL} />
+      <JiraSyncManager projects={projectList.map((p) => ({ id: p.id, key: p.key, name: p.name }))} />
 
-      <UrlSyncManager initialUrls={syncUrls} />
-        <JiraSyncManager />
-        <FileUploadManager />
-        <ChromeHistoryManager />
-        <VaultImportManager />
-        <RestoreJsonManager />
-        <WipeDataManager />
+      <details className="rounded-lg border border-[var(--color-border)] p-4">
+        <summary className="cursor-pointer text-sm font-semibold select-none">
+          Nạp dữ liệu từ nguồn khác (JSON, URL, file, Chrome, Vault)
+        </summary>
+        <div className="mt-4 flex flex-col gap-6">
+          <DataImport allowReplace={IS_LOCAL} />
+          <UrlSyncManager initialUrls={syncUrls} />
+          <FileUploadManager />
+          <ChromeHistoryManager />
+          <VaultImportManager />
+          <RestoreJsonManager />
+        </div>
+      </details>
+
+      <WipeDataManager assignees={assignees} />
 
       <section className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
         <h2 className="text-sm font-semibold">Chuyển sang Postgres sau này</h2>

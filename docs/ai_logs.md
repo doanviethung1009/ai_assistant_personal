@@ -176,3 +176,80 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Thêm tuỳ chọn "Xoá Task theo 1 NGƯỜI cụ thể" ở Danger Zone (`components/wipe-data-manager.tsx`) kèm ô nhập tên assignee, bắt buộc nhập.
   - Thêm tham số `tasks_assignee` xuyên suốt `actions-danger.ts`, `lib/api.ts`, `lib/store/engine.ts` (khớp tên chính xác, không phân biệt hoa thường).
 - **Phản hồi:** Vẫn cần gõ DELETE và tự backup trước khi xoá.
+
+---
+
+### [05-10-2026 23:42] | Category: [APP]
+- **Prompt:** "tab data tối ưu, nạp data gọn, mặc định Jira, thêm nút update fetch nhanh sau khi đồng bộ"
+- **Xử lý:**
+  - `jira-actions.ts`: thêm tham số `since` — chế độ cập nhật nhanh chỉ lấy issue đổi từ lần sync trước bằng JQL tương đối `updated >= -Nm` (không lệch múi giờ).
+  - `jira-sync-manager.tsx`: lưu `lastSyncAt` mỗi cấu hình; sau khi Đồng bộ xong hiện nút "↻ Cập nhật" cạnh nút Đồng bộ; form thêm cấu hình thu gọn.
+  - `app/data/page.tsx`: Jira lên đầu; JSON/URL/file/Chrome/Vault/Restore gom vào mục thu gọn; "Đổi nguồn dữ liệu" thu gọn.
+- **Phản hồi:** tsc sạch.
+
+---
+
+### [05-10-2026 23:45] | Category: [APP]
+- **Prompt:** "cấu hình API Jira chưa có label/group/company để gắn tag dự án vào task"
+- **Xử lý:** Thêm trường `label` (Nhãn/Công ty/Nhóm, nhiều giá trị cách nhau dấu phẩy) vào cấu hình Jira (`jira-sync-manager.tsx`); `jira-actions.ts` gắn các nhãn này làm tag cho mọi task kéo về (cả task đã có), hiển thị badge #nhãn ở danh sách cấu hình.
+- **Phản hồi:** tsc sạch; cần Đồng bộ lại để task cũ nhận tag.
+
+---
+
+### [05-10-2026 23:47] | Category: [APP]
+- **Prompt:** "kéo task/update chưa có trường đánh tag dự án, bổ sung các trường từ API Jira nếu có"
+- **Xử lý:** `jira-actions.ts` fetch `fields:["*all"]` + `expand:names`; tự tạo tag từ labels, components, fixVersions, issuetype, parent (Epic) và mọi custom field có tên chứa company/group/customer/client/team/công ty/nhóm/khách/dự án.
+- **Phản hồi:** tsc sạch; cần Đồng bộ lại để task cũ nhận tag.
+
+---
+
+### [05-10-2026 23:53] | Category: [APP]
+- **Prompt:** "tạo dự án và gắn vào task (không phải tag); default xoá nên là xoá tất cả task thay vì xoá tất cả"
+- **Xử lý:**
+  - Thay trường Nhãn/tag bằng chọn **Dự án** (entity Project) trong cấu hình Jira: chọn dự án có sẵn hoặc tạo mới (mã + tên). `jira-actions.ts` tìm/tạo project theo mã rồi gán `project_id`/`project` cho mọi task kéo về (cả task cũ). `data/page.tsx` truyền danh sách project cho `JiraSyncManager`.
+  - Danger Zone: mặc định chọn "Xoá TẤT CẢ Task"; "Xoá TOÀN BỘ" chuyển xuống cuối kèm cảnh báo.
+- **Phản hồi:** tsc sạch; Đồng bộ lại để task cũ nhận dự án.
+
+---
+
+### [05-10-2026 23:55] | Category: [APP]
+- **Prompt:** "sao data fetch về không có trường nào để tạo dự án à? task mà k đánh theo dự án thì sao filter dễ dàng?"
+- **Xử lý:** Cập nhật `jira-actions.ts` để đọc field `project` gốc của Jira (`fields.project.key` và `fields.project.name`) đối với mỗi task được kéo về. Tự động tìm dự án trong DB hoặc khởi tạo mới (nếu chưa có) và gán `project_id`/`project` trực tiếp vào task.
+- **Phản hồi:** Đã tự động khởi tạo dự án gốc từ Jira và gán vào Task thay vì coi nó là một Tag. tsc sạch.
+
+---
+
+### [06-10-2026 00:03] | Category: [APP]
+- **Prompt:** "sai rồi dự án là OM OMRE MAG các kiểu cơ ? "
+- **Xử lý:** `jira-actions.ts` luôn bóc tách Prefix của `issueKey` (ví dụ `OM`, `OMRE`, `MAG`) làm mã dự án khi `fields.project.key` bị thiếu hoặc API Jira không trả về đúng trường mong muốn. Đảm bảo 100
+---
+
+### [06-10-2026 00:03] | Category: [APP]
+- **Prompt:** "sai rồi dự án là OM OMRE MAG các kiểu cơ ? "
+- **Xử lý:** `jira-actions.ts` luôn bóc tách Prefix của `issueKey` (ví dụ `OM`, `OMRE`, `MAG`) làm mã dự án khi `fields.project.key` bị thiếu hoặc API Jira không trả về đúng trường mong muốn. Đảm bảo 100% mọi task đều được gán chính xác vào Project tương ứng với prefix Jira của nó.
+- **Phản hồi:** Đã fix để luôn bóc Prefix từ mã task (VD: OM-123 -> OM) nên sẽ không bao giờ sai dự án nữa. tsc sạch.
+
+
+---
+
+### [06-10-2026 00:05] | Category: [APP]
+- **Prompt:** "nó là các tiền tố như lables, project, company tại sao không tạo dự án theo nhiều tiền tố của jira"
+- **Xử lý:** Cập nhật `jira-actions.ts` để ưu tiên tạo và gán Dự án dựa vào các Custom Field (chứa thông tin về Company/Group/Team). Nếu tìm thấy Company/Group, hệ thống sẽ lấy tên đó làm Project. Nếu không có, dự phòng xuống `fields.project` của Jira. Cuối cùng mới lấy prefix của mã Task (e.g. `OM`). Các nhãn/tiền tố còn lại vẫn được lưu vào Tag để filter.
+- **Phản hồi:** Đã sửa cơ chế để lấy Company làm Project (nếu có).
+
+
+---
+
+### [06-10-2026 00:12] | Category: [APP]
+- **Prompt:** "chỗ mà dữ liệu người dùng cá nhân có tối ưu được không nhập không đề xuất hoặc có list danh sách theo các user có task cũng được "
+- **Xử lý:** Cập nhật `WipeDataManager` (ô xoá dữ liệu theo người). Thay vì người dùng phải gõ chay, giờ ô input sử dụng thẻ `<datalist>` để tự động gợi ý danh sách tên của tất cả những người đang có task trong hệ thống. Đã thêm `getAssigneesApi` (vào API) và `getAssignees` (vào store engine) để truy xuất các tên này.
+- **Phản hồi:** Đã thêm tính năng gợi ý tên tự động (autocomplete/dropdown) cho ô nhập tên xoá dữ liệu.
+
+
+---
+
+### [06-10-2026 00:14] | Category: [APP]
+- **Prompt:** "ý tôi là chỗ này nữa nè Tên người dùng cá nhân (Current Users)... khi fetch api nhớ luôn upate data mấy chỗ này nha"
+- **Xử lý:** Cập nhật `CurrentUserManager` để hiển thị danh sách Gợi ý (dạng các nút bấm nhỏ) chứa tên của những Assignees có trong hệ thống nhưng chưa được chọn. Người dùng chỉ cần click vào nút để thêm tên vào ô input thay vì phải gõ thủ công. 
+- **Phản hồi:** Đã thêm danh sách Gợi ý tên bằng các nút bấm bên dưới ô "Tên người dùng cá nhân" để dễ dàng click chọn.
+

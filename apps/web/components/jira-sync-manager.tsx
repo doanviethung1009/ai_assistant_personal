@@ -13,9 +13,12 @@ export interface JiraConfig {
   email: string;
   token: string;
   jql: string;
+  projectKey?: string;
+  projectName?: string;
+  lastSyncAt?: string;
 }
 
-export function JiraSyncManager() {
+export function JiraSyncManager({ projects = [] }: { projects?: { id: string; key: string; name: string }[] }) {
   const [configs, setConfigs] = useState<JiraConfig[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -26,9 +29,12 @@ export function JiraSyncManager() {
   const [email, setEmail] = useState("");
   const [token, setToken] = useState("");
   const [jql, setJql] = useState("");
+  const [projectKey, setProjectKey] = useState("");
+  const [projectName, setProjectName] = useState("");
 
   const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; error?: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pendingMode, setPendingMode] = useState<"full" | "update">("full");
   const [isFormPending, startFormTransition] = useTransition();
 
   useEffect(() => {
@@ -52,7 +58,7 @@ export function JiraSyncManager() {
 
     let newConfigs = [...configs];
     if (editingId) {
-      newConfigs = newConfigs.map(c => c.id === editingId ? { id: c.id, name, url, email, token, jql } : c);
+      newConfigs = newConfigs.map(c => c.id === editingId ? { ...c, name, url, email, token, jql, projectKey: projectKey === "NEW" ? "" : projectKey.trim().toUpperCase(), projectName: projectName.trim() } : c);
     } else {
       newConfigs.push({
         id: crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(),
@@ -60,7 +66,9 @@ export function JiraSyncManager() {
         url,
         email,
         token,
-        jql
+        jql,
+        projectKey: projectKey === "NEW" ? "" : projectKey.trim().toUpperCase(),
+        projectName: projectName.trim()
       });
     }
 
@@ -76,6 +84,8 @@ export function JiraSyncManager() {
     setEmail(c.email);
     setToken(c.token);
     setJql(c.jql);
+    setProjectKey(c.projectKey || "");
+    setProjectName(c.projectName || "");
   }
 
   function handleDelete(id: string) {
@@ -91,20 +101,32 @@ export function JiraSyncManager() {
     setEmail("");
     setToken("");
     setJql("");
+    setProjectKey("");
+    setProjectName("");
   }
 
-  async function handleSync(config: JiraConfig) {
+  async function handleSync(config: JiraConfig, mode: "full" | "update" = "full") {
     setResult(null);
     setPendingId(config.id);
+    setPendingMode(mode);
 
     const fd = new FormData();
     fd.append("url", config.url);
     fd.append("email", config.email);
     fd.append("token", config.token);
     fd.append("jql", config.jql);
+    fd.append("projectKey", config.projectKey || "");
+    fd.append("projectName", config.projectName || "");
+    if (mode === "update" && config.lastSyncAt) fd.append("since", config.lastSyncAt);
 
     const response = await syncJiraAction(fd);
     setResult(response);
+    if (response.ok) {
+      // Ghi lại mốc đồng bộ để các lần Cập nhật sau chỉ kéo phần mới thay đổi
+      saveToStorage(
+        configs.map(c => (c.id === config.id ? { ...c, lastSyncAt: new Date().toISOString() } : c))
+      );
+    }
     setPendingId(null);
   }
 
@@ -126,16 +148,26 @@ export function JiraSyncManager() {
             {configs.map(c => (
               <div key={c.id} className="flex items-center justify-between p-3 rounded-md bg-[var(--color-surface)] border border-[var(--color-border)]">
                 <div>
-                  <p className="text-sm font-medium">{c.name}</p>
+                  <p className="text-sm font-medium">{c.name}{c.projectKey && (<span className="ml-2 rounded-full bg-[var(--color-accent)]/15 px-2 py-0.5 text-[10px] font-medium text-[var(--color-accent)]">📁 {c.projectKey}</span>)}</p>
                   <p className="text-xs text-[var(--color-ink-muted)]">{c.email} &bull; {c.url}</p>
                 </div>
                 <div className="flex gap-2 items-center">
+                  {c.lastSyncAt && (
+                    <button
+                      onClick={() => handleSync(c, "update")}
+                      disabled={pendingId !== null}
+                      title={`Chỉ lấy task thay đổi từ ${new Date(c.lastSyncAt).toLocaleString("vi-VN")}`}
+                      className="text-xs font-medium bg-emerald-600 text-white px-3 py-1.5 rounded-md hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {pendingId === c.id && pendingMode === "update" ? "Đang cập nhật..." : "↻ Cập nhật"}
+                    </button>
+                  )}
                   <button 
-                    onClick={() => handleSync(c)} 
+                    onClick={() => handleSync(c, "full")} 
                     disabled={pendingId !== null}
                     className="text-xs font-medium bg-[var(--color-accent)] text-white px-3 py-1.5 rounded-md hover:bg-blue-600 disabled:opacity-50"
                   >
-                    {pendingId === c.id ? "Đang kéo..." : "Đồng bộ"}
+                    {pendingId === c.id && pendingMode === "full" ? "Đang kéo..." : "Đồng bộ"}
                   </button>
                   <button onClick={() => handleEdit(c)} className="text-xs font-medium text-[var(--color-ink)] bg-gray-100 dark:bg-gray-800 px-3 py-1.5 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700">
                     Sửa
@@ -151,8 +183,8 @@ export function JiraSyncManager() {
       )}
 
       {/* Form thêm/sửa cấu hình */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">{editingId ? "Sửa cấu hình Jira" : "Thêm cấu hình Jira mới"}</h3>
+      <details open={configs.length === 0 || editingId !== null} className="group">
+        <summary className="cursor-pointer text-sm font-medium mb-3 select-none">{editingId ? "Sửa cấu hình Jira" : "+ Thêm cấu hình Jira mới"}</summary>
         <form onSubmit={handleSaveConfig} className="flex flex-col gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-ink-muted)]">
@@ -212,6 +244,48 @@ export function JiraSyncManager() {
 
           <div>
             <label className="mb-1 block text-xs font-medium text-[var(--color-ink-muted)]">
+              Dự án (gắn vào task)
+            </label>
+            <select
+              value={projects.some(p => p.key === projectKey) ? projectKey : projectKey ? "__new__" : ""}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "") { setProjectKey(""); setProjectName(""); }
+                else if (v === "__new__") { setProjectKey("NEW"); setProjectName(""); }
+                else { setProjectKey(v); setProjectName(projects.find(p => p.key === v)?.name || ""); }
+              }}
+              className="w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-ink)]"
+            >
+              <option value="">— Không gắn dự án —</option>
+              {projects.map(p => (<option key={p.id} value={p.key}>{p.key} · {p.name}</option>))}
+              <option value="__new__">➕ Tạo dự án mới…</option>
+            </select>
+            {projectKey && !projects.some(p => p.key === projectKey) && (
+              <div className="mt-2 flex max-w-md gap-2">
+                <input
+                  type="text"
+                  value={projectKey === "NEW" ? "" : projectKey}
+                  onChange={(e) => setProjectKey(e.target.value.toUpperCase() || "NEW")}
+                  placeholder="Mã (VD: CONGTYA)"
+                  pattern="[A-Za-z][A-Za-z0-9_]{1,19}"
+                  className="w-32 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm uppercase text-[var(--color-ink)]"
+                />
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  placeholder="Tên dự án"
+                  className="flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm text-[var(--color-ink)]"
+                />
+              </div>
+            )}
+            <p className="text-[10px] text-[var(--color-ink-muted)] mt-1 max-w-md">
+              Chọn dự án có sẵn hoặc tạo mới (tự tạo khi đồng bộ). Mọi task kéo về sẽ được gắn vào dự án này.
+            </p>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-xs font-medium text-[var(--color-ink-muted)]">
               Câu lệnh JQL (Tùy chọn)
             </label>
             <textarea
@@ -243,7 +317,7 @@ export function JiraSyncManager() {
             )}
           </div>
         </form>
-      </div>
+      </details>
 
       {result && (
         <div className={`mt-6 p-3 rounded-md text-sm ${result.ok ? 'bg-green-500/10 text-green-600 border border-green-500/20' : 'bg-red-500/10 text-red-600 border border-red-500/20'}`}>
