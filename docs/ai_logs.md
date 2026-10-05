@@ -116,3 +116,54 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Mở file `data/ai-logs.json` để xác minh.
   - Phân tích cơ chế "tự động" dựa trên sự tuân thủ (obedience) của Agent đối với luật `ai-logger.md` thay vì cơ chế webhook ngầm của hệ thống.
 - **Phản hồi:** Xác nhận các log đều đang được ghi đầy đủ và giải thích cơ chế hoạt động cho user.
+
+---
+
+### [05-10-2026 14:57] | Category: [WEB]
+- **Prompt:** "chỗ task nên bổ sung nhanh nút complete"
+- **Xử lý:**
+  - Xác định file `apps/web/components/task-item.tsx` chịu trách nhiệm render item cho task.
+  - Thêm một button "Xong" gọi đến hàm `setStatusAction(task.id, "done")` vào nhóm action cho phép thao tác nhanh (như Hôm nay, +30p, Xoá).
+- **Phản hồi:** Đã thêm thành công nút hoàn thành nhanh vào component TaskItem.
+
+---
+
+### [05-10-2026 15:05] | Category: [APP]
+- **Prompt:** "tôi muốn tối ưu hơn ở sổ tay, bổ sung thêm việc note các system information cũng như system flow, knowledge của document trên web"
+- **Xử lý:**
+  - Bổ sung các loại `NoteKind` mới vào Enum backend (`apps/core/app/models/enums.py`): `SYSTEM_INFO`, `SYSTEM_FLOW`, `KNOWLEDGE`.
+  - Cập nhật schema frontend ở `apps/web/lib/generated/openapi.d.ts` và danh sách ở `apps/web/lib/types.ts`.
+  - Khai báo màu badge cho các loại sổ tay mới tại `apps/web/components/badges.tsx`.
+  - Cập nhật danh sách note hợp lệ để dùng mode JSON storage tại `apps/web/lib/store/csv.ts`.
+- **Phản hồi:** Đã thêm thành công các danh mục mới cho Sổ tay. (Lưu ý nếu dùng Postgres, cần chạy DB migration để cập nhật CHECK constraint cho cột này).
+
+---
+
+### [05-10-2026 15:12] | Category: [APP]
+- **Prompt:** "ý tôi là thêm 1 view cho việc sổ tay và dùng để note lại các hệ thống thông tin nhạy cảm có masking và unmask nếu cần, cần setup mật khẩu để xem được masking"
+- **Xử lý:**
+  - Tạo view mới `/vault` (Két bảo mật), tách khỏi Sổ tay thường, thêm vào `lib/nav.ts`.
+  - Mã hoá thật ở browser (`lib/vault/crypto.ts`): PBKDF2-SHA256 600k vòng + AES-256-GCM, server chỉ giữ blob ciphertext.
+  - `lib/vault/store.ts` + `app/vault-actions.ts`: lưu `data/vault.json` (0600, .bak, chống ghi đè bằng updated_at), độc lập DATA_SOURCE nên không cần migration Postgres.
+  - UI `components/vault-client.tsx`: đặt/mở khoá, mask/Hiện (tự che 15s), Chép (xoá clipboard 30s), tự khoá 5 phút, đổi mật khẩu, template theo loại hệ thống.
+  - Export ciphertext qua `/api/export?format=json&entity=vault`; tài liệu `docs/VAULT.md` đã đăng ký trong `lib/docs.ts`.
+- **Phản hồi:** Đã hoàn thành, tsc sạch. Nhắc rõ quên mật khẩu không khôi phục được và cần localhost/HTTPS cho Web Crypto.
+
+---
+
+### [05-10-2026 15:13] | Category: [WEB]
+- **Prompt:** "hình như trang AI trace đang chưa tự cập nhật data từ ailog.json bạn hãy check lại giúp tôi"
+- **Xử lý:**
+  - Nguyên nhân: `ai-logs.json` chỉ được nạp vào RAM (engine) một lần lúc server khởi động; `scripts/add-ai-log.js` ghi thẳng file từ ngoài process nên trang `/ai-logs` luôn hiện dữ liệu cũ tới khi restart.
+  - Thêm `reloadAiLogsFromDisk()` ở `lib/store/json-file.ts` (không kích hoạt ghi ngược) và gọi trong `listAiLogs()` (`lib/api.ts`) ở chế độ `DATA_SOURCE=file`.
+- **Phản hồi:** Đã xác nhận trang trả về log mới nhất, không cần restart. tsc sạch.
+
+---
+
+### [05-10-2026 15:19] | Category: [APP]
+- **Prompt:** "ủa trang vaults khi tôi mất pass thì không có thể lấy lại mật khẩu à ?" (chọn phương án Recovery key)
+- **Xử lý:**
+  - Nâng mô hình mã hoá lên envelope encryption (blob v2): DEK ngẫu nhiên mã hoá nội dung, được wrap bằng mật khẩu VÀ bằng mã khôi phục 160 bit (`lib/vault/crypto.ts`). Blob v1 cũ vẫn mở được và tự nâng cấp.
+  - UI mới `components/vault-recovery.tsx`: màn hiện mã một lần (chép/tải/in, phải tick đã cất), form "Quên mật khẩu" đặt mật khẩu mới bằng mã. `vault-client.tsx`: nút Mã khôi phục mới, banner cho két chưa có mã.
+  - Kiểm thử 12 ca bằng `scripts/patches/vault-crypto-check.ts` (đổi mật khẩu, mã cũ hết hiệu lực, blob bị sửa...), tsc sạch. Cập nhật `docs/VAULT.md`.
+- **Phản hồi:** Giải thích nguyên nhân không khôi phục được, đã thêm đường khôi phục; nhắc cất mã tách khỏi mật khẩu.

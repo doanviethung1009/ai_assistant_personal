@@ -30,6 +30,7 @@ export function WipeDataManager() {
           tasks: wipeTarget === "tasks",
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
+          vault: wipeTarget === "vault",
           sync_urls: wipeTarget === "sync_urls",
           chrome_history: wipeTarget === "chrome_history"
         };
@@ -61,6 +62,7 @@ export function WipeDataManager() {
           <option value="tasks">Chỉ xoá Task (bao gồm Tags)</option>
           <option value="projects">Chỉ xoá Dự án (Projects)</option>
           <option value="notes">Chỉ xoá Sổ tay (Notes)</option>
+          <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>
           <option value="sync_urls">Chỉ xoá Danh sách URL Cào dữ liệu</option>
           <option value="chrome_history">Chỉ xoá Lịch sử Chrome History</option>
         </select>

@@ -75,6 +75,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "JSON_STORAGE.md"),
   },
   {
+    slug: "vault",
+    title: "Két bảo mật (Vault)",
+    description: "Cách lưu thông tin nhạy cảm: mã hoá AES-256 ở browser, mật khẩu master, che/hiện, tự khoá, giới hạn.",
+    category: "Tổng quan & Hướng dẫn",
+    file: path.join("docs", "VAULT.md"),
+  },
+  {
     slug: "project",
     title: "Bối cảnh dự án",
     description:

@@ -5,6 +5,7 @@ import { FileUploadManager } from "@/components/file-upload-manager";
 import { ChromeHistoryManager } from "@/components/chrome-history-manager";
 import { WipeDataManager } from "@/components/wipe-data-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
+import { VaultImportManager } from "@/components/vault-import-manager";
 import { getSyncUrlsApi } from "@/lib/api";
 import {
   DATA_SOURCE,
@@ -51,6 +52,11 @@ const EXPORTS = [
     href: "/api/export?format=json&entity=ai_logs",
     title: "JSON Nhật ký AI (AiLogs)",
     note: "Dữ liệu JSON thô của file ai-logs.json. Dùng để import/migrate lịch sử AI.",
+  },
+  {
+    href: "/api/export?format=json&entity=vault",
+    title: "JSON Két bảo mật (Vault)",
+    note: "Bản sao lưu Két bảo mật đã được mã hoá hoàn toàn. Chỉ có thể mở bằng mật khẩu hoặc mã khôi phục cũ.",
   },
   {
     href: "/api/export?format=csv&entity=tasks",
@@ -243,6 +249,7 @@ DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
       <UrlSyncManager initialUrls={syncUrls} />
         <FileUploadManager />
         <ChromeHistoryManager />
+        <VaultImportManager />
         <RestoreJsonManager />
         <WipeDataManager />
 

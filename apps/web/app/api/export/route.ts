@@ -7,6 +7,7 @@ import {
   buildProjectsCsv,
   buildTasksCsv,
 } from "@/lib/store/transfer";
+import { readVaultRaw } from "@/lib/vault/store";
 
 /**
  * Tải dữ liệu về máy.
@@ -44,6 +45,15 @@ export async function GET(request: Request): Promise<Response> {
     } else if (format === "json" && entity === "ai_logs") {
       body = await buildAiLogsJson();
       filename = `builder-ai-logs-${stamp()}.json`;
+      contentType = "application/json; charset=utf-8";
+    } else if (format === "json" && entity === "vault") {
+      // Chỉ ciphertext, không có plaintext hay mật khẩu nên an toàn để sao lưu
+      const raw = await readVaultRaw();
+      if (!raw) {
+        return NextResponse.json({ detail: "Két chưa được tạo." }, { status: 404 });
+      }
+      body = raw;
+      filename = `builder-vault-${stamp()}.json`;
       contentType = "application/json; charset=utf-8";
     } else if (format === "csv" && entity === "projects") {
       body = await buildProjectsCsv();
