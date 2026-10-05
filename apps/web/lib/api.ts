@@ -594,7 +594,7 @@ export async function deleteGlobalTagApi(name: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
 }
 
-export async function wipeAllDataApi(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
+export async function wipeAllDataApi(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, tasks_assignee?: string, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
   if (IS_LOCAL) return local(() => engine.wipeAllData(options));
 }
 

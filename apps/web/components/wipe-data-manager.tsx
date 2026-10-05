@@ -7,10 +7,15 @@ import { useRouter } from "next/navigation";
 export function WipeDataManager() {
   const [confirmText, setConfirmText] = useState("");
   const [wipeTarget, setWipeTarget] = useState<string>("all");
+  const [assignee, setAssignee] = useState("");
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   const handleWipe = () => {
+    if (wipeTarget === "tasks_assignee" && !assignee.trim()) {
+      alert("Vui lòng nhập tên người cần xoá task!");
+      return;
+    }
     if (confirmText !== "DELETE") {
       alert("Vui lòng gõ chữ DELETE (viết hoa) để xác nhận!");
       return;
@@ -30,6 +35,7 @@ export function WipeDataManager() {
           tasks: wipeTarget === "tasks",
           tasks_personal: wipeTarget === "tasks_personal",
           tasks_team: wipeTarget === "tasks_team",
+          tasks_assignee: wipeTarget === "tasks_assignee" ? assignee.trim() : undefined,
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
           vault: wipeTarget === "vault",
@@ -64,12 +70,23 @@ export function WipeDataManager() {
           <option value="tasks">Chỉ xoá TẤT CẢ Task (cả Team & Cá nhân)</option>
           <option value="tasks_personal">Chỉ xoá Task CÁ NHÂN (Hôm nay)</option>
           <option value="tasks_team">Chỉ xoá Task TEAM (Của người khác)</option>
+          <option value="tasks_assignee">Xoá Task theo 1 NGƯỜI cụ thể (nhập tên)</option>
           <option value="projects">Chỉ xoá Dự án (Projects)</option>
           <option value="notes">Chỉ xoá Sổ tay (Notes)</option>
           <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>
           <option value="sync_urls">Chỉ xoá Danh sách URL Cào dữ liệu</option>
           <option value="chrome_history">Chỉ xoá Lịch sử Chrome History</option>
         </select>
+        {wipeTarget === "tasks_assignee" && (
+          <input
+            type="text"
+            placeholder="Tên người được giao (assignee), vd: Đoàn Việt Hưng"
+            value={assignee}
+            onChange={(e) => setAssignee(e.target.value)}
+            disabled={pending}
+            className="mt-2 block w-full rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
+          />
+        )}
       </div>
 
       <div className="flex items-center gap-2">

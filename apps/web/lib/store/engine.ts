@@ -1476,7 +1476,7 @@ export function deleteGlobalTag(name: string): void {
   if (changed) touched();
 }
 
-export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
+export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, tasks_assignee?: string, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
   const store = state();
 
   try {
@@ -1521,6 +1521,10 @@ export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolea
       return t.source !== 'jira';
     };
     store.tasks = store.tasks.filter(t => !isMyTask(t));
+  }
+  if (options && options.tasks_assignee) {
+    const name = options.tasks_assignee.trim().toLowerCase();
+    store.tasks = store.tasks.filter(t => (t.assignee || "").trim().toLowerCase() !== name);
   }
   if (options && options.tasks_team) {
     const users = store.currentUsers || ["Đoàn Việt Hưng"];

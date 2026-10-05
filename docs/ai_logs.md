@@ -167,3 +167,12 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - UI mới `components/vault-recovery.tsx`: màn hiện mã một lần (chép/tải/in, phải tick đã cất), form "Quên mật khẩu" đặt mật khẩu mới bằng mã. `vault-client.tsx`: nút Mã khôi phục mới, banner cho két chưa có mã.
   - Kiểm thử 12 ca bằng `scripts/patches/vault-crypto-check.ts` (đổi mật khẩu, mã cũ hết hiệu lực, blob bị sửa...), tsc sạch. Cập nhật `docs/VAULT.md`.
 - **Phản hồi:** Giải thích nguyên nhân không khôi phục được, đã thêm đường khôi phục; nhắc cất mã tách khỏi mật khẩu.
+
+---
+
+### [05-10-2026 23:31] | Category: [APP]
+- **Prompt:** "muốn xóa dữ liệu theo cá nhân"
+- **Xử lý:**
+  - Thêm tuỳ chọn "Xoá Task theo 1 NGƯỜI cụ thể" ở Danger Zone (`components/wipe-data-manager.tsx`) kèm ô nhập tên assignee, bắt buộc nhập.
+  - Thêm tham số `tasks_assignee` xuyên suốt `actions-danger.ts`, `lib/api.ts`, `lib/store/engine.ts` (khớp tên chính xác, không phân biệt hoa thường).
+- **Phản hồi:** Vẫn cần gõ DELETE và tự backup trước khi xoá.
