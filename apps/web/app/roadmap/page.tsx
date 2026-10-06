@@ -184,8 +184,7 @@ export default async function RoadmapPage() {
             <code>/health/ready</code>.
           </li>
           <li>
-            Chốt <strong>Jira Cloud hay Data Center</strong>. Câu này đang chặn
-            toàn bộ Phase 2 vì auth và endpoint khác nhau hoàn toàn.
+            Xây dựng <strong>Scheduler Poll</strong>. Hiện tại Jira lấy data bằng nút bấm tay, cần viết cronjob (hoặc worker) để tự fetch tự động mỗi 2-5 phút ở chế độ nền.
           </li>
         </ol>
         <p className="mt-3 text-xs text-[var(--color-ink-muted)]">

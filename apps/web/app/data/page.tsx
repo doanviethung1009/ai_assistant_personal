@@ -17,68 +17,93 @@ import {
   getAssigneesApi,
 } from "@/lib/api";
 import { dataFilePath } from "@/lib/store/json-file";
+import { CurrentUserManager } from "@/components/current-user-manager";
+import { getCurrentUsersApi } from "@/lib/api";
+import { 
+  Database, 
+  FileJson, 
+  History, 
+  Download, 
+  HardDrive, 
+  Key, 
+  ArrowRightToLine, 
+  Settings2,
+  Server,
+  FileText,
+  MemoryStick,
+  Terminal
+} from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
 const SOURCE_INFO: Record<
   string,
-  { label: string; detail: string; tone: "ok" | "warn" }
+  { label: string; detail: string; tone: "ok" | "warn"; icon: any }
 > = {
   api: {
-    label: "Core API và Postgres",
-    detail:
-      "Dữ liệu nằm trong Postgres, do apps/core quản lý. Đây là chế độ thật.",
+    label: "Core API & Postgres",
+    detail: "Dữ liệu nằm trong Postgres, do apps/core quản lý. Đây là chế độ thật.",
     tone: "ok",
+    icon: Server,
   },
   file: {
-    label: "File JSON trên đĩa",
-    detail:
-      "Ghi nguyên tử qua file tạm rồi rename, giữ thêm một bản .bak của lần ghi trước.",
+    label: "File JSON cục bộ",
+    detail: "Ghi nguyên tử qua file tạm rồi rename, giữ thêm một bản .bak.",
     tone: "ok",
+    icon: HardDrive,
   },
   memory: {
-    label: "Bộ nhớ tạm",
-    detail:
-      "Dữ liệu mất khi dev server khởi động lại. Chuyển sang DATA_SOURCE=file nếu muốn giữ.",
+    label: "Bộ nhớ tạm (RAM)",
+    detail: "Dữ liệu mất khi dev server khởi động lại. Chuyển sang file nếu muốn giữ.",
     tone: "warn",
+    icon: MemoryStick,
   },
 };
 
 const EXPORTS = [
   {
     href: "/api/export?format=json",
-    title: "JSON Project, Task, Sổ tay",
-    note: "Giữ nguyên tags và nhật ký thay đổi. Dùng để backup và để nạp lên Postgres sau này.",
+    title: "JSON Toàn bộ Dữ liệu",
+    note: "Backup Project, Task, Sổ tay kèm tags và nhật ký thay đổi.",
+    icon: Database,
+    color: "from-blue-500/20 to-cyan-500/20 text-blue-600",
   },
   {
     href: "/api/export?format=json&entity=ai_logs",
-    title: "JSON Nhật ký AI (AiLogs)",
-    note: "Dữ liệu JSON thô của file ai-logs.json. Dùng để import/migrate lịch sử AI.",
+    title: "JSON Nhật ký AI",
+    note: "Dữ liệu lịch sử chat AI (ai-logs.json).",
+    icon: History,
+    color: "from-purple-500/20 to-pink-500/20 text-purple-600",
   },
   {
     href: "/api/export?format=json&entity=vault",
-    title: "JSON Két bảo mật (Vault)",
-    note: "Bản sao lưu Két bảo mật đã được mã hoá hoàn toàn. Chỉ có thể mở bằng mật khẩu hoặc mã khôi phục cũ.",
+    title: "JSON Két bảo mật",
+    note: "Bản sao lưu Két bảo mật mã hoá.",
+    icon: Key,
+    color: "from-amber-500/20 to-orange-500/20 text-amber-600",
   },
   {
     href: "/api/export?format=csv&entity=tasks",
-    title: "CSV task",
-    note: "Mở được bằng Excel. Tags nối bằng dấu chấm phẩy, không có nhật ký.",
+    title: "CSV Danh sách Task",
+    note: "Mở được bằng Excel, không có nhật ký.",
+    icon: FileJson,
+    color: "from-emerald-500/20 to-teal-500/20 text-emerald-600",
   },
   {
     href: "/api/export?format=csv&entity=projects",
-    title: "CSV project",
+    title: "CSV Dự án",
     note: "Danh sách project kèm mã và màu.",
+    icon: FileJson,
+    color: "from-indigo-500/20 to-blue-500/20 text-indigo-600",
   },
   {
     href: "/api/export?format=csv&entity=notes",
-    title: "CSV sổ tay",
-    note: "Câu lệnh và SQL. Nội dung nhiều dòng được bọc trong dấu ngoặc kép theo RFC 4180.",
+    title: "CSV Sổ tay",
+    note: "Câu lệnh và SQL.",
+    icon: FileText,
+    color: "from-rose-500/20 to-red-500/20 text-rose-600",
   },
 ];
-
-import { CurrentUserManager } from "@/components/current-user-manager";
-import { getCurrentUsersApi } from "@/lib/api";
 
 export default async function DataPage() {
   const syncUrls = await getSyncUrlsApi();
@@ -90,7 +115,6 @@ export default async function DataPage() {
   let noteCount: number;
 
   try {
-    // limit=1 vì chỉ cần con số `total`, không cần bản ghi
     const [tasks, projects, notes] = await Promise.all([
       listTasks({ includeClosed: true, limit: 1 }),
       listProjects(true),
@@ -102,199 +126,191 @@ export default async function DataPage() {
     noteCount = notes.total;
   } catch (error) {
     return (
-      <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
-      />
+      <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />
     );
   }
 
   const info = SOURCE_INFO[DATA_SOURCE] ?? SOURCE_INFO.api!;
+  const SourceIcon = info.icon;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Dữ liệu & Cấu hình</h1>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          Cấu hình cá nhân, xuất dữ liệu, backup và nhập liệu.
-        </p>
+    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+      {/* Header with gradient text */}
+      <div className="relative">
+        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg blur opacity-10"></div>
+        <div className="relative">
+          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--color-ink)] to-gray-400 bg-clip-text text-transparent flex items-center gap-3">
+            <div className="p-2 bg-blue-500/10 rounded-xl">
+              <Settings2 className="size-7 text-blue-500" />
+            </div>
+            Dữ liệu & Cấu hình
+          </h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)] max-w-2xl">
+            Quản lý nguồn dữ liệu, cấu hình đồng bộ Jira, xuất/nhập file và các tuỳ chọn hệ thống nâng cao.
+          </p>
+        </div>
       </div>
 
       <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
 
-      <section
-        className={`rounded-lg border p-4 ${info.tone === "warn"
-          ? "border-[var(--color-warn)]/40 bg-[var(--color-warn)]/10"
-          : "border-[var(--color-border)] bg-[var(--color-surface-raised)]"
-          }`}
-      >
-        <div className="flex flex-wrap items-baseline justify-between gap-2">
-          <h2 className="text-sm font-semibold">
-            Nguồn dữ liệu: {info.label}
-          </h2>
-          <code className="rounded bg-black/30 px-1.5 py-0.5 text-xs">
-            DATA_SOURCE={DATA_SOURCE}
-          </code>
+      {/* Source Info Card */}
+      <section className={`group relative overflow-hidden rounded-xl border p-6 transition-all duration-300 hover:shadow-lg ${info.tone === "warn"
+          ? "border-amber-500/30 bg-amber-500/5 dark:bg-amber-900/10"
+          : "border-[var(--color-border)] bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)]"
+        }`}>
+        <div className="absolute right-0 top-0 -mt-4 -mr-4 h-32 w-32 rounded-full bg-gradient-to-br from-blue-500/10 to-purple-500/10 blur-2xl transition-all duration-700 group-hover:scale-[2]"></div>
+        
+        <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className={`p-2.5 rounded-xl shadow-sm ${info.tone === "warn" ? "bg-amber-500/20 text-amber-600" : "bg-blue-500/10 text-blue-600 border border-blue-500/20"}`}>
+                <SourceIcon className="size-5" />
+              </div>
+              <h2 className="text-lg font-bold tracking-tight">Nguồn dữ liệu: {info.label}</h2>
+              <code className="rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-border)] px-2.5 py-0.5 text-[11px] font-mono tracking-wider shadow-sm">
+                DATA_SOURCE={DATA_SOURCE}
+              </code>
+            </div>
+            <p className="mt-2.5 text-sm text-[var(--color-ink-muted)]">{info.detail}</p>
+            {DATA_SOURCE === "file" && (
+              <p className="mt-3 text-xs text-[var(--color-ink-muted)] flex items-center gap-1.5">
+                <HardDrive className="size-3.5" />
+                Đường dẫn: <code className="bg-[var(--color-surface-hover)] px-2 py-1 rounded-md border border-[var(--color-border)] font-mono shadow-inner">{dataFilePath()}</code>
+              </p>
+            )}
+          </div>
+
+          {/* Stats Badges */}
+          <div className="flex gap-3">
+            {[
+              { label: "Task", value: taskCount, color: "text-blue-600 bg-blue-500/10 border-blue-500/20" },
+              { label: "Project", value: projectCount, color: "text-purple-600 bg-purple-500/10 border-purple-500/20" },
+              { label: "Sổ tay", value: noteCount, color: "text-emerald-600 bg-emerald-500/10 border-emerald-500/20" }
+            ].map(stat => (
+              <div key={stat.label} className={`flex flex-col items-center justify-center px-5 py-3 rounded-xl border ${stat.color} transition-transform duration-300 hover:-translate-y-1 hover:shadow-md`}>
+                <span className="text-2xl font-black tabular-nums leading-none tracking-tight">{stat.value}</span>
+                <span className="text-[10px] uppercase tracking-widest font-bold opacity-70 mt-1.5">{stat.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
-
-        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">{info.detail}</p>
-
-        {DATA_SOURCE === "file" ? (
-          <p className="mt-2 break-all text-xs text-[var(--color-ink-muted)]">
-            Đường dẫn file:{" "}
-            <code className="rounded bg-black/30 px-1">{dataFilePath()}</code>
-          </p>
-        ) : null}
-
-        <dl className="mt-3 flex gap-6 text-sm">
-          <div>
-            <dt className="text-xs text-[var(--color-ink-muted)]">Task</dt>
-            <dd className="font-semibold tabular-nums">{taskCount}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[var(--color-ink-muted)]">Project</dt>
-            <dd className="font-semibold tabular-nums">{projectCount}</dd>
-          </div>
-          <div>
-            <dt className="text-xs text-[var(--color-ink-muted)]">Sổ tay</dt>
-            <dd className="font-semibold tabular-nums">{noteCount}</dd>
-          </div>
-        </dl>
       </section>
 
-      <details className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
-        <summary className="cursor-pointer text-sm font-semibold select-none">Đổi nguồn dữ liệu</summary>
-        <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-          Không có nút bấm trên web — đổi <code>DATA_SOURCE</code> cần
-          Next.js khởi động lại để đọc biến môi trường mới, một Server Action
-          không làm được việc đó. Cách đổi khác nhau theo <strong>cách bạn
-            đang chạy app</strong>, chọn đúng mục dưới đây:
-        </p>
-
-        <div className="mt-3 rounded-md border border-[var(--color-border)] bg-black/20 p-3">
-          <p className="text-xs font-semibold text-[var(--color-ink)]">
-            Đang chạy qua Docker (<code>make up</code>, có container{" "}
-            <code>builder-web</code>)
-          </p>
-          <dl className="mt-2 flex flex-col gap-2 text-xs">
-            <div className="flex flex-wrap items-baseline gap-2">
-              <dt className="text-[var(--color-ink-muted)]">Chuyển sang Postgres (thật):</dt>
-              <dd>
-                <code className="rounded bg-black/30 px-1.5 py-0.5">make use-db</code>
-              </dd>
+      {/* Accordion for Changing Data Source */}
+      <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] [&_summary::-webkit-details-marker]:hidden shadow-sm transition-all hover:shadow-md">
+        <summary className="flex cursor-pointer items-center justify-between p-5 font-medium transition-colors hover:bg-[var(--color-surface-hover)] rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-md shadow-sm">
+              <ArrowRightToLine className="size-4 text-[var(--color-ink-muted)]" />
             </div>
-            <div className="flex flex-wrap items-baseline gap-2">
-              <dt className="text-[var(--color-ink-muted)]">Chuyển sang file JSON (demo):</dt>
-              <dd>
-                <code className="rounded bg-black/30 px-1.5 py-0.5">make use-local</code>
-              </dd>
+            <span className="font-semibold text-[var(--color-ink)]">Hướng dẫn đổi nguồn dữ liệu</span>
+          </div>
+          <span className="transition-transform duration-300 group-open:rotate-180 text-[var(--color-ink-muted)]">▼</span>
+        </summary>
+        <div className="border-t border-[var(--color-border)] p-6 bg-[var(--color-surface-raised)] rounded-b-xl text-sm text-[var(--color-ink-muted)]">
+          <p className="mb-5 leading-relaxed">
+            Không có nút bấm trên web — đổi <code>DATA_SOURCE</code> cần
+            Next.js khởi động lại để đọc biến môi trường mới. Chọn đúng mục dưới đây tùy theo môi trường bạn đang chạy:
+          </p>
+          <div className="grid gap-5 md:grid-cols-2">
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+              <p className="font-semibold text-[var(--color-ink)] flex items-center gap-2 mb-4 text-base">
+                <Server className="size-4 text-blue-500" /> Docker (make up)
+              </p>
+              <ul className="space-y-3 text-xs">
+                <li className="flex justify-between items-center bg-[var(--color-surface-raised)] p-2.5 rounded-lg border border-[var(--color-border)] shadow-sm">
+                  <span className="font-medium">Sang Postgres:</span> <code className="font-mono text-blue-500 bg-blue-500/10 px-2 py-0.5 rounded">make use-db</code>
+                </li>
+                <li className="flex justify-between items-center bg-[var(--color-surface-raised)] p-2.5 rounded-lg border border-[var(--color-border)] shadow-sm">
+                  <span className="font-medium">Sang file JSON:</span> <code className="font-mono text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded">make use-local</code>
+                </li>
+              </ul>
+              <p className="mt-4 text-xs opacity-70 italic">Các lệnh này tự sửa <code>.env</code> và chạy lại container tự động.</p>
             </div>
-          </dl>
-          <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-            Hai lệnh này sửa <code>.env</code> ở gốc repo rồi tự{" "}
-            <code>docker compose up -d web</code> — chỉ sửa <code>.env</code>{" "}
-            tay mà không chạy lại container thì web vẫn dùng giá trị cũ.
-          </p>
+            
+            <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] p-5 shadow-sm">
+              <p className="font-semibold text-[var(--color-ink)] flex items-center gap-2 mb-4 text-base">
+                <Terminal className="size-4 text-purple-500" /> Local (npm run dev)
+              </p>
+              <p className="text-xs mb-3 leading-relaxed">Sửa biến trong file <code>apps/web/.env.local</code> rồi restart terminal:</p>
+              <pre className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[#0d1117] p-3 text-[13px] font-mono text-gray-300 shadow-inner">
+                <code><span className="text-gray-500"># apps/web/.env.local</span><br/>DATA_SOURCE=<span className="text-green-400">file</span> <span className="text-gray-500"># memory, api</span></code>
+              </pre>
+            </div>
+          </div>
         </div>
-
-        <div className="mt-3 rounded-md border border-[var(--color-border)] bg-black/20 p-3">
-          <p className="text-xs font-semibold text-[var(--color-ink)]">
-            Đang chạy trực tiếp bằng <code>npm run dev</code> (không Docker,
-            không database)
-          </p>
-          <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-            Sửa biến <code>DATA_SOURCE</code> trong{" "}
-            <code>apps/web/.env.local</code> (file này chỉ web app trực tiếp
-            đọc — Docker Compose truyền env riêng, không đọc file này), rồi
-            dừng và chạy lại <code>npm run dev</code> để Next.js nạp giá trị
-            mới. Next.js dev server không tự nạp lại biến môi trường khi file{" "}
-            <code>.env.local</code> thay đổi, phải restart tay.
-          </p>
-          <pre className="mt-2 overflow-x-auto rounded-md border border-[var(--color-border)] bg-black/30 p-2 text-xs">
-            <code>{`# apps/web/.env.local
-DATA_SOURCE=file   # hoặc memory, hoặc api`}</code>
-          </pre>
-          <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-            Dùng <code>api</code> ở đây (gọi core API) thì cũng cần
-            <code> CORE_API_URL</code> và <code>CORE_API_KEY</code> điền đúng
-            trong cùng file — xem mẫu đầy đủ có sẵn trong{" "}
-            <code>apps/web/.env.local</code> khi mới clone repo.
-          </p>
-        </div>
-
-        <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-          Hai nguồn <strong>không tự đồng bộ</strong> — dữ liệu nhập ở chế độ
-          này không tự xuất hiện ở chế độ khác. Dùng JSON ở mục Xuất dữ liệu
-          bên dưới để chuyển tay giữa hai nguồn.
-        </p>
       </details>
 
-      <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
-        <h2 className="text-sm font-semibold">Xuất dữ liệu</h2>
-        <ul className="mt-3 flex flex-col gap-2">
-          {EXPORTS.map((item) => (
-            <li
-              key={item.href}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--color-border)] px-3 py-2"
-            >
-              <div className="min-w-0">
-                <p className="text-sm font-medium">{item.title}</p>
-                <p className="text-xs text-[var(--color-ink-muted)]">
-                  {item.note}
-                </p>
-              </div>
+      <JiraSyncManager taskCount={taskCount} projects={projectList.map((p) => ({ id: p.id, key: p.key, name: p.name }))} />
+
+      {/* Export Section - Grid of Cards */}
+      <section>
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2 bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-lg shadow-sm">
+            <Download className="size-5 text-[var(--color-ink-muted)]" />
+          </div>
+          <h2 className="text-xl font-bold tracking-tight">Xuất dữ liệu (Backup)</h2>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {EXPORTS.map((item) => {
+            const Icon = item.icon;
+            return (
               <a
+                key={item.href}
                 href={item.href}
                 download
-                className="shrink-0 rounded-md border border-[var(--color-border)] px-3 py-1.5 text-sm transition-colors hover:bg-[var(--color-surface-hover)]"
+                className="group relative flex flex-col justify-between overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-5 transition-all duration-300 hover:-translate-y-1 hover:shadow-lg hover:border-[var(--color-border-hover)]"
               >
-                Tải về
+                <div className={`absolute -right-8 -top-8 h-32 w-32 rounded-full bg-gradient-to-br ${item.color} blur-2xl opacity-40 transition-opacity duration-500 group-hover:opacity-100`}></div>
+                <div className="relative z-10 mb-4">
+                  <div className={`mb-4 inline-flex rounded-xl bg-gradient-to-br ${item.color} p-2.5 shadow-sm border border-white/5`}>
+                    <Icon className="size-5" />
+                  </div>
+                  <h3 className="font-bold text-[var(--color-ink)] text-base">{item.title}</h3>
+                  <p className="mt-1.5 text-xs text-[var(--color-ink-muted)] leading-relaxed">
+                    {item.note}
+                  </p>
+                </div>
+                <div className="relative z-10 flex items-center text-xs font-semibold text-blue-500 opacity-0 transition-all duration-300 transform translate-x-[-10px] group-hover:translate-x-0 group-hover:opacity-100">
+                  Tải xuống ngay <ArrowRightToLine className="ml-1 size-3" />
+                </div>
               </a>
-            </li>
-          ))}
-        </ul>
+            );
+          })}
+        </div>
       </section>
 
-      <JiraSyncManager projects={projectList.map((p) => ({ id: p.id, key: p.key, name: p.name }))} />
-
-      <details className="rounded-lg border border-[var(--color-border)] p-4">
-        <summary className="cursor-pointer text-sm font-semibold select-none">
-          Nạp dữ liệu từ nguồn khác (JSON, URL, file, Chrome, Vault)
+      {/* Advanced Imports Accordion */}
+      <details className="group rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] [&_summary::-webkit-details-marker]:hidden shadow-sm transition-all hover:shadow-md">
+        <summary className="flex cursor-pointer items-center justify-between p-5 font-medium transition-colors hover:bg-[var(--color-surface-hover)] rounded-xl">
+          <div className="flex items-center gap-3">
+            <div className="p-1.5 bg-[var(--color-surface-raised)] border border-[var(--color-border)] rounded-md shadow-sm">
+              <Database className="size-4 text-[var(--color-ink-muted)]" />
+            </div>
+            <span className="font-semibold text-[var(--color-ink)]">Nạp dữ liệu nâng cao (JSON, URL, Vault, Chrome...)</span>
+          </div>
+          <span className="transition-transform duration-300 group-open:rotate-180 text-[var(--color-ink-muted)]">▼</span>
         </summary>
-        <div className="mt-4 flex flex-col gap-6">
-          <DataImport allowReplace={IS_LOCAL} />
-          <UrlSyncManager initialUrls={syncUrls} />
-          <FileUploadManager />
-          <ChromeHistoryManager />
-          <VaultImportManager />
-          <RestoreJsonManager />
+        <div className="border-t border-[var(--color-border)] p-6 bg-[var(--color-surface-raised)] rounded-b-xl">
+          <div className="flex flex-col gap-8">
+            <DataImport allowReplace={IS_LOCAL} />
+            <div className="h-px w-full bg-[var(--color-border)]/50"></div>
+            <UrlSyncManager initialUrls={syncUrls} />
+            <div className="h-px w-full bg-[var(--color-border)]/50"></div>
+            <FileUploadManager />
+            <div className="h-px w-full bg-[var(--color-border)]/50"></div>
+            <ChromeHistoryManager />
+            <div className="h-px w-full bg-[var(--color-border)]/50"></div>
+            <VaultImportManager />
+            <div className="h-px w-full bg-[var(--color-border)]/50"></div>
+            <RestoreJsonManager />
+          </div>
         </div>
       </details>
 
-      <WipeDataManager assignees={assignees} />
-
-      <section className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
-        <h2 className="text-sm font-semibold">Chuyển sang Postgres sau này</h2>
-        <ol className="mt-2 list-decimal space-y-1 pl-5 text-xs text-[var(--color-ink-muted)]">
-          <li>Ở chế độ file, tải bản JSON đầy đủ về máy.</li>
-          <li>
-            Dựng stack bằng <code>make bootstrap</code> để có Postgres và core
-            API.
-          </li>
-          <li>
-            Đổi <code>DATA_SOURCE=api</code> trong{" "}
-            <code>apps/web/.env.local</code> và điền <code>CORE_API_KEY</code>.
-          </li>
-          <li>
-            Quay lại trang này, nhập file JSON đó với chế độ{" "}
-            <strong>Thêm vào</strong>.
-          </li>
-        </ol>
-        <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
-          Không cần bộ chuyển đổi vì file JSON dùng đúng tên field như API.
-          Project được đối chiếu theo <code>key</code> chứ không theo UUID, nên
-          nhập từ máy khác vẫn khớp.
-        </p>
-      </section>
+      <div className="mt-2">
+        <WipeDataManager assignees={assignees} />
+      </div>
     </div>
   );
 }

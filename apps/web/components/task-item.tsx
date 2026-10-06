@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-
 import {
   deleteTaskAction,
   logTimeAction,
@@ -27,7 +26,7 @@ const ALL_STATUSES: TaskStatus[] = [
 ];
 
 const ICON_BUTTON =
-  "rounded-md border border-[var(--color-border)] px-2 py-1 text-xs text-[var(--color-ink-muted)] transition-colors hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)] disabled:opacity-40";
+  "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] transition-all hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)] hover:border-[var(--color-border-hover)] disabled:opacity-40 shadow-sm";
 
 export function TaskItem({ task }: { task: Task }) {
   const [pending, startTransition] = useTransition();
@@ -46,121 +45,128 @@ export function TaskItem({ task }: { task: Task }) {
 
   return (
     <li
-      className={`rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3 transition-opacity ${
-        pending ? "opacity-60" : ""
-      }`}
+      className={`group relative overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 hover:border-blue-500/30 ${
+        pending ? "opacity-60 scale-[0.99]" : ""
+      } ${isClosed ? "bg-[var(--color-surface)] opacity-70" : ""}`}
     >
-      <div className="flex items-start gap-3">
-        <input
-          type="checkbox"
-          checked={task.status === "done"}
-          disabled={pending}
-          onChange={(event) =>
-            run(() =>
-              setStatusAction(task.id, event.target.checked ? "done" : "todo"),
-            )
-          }
-          aria-label={
-            task.status === "done"
-              ? `Mở lại: ${task.title}`
-              : `Đánh dấu xong: ${task.title}`
-          }
-          className="mt-1 size-4 shrink-0 accent-[var(--color-accent)]"
-        />
-
-        <div className="min-w-0 flex-1">
-          <p
-            className={`text-sm font-medium ${
-              isClosed
-                ? "text-[var(--color-ink-muted)] line-through"
-                : "text-[var(--color-ink)]"
-            }`}
-          >
-            {task.title}
-          </p>
-
-          {task.description ? (
-            <p className="mt-1 line-clamp-2 text-xs text-[var(--color-ink-muted)]">
-              {task.description}
-            </p>
-          ) : null}
-
-          <div className="mt-2 flex flex-wrap items-center gap-1.5">
-            <StatusBadge status={task.status} />
-            <PriorityBadge priority={task.priority} />
-            <SourceBadge source={task.source} />
-            {task.project ? (
-              <ProjectBadge
-                projectKey={task.project.key}
-                color={task.project.color}
-              />
-            ) : null}
-            {task.external_id ? (
-              <a
-                href={task.external_url || undefined}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full bg-blue-500/15 px-2 py-0.5 text-xs font-medium text-blue-300 ring-1 ring-inset ring-blue-500/30 hover:bg-blue-500/25 transition-colors"
-                title="Mở trên hệ thống gốc"
-              >
-                {task.external_id}
-              </a>
-            ) : null}
-            {task.assignee ? (
-              <span className="rounded bg-orange-500/15 px-2 py-0.5 text-xs font-medium text-orange-600 dark:text-orange-400">
-                @{task.assignee}
-              </span>
-            ) : null}
-            {task.tags.map((tag) => (
-              <TagBadge key={tag} tag={tag} />
-            ))}
+      <div className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-[var(--color-accent)] to-purple-500 opacity-0 transition-opacity group-hover:opacity-100"></div>
+      
+      <div className="flex flex-col sm:flex-row sm:items-start gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className="pt-0.5 relative z-10">
+            <input
+              type="checkbox"
+              checked={task.status === "done"}
+              disabled={pending}
+              onChange={(event) =>
+                run(() =>
+                  setStatusAction(task.id, event.target.checked ? "done" : "todo"),
+                )
+              }
+              aria-label={
+                task.status === "done"
+                  ? `Mở lại: ${task.title}`
+                  : `Đánh dấu xong: ${task.title}`
+              }
+              className="size-5 rounded border-gray-300 text-[var(--color-accent)] focus:ring-[var(--color-accent)] cursor-pointer transition-transform hover:scale-110 shadow-sm"
+            />
           </div>
 
-          <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-ink-muted)]">
-            {task.due_at ? (
-              <div className="flex gap-1">
-                <dt>Hạn:</dt>
-                <dd
-                  className={
-                    task.is_overdue ? "font-medium text-[var(--color-danger)]" : ""
-                  }
-                >
-                  {formatDateTime(task.due_at)}
-                  {task.is_overdue ? " (quá hạn)" : ""}
-                </dd>
-              </div>
-            ) : null}
-
-            {task.scheduled_for ? (
-              <div className="flex gap-1">
-                <dt>Dự định:</dt>
-                <dd>{formatPlainDate(task.scheduled_for)}</dd>
-              </div>
-            ) : null}
-
-            {task.estimate_minutes ? (
-              <div className="flex gap-1">
-                <dt>Ước lượng:</dt>
-                <dd>{formatMinutes(task.estimate_minutes)}</dd>
-              </div>
-            ) : null}
-
-            {task.spent_minutes > 0 ? (
-              <div className="flex gap-1">
-                <dt>Đã làm:</dt>
-                <dd>{formatMinutes(task.spent_minutes)}</dd>
-              </div>
-            ) : null}
-          </dl>
-
-          {error ? (
-            <p role="alert" className="mt-2 text-xs text-[var(--color-danger)]">
-              {error}
+          <div className="min-w-0 flex-1 relative z-10">
+            <p
+              className={`text-base font-bold tracking-tight transition-colors ${
+                isClosed
+                  ? "text-[var(--color-ink-muted)] line-through decoration-gray-500/30"
+                  : "text-[var(--color-ink)] group-hover:text-blue-600 dark:group-hover:text-blue-400"
+              }`}
+            >
+              {task.title}
             </p>
-          ) : null}
+
+            {task.description ? (
+              <p className="mt-1.5 line-clamp-2 text-xs text-[var(--color-ink-muted)] leading-relaxed">
+                {task.description}
+              </p>
+            ) : null}
+
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <StatusBadge status={task.status} />
+              <PriorityBadge priority={task.priority} />
+              <SourceBadge source={task.source} />
+              {task.project ? (
+                <ProjectBadge
+                  projectKey={task.project.key}
+                  color={task.project.color}
+                />
+              ) : null}
+              {task.external_id ? (
+                <a
+                  href={task.external_url || undefined}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shadow-sm"
+                  title="Mở trên hệ thống gốc"
+                >
+                  {task.external_id}
+                </a>
+              ) : null}
+              {task.assignee ? (
+                <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">
+                  @{task.assignee}
+                </span>
+              ) : null}
+              {task.tags.map((tag) => (
+                <TagBadge key={tag} tag={tag} />
+              ))}
+            </div>
+
+            <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[var(--color-ink-muted)]">
+              {task.due_at ? (
+                <div className="flex items-center gap-1.5">
+                  <dt className="font-medium opacity-70">Hạn:</dt>
+                  <dd
+                    className={`font-semibold ${
+                      task.is_overdue ? "text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-md" : ""
+                    }`}
+                  >
+                    {formatDateTime(task.due_at)}
+                    {task.is_overdue ? " (quá hạn)" : ""}
+                  </dd>
+                </div>
+              ) : null}
+
+              {task.scheduled_for ? (
+                <div className="flex items-center gap-1.5">
+                  <dt className="font-medium opacity-70">Dự định:</dt>
+                  <dd className="font-semibold text-[var(--color-ink)]">{formatPlainDate(task.scheduled_for)}</dd>
+                </div>
+              ) : null}
+
+              {task.estimate_minutes ? (
+                <div className="flex items-center gap-1.5">
+                  <dt className="font-medium opacity-70">Ước lượng:</dt>
+                  <dd className="font-semibold">{formatMinutes(task.estimate_minutes)}</dd>
+                </div>
+              ) : null}
+
+              {task.spent_minutes > 0 ? (
+                <div className="flex items-center gap-1.5">
+                  <dt className="font-medium opacity-70">Đã làm:</dt>
+                  <dd className="font-semibold text-emerald-500">{formatMinutes(task.spent_minutes)}</dd>
+                </div>
+              ) : null}
+            </dl>
+
+            {error ? (
+              <p role="alert" className="mt-3 text-xs font-medium text-red-500 bg-red-500/10 px-3 py-2 rounded-lg border border-red-500/20">
+                {error}
+              </p>
+            ) : null}
+          </div>
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
+        {/* Cụm Action */}
+        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3 mt-4 sm:mt-0 w-full sm:w-auto border-t sm:border-t-0 border-[var(--color-border)] pt-4 sm:pt-0 relative z-10">
           <div>
             <label htmlFor={`status-${task.id}`} className="sr-only">
               Trạng thái của {task.title}
@@ -172,7 +178,7 @@ export function TaskItem({ task }: { task: Task }) {
               onChange={(event) =>
                 run(() => setStatusAction(task.id, event.target.value as TaskStatus))
               }
-              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-xs text-[var(--color-ink)]"
+              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] shadow-sm focus:ring-2 focus:ring-[var(--color-accent)] outline-none transition-shadow"
             >
               {ALL_STATUSES.map((status) => (
                 <option key={status} value={status}>
@@ -182,7 +188,7 @@ export function TaskItem({ task }: { task: Task }) {
             </select>
           </div>
 
-          <div className="flex gap-1">
+          <div className="flex gap-1.5">
             {!isClosed && task.scheduled_for !== todayInDisplayTz() ? (
               <button
                 type="button"
@@ -214,7 +220,7 @@ export function TaskItem({ task }: { task: Task }) {
                 type="button"
                 disabled={pending}
                 onClick={() => run(() => setStatusAction(task.id, "done"))}
-                className={ICON_BUTTON}
+                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 transition-all hover:bg-emerald-500 hover:text-white shadow-sm"
                 title="Đánh dấu hoàn thành"
               >
                 Xong
@@ -227,7 +233,7 @@ export function TaskItem({ task }: { task: Task }) {
                   type="button"
                   disabled={pending}
                   onClick={() => run(() => deleteTaskAction(task.id))}
-                  className="rounded-md border border-[var(--color-danger)] px-2 py-1 text-xs text-[var(--color-danger)]"
+                  className="rounded-lg border border-red-500 bg-red-500 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-600 transition-colors"
                 >
                   Xoá thật
                 </button>
@@ -244,7 +250,7 @@ export function TaskItem({ task }: { task: Task }) {
                 type="button"
                 disabled={pending}
                 onClick={() => setConfirmingDelete(true)}
-                className={ICON_BUTTON}
+                className="rounded-lg border border-transparent hover:border-red-500/30 bg-transparent hover:bg-red-500/10 px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] hover:text-red-500 transition-all opacity-0 md:group-hover:opacity-100 focus:opacity-100"
                 title={`Xoá task ${task.title}`}
               >
                 Xoá

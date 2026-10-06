@@ -199,6 +199,14 @@ export const DOCS: DocEntry[] = [
       "Checklist 15 bước thêm model mới xuyên suốt backend và frontend.",
     category: "Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "add-entity", "SKILL.md"),
+  },
+  {
+    slug: "jira-api-knowledge",
+    title: "Kiến thức & API Jira",
+    description:
+      "Lưu trữ các kiến thức và luồng API tích hợp Jira (Sync/Fetch), phục vụ mở rộng Agent Skills.",
+    category: "Kiến trúc & Tích hợp",
+    file: path.join("docs", "JIRA_API_KNOWLEDGE.md"),
   }
 ];
 

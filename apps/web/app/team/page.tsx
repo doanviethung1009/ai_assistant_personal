@@ -1,4 +1,5 @@
 import { listTasks, getCurrentUsersApi } from "@/lib/api";
+import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
 import Link from "next/link";
@@ -8,13 +9,16 @@ export const dynamic = "force-dynamic";
 export default async function TeamPage({
   searchParams,
 }: {
-  searchParams: Promise<{ assignee?: string; status?: string; sort?: string; page?: string; q?: string; size?: string }>;
+  searchParams: Promise<{ assignee?: string; status?: string; sort?: string; page?: string; q?: string; size?: string; time?: string; from?: string; to?: string }>;
 }) {
   const sp = await searchParams;
   const currentAssignee = sp.assignee;
   const currentStatus = sp.status || "open"; // "open", "closed", "all"
   const currentSort = sp.sort || "all";
   const currentQ = sp.q || "";
+  const currentTime = sp.time || "all";
+  const currentFrom = sp.from || "";
+  const currentTo = sp.to || "";
   const page = Math.max(1, Number.parseInt(sp.page ?? "1", 10) || 1); // "newest", "oldest"
   
   // Tối ưu pageSize: hỗ trợ chọn 50, 100, 200, 500
@@ -70,6 +74,42 @@ export default async function TeamPage({
       );
     }
     
+    // Helper để lấy timestamp an toàn
+    const getTaskDateMs = (t: typeof teamTasks[0]) => {
+      const dateStr = t.updated_at || t.created_at;
+      if (!dateStr) return 0;
+      const ms = new Date(dateStr).getTime();
+      return Number.isNaN(ms) ? 0 : ms;
+    };
+
+    // 2.6 Theo mốc thời gian (cập nhật gần nhất - vì Jira sync quan trọng update)
+    if (currentTime !== "all") {
+      const now = new Date().getTime();
+      let limit = 0;
+      if (currentTime === "1d") limit = now - 1 * 24 * 60 * 60 * 1000;
+      if (currentTime === "3d") limit = now - 3 * 24 * 60 * 60 * 1000;
+      if (currentTime === "7d") limit = now - 7 * 24 * 60 * 60 * 1000;
+      if (currentTime === "30d") limit = now - 30 * 24 * 60 * 60 * 1000;
+      
+      if (limit > 0) {
+        teamTasks = teamTasks.filter(t => getTaskDateMs(t) >= limit);
+      }
+    }
+    
+    // 2.7 Theo khoảng thời gian tùy chọn (Date Range)
+    if (currentFrom) {
+      const fromMs = new Date(currentFrom).getTime();
+      if (!Number.isNaN(fromMs)) {
+        teamTasks = teamTasks.filter(t => getTaskDateMs(t) >= fromMs);
+      }
+    }
+    if (currentTo) {
+      const toMs = new Date(currentTo).getTime() + 24 * 60 * 60 * 1000 - 1; // Hết ngày đó
+      if (!Number.isNaN(toMs)) {
+        teamTasks = teamTasks.filter(t => getTaskDateMs(t) <= toMs);
+      }
+    }
+    
     // 3. Theo thời gian (sort)
     if (currentSort !== "all") {
       teamTasks.sort((a, b) => {
@@ -89,6 +129,9 @@ export default async function TeamPage({
       if (currentStatus !== "open") q.set("status", currentStatus);
       if (currentSort !== "newest") q.set("sort", currentSort);
       if (currentQ) q.set("q", currentQ);
+      if (currentTime !== "all") q.set("time", currentTime);
+      if (currentFrom) q.set("from", currentFrom);
+      if (currentTo) q.set("to", currentTo);
       
       for (const [k, v] of Object.entries(updates)) {
         if (v === undefined) q.delete(k);
@@ -98,21 +141,36 @@ export default async function TeamPage({
     };
 
     return (
-      <div className="flex flex-col gap-6">
-        <div>
-          <h1 className="text-xl font-semibold tracking-tight">Giao việc / Team</h1>
-          <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-            Tổng hợp tất cả các task được giao cho người khác trong hệ thống.
-          </p>
+      <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+        <div className="flex items-start justify-between relative">
+          <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg blur opacity-10 pointer-events-none"></div>
+          <div className="relative">
+            <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--color-ink)] to-gray-400 bg-clip-text text-transparent flex items-center gap-3">
+              <div className="p-2 bg-orange-500/10 rounded-xl">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-orange-500"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+              </div>
+              Giao việc / Team
+            </h1>
+            <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium">
+              Tổng hợp tất cả các task được giao cho người khác trong hệ thống.
+            </p>
+          </div>
+          <div className="relative z-10">
+            <JiraQuickSync />
+          </div>
         </div>
 
-        <div className="flex flex-col gap-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
+        <div className="flex flex-col gap-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-sm">
           
           {/* Ô Tìm kiếm */}
-          <form method="get" className="flex gap-2">
+          <form method="get" action="/team" className="flex gap-2">
             {currentAssignee && <input type="hidden" name="assignee" value={currentAssignee} />}
             {currentStatus !== "open" && <input type="hidden" name="status" value={currentStatus} />}
             {currentSort !== "newest" && <input type="hidden" name="sort" value={currentSort} />}
+            {PAGE_SIZE !== 50 && <input type="hidden" name="size" value={PAGE_SIZE} />}
+            {currentTime !== "all" && <input type="hidden" name="time" value={currentTime} />}
+            {currentFrom && <input type="hidden" name="from" value={currentFrom} />}
+            {currentTo && <input type="hidden" name="to" value={currentTo} />}
             <input
               type="search"
               name="q"
@@ -167,6 +225,45 @@ export default async function TeamPage({
                 {so.label}
               </Link>
             ))}
+          </div>
+
+          {/* Lọc Mốc thời gian nhanh & Custom Range */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium w-24">Cập nhật lúc:</span>
+            {[
+              { id: "all", label: "Tất cả" },
+              { id: "1d", label: "1 ngày qua" },
+              { id: "3d", label: "3 ngày qua" },
+              { id: "7d", label: "7 ngày qua" },
+              { id: "30d", label: "30 ngày qua" }
+            ].map(tr => (
+              <Link
+                key={tr.id}
+                href={makeLink({ time: tr.id === "all" ? undefined : tr.id, from: undefined, to: undefined })}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  currentTime === tr.id && !currentFrom && !currentTo
+                    ? "bg-[var(--color-accent)] text-white"
+                    : "border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)]"
+                }`}
+              >
+                {tr.label}
+              </Link>
+            ))}
+
+            <form method="get" action="/team" className="flex items-center gap-2 ml-2 pl-2 border-l border-[var(--color-border)]">
+              {currentAssignee && <input type="hidden" name="assignee" value={currentAssignee} />}
+              {currentStatus !== "open" && <input type="hidden" name="status" value={currentStatus} />}
+              {currentSort !== "newest" && <input type="hidden" name="sort" value={currentSort} />}
+              {currentQ && <input type="hidden" name="q" value={currentQ} />}
+              {PAGE_SIZE !== 50 && <input type="hidden" name="size" value={PAGE_SIZE} />}
+              {/* Reset time preset when using custom range */}
+              <input type="hidden" name="time" value="all" />
+              
+              <input type="date" name="from" defaultValue={currentFrom} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs text-[var(--color-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]" title="Từ ngày" />
+              <span className="text-[var(--color-ink-muted)] text-xs">-</span>
+              <input type="date" name="to" defaultValue={currentTo} className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-0.5 text-xs text-[var(--color-ink)] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)]" title="Đến ngày" />
+              <button type="submit" className="rounded-md bg-[var(--color-surface-hover)] border border-[var(--color-border)] px-2 py-0.5 text-xs font-medium hover:bg-[var(--color-accent)] hover:text-white transition-colors">Lọc</button>
+            </form>
           </div>
 
           {/* Hiển thị trên mỗi trang */}
@@ -284,6 +381,9 @@ function PageLink({
   if (sp.sort) query.set("sort", sp.sort);
   if (sp.q) query.set("q", sp.q);
   if (sp.size) query.set("size", sp.size);
+  if (sp.time) query.set("time", sp.time);
+  if (sp.from) query.set("from", sp.from);
+  if (sp.to) query.set("to", sp.to);
   query.set("page", String(page));
 
   return (

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { JiraQuickSync } from "@/components/jira-quick-sync";
 
 import { ApiErrorPanel } from "@/components/api-error";
 import { QuickAddForm } from "@/components/quick-add-form";
@@ -65,19 +66,32 @@ export default async function TasksPage({
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Tất cả task</h1>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          {result.total} task khớp điều kiện
-        </p>
+    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+      <div className="flex items-start justify-between relative">
+        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg blur opacity-10 pointer-events-none"></div>
+        <div className="relative">
+          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--color-ink)] to-gray-400 bg-clip-text text-transparent flex items-center gap-3">
+            <div className="p-2 bg-indigo-500/10 rounded-xl">
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+            </div>
+            Tất cả Task
+          </h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium">
+            Quản lý {result.total} task trong hệ thống (chưa tính task cũ).
+          </p>
+        </div>
+        <div className="relative z-10">
+          <JiraQuickSync />
+        </div>
       </div>
 
-      <QuickAddForm projects={projects} />
+      <div className="relative rounded-2xl bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)] p-2 shadow-sm border border-[var(--color-border)]">
+        <QuickAddForm projects={projects} />
+      </div>
 
       <form
         method="get"
-        className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 sm:flex-row sm:items-end"
+        className="flex flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-sm sm:flex-row sm:items-end"
         aria-label="Lọc task"
       >
         <div className="flex-1">

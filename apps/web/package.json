@@ -11,6 +11,7 @@
     "gen:types": "openapi-typescript ${CORE_API_URL:-http://api:8000}/openapi.json -o lib/generated/openapi.d.ts"
   },
   "dependencies": {
+    "lucide-react": "^1.52.0",
     "next": "^15.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

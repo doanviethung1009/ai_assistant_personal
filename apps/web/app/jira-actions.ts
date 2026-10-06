@@ -170,6 +170,9 @@ export async function syncJiraAction(formData: FormData) {
       if (statusName.includes("done") || statusName.includes("close") || statusName.includes("resolved")) {
         status = "done";
       }
+      if (statusName.includes("cancel") || statusName.includes("reject") || statusName.includes("won't do") || statusName.includes("obsolete")) {
+        status = "cancelled";
+      }
       
       const tags = ['jira'];
       if (fields.project?.key) {
@@ -223,7 +226,7 @@ export async function syncJiraAction(formData: FormData) {
           task.project_id = issueProjectRef.id;
           task.project = issueProjectRef;
         }
-        if (status === 'done') {
+        if (status === 'done' || status === 'cancelled') {
            // Luôn lấy ngày hoàn thành chính xác từ Jira đè lên ngày hiện tại
            task.completed_at = resolvedAt;
         } else {
@@ -243,7 +246,7 @@ export async function syncJiraAction(formData: FormData) {
           scheduled_for: null,
           estimate_minutes: null,
           spent_minutes: 0,
-          completed_at: status === 'done' ? resolvedAt : null,
+          completed_at: (status === 'done' || status === 'cancelled') ? resolvedAt : null,
           tags: Array.from(new Set(validTags)),
           source: 'jira',
           external_id: issueKey,

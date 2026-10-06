@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Menu } from "lucide-react";
 
 import { MainNav } from "@/components/main-nav";
 import { DATA_SOURCE } from "@/lib/api";
@@ -16,7 +17,7 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="vi">
-      <body className="min-h-screen antialiased">
+      <body className="flex h-screen overflow-hidden bg-[var(--color-surface)] antialiased">
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-[var(--color-accent)] focus:px-3 focus:py-2 focus:text-white"
@@ -24,48 +25,70 @@ export default function RootLayout({
           Bỏ qua điều hướng
         </a>
 
-        <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 sm:px-6">
-          <header className="flex flex-col gap-4 border-b border-[var(--color-border)] py-5 sm:flex-row sm:items-center sm:justify-between">
+        {/* ── Sidebar Desktop ────────────────────────────────────────── */}
+        <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-raised)]/30 sm:flex">
+          <div className="flex h-[68px] shrink-0 items-center border-b border-[var(--color-border)] px-5">
             <div>
-              <p className="text-lg font-semibold tracking-tight">
+              <p className="text-sm font-semibold tracking-tight text-[var(--color-ink)]">
                 Builder AI Assistant
               </p>
-              <p className="text-sm text-[var(--color-ink-muted)]">
+              <p className="text-[10px] text-[var(--color-ink-muted)]">
                 Phase 1 — task store cá nhân
               </p>
             </div>
-
+          </div>
+          <div className="flex-1 overflow-y-auto">
             <MainNav />
+          </div>
+        </aside>
+
+        {/* ── Main Content Area ──────────────────────────────────────── */}
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {/* Header Mobile */}
+          <header className="flex h-14 shrink-0 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 sm:hidden">
+            <p className="text-sm font-semibold tracking-tight">
+              Builder AI Assistant
+            </p>
+            {/* Tạm thời dùng icon Menu, sau này có thể làm sheet đóng/mở thật */}
+            <button
+              type="button"
+              className="text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]"
+              aria-label="Mở menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
           </header>
 
-          {DATA_SOURCE === "memory" ? (
-            <p
-              role="status"
-              className="mt-4 rounded-md border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/10 px-3 py-2 text-xs text-[var(--color-warn)]"
-            >
-              Dữ liệu đang nằm trong bộ nhớ và sẽ mất khi dev server khởi động
-              lại. Đặt <code>DATA_SOURCE=file</code> trong{" "}
-              <code>apps/web/.env.local</code> để lưu xuống file JSON.
-            </p>
-          ) : null}
+          <main id="main" className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
+            <div className="mx-auto max-w-5xl">
+              {DATA_SOURCE === "memory" ? (
+                <p
+                  role="status"
+                  className="mb-6 rounded-md border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/10 px-3 py-2 text-xs text-[var(--color-warn)]"
+                >
+                  Dữ liệu đang nằm trong bộ nhớ và sẽ mất khi dev server khởi động
+                  lại. Đặt <code>DATA_SOURCE=file</code> trong{" "}
+                  <code>apps/web/.env.local</code> để lưu xuống file JSON.
+                </p>
+              ) : null}
 
-          {DATA_SOURCE === "file" ? (
-            <p
-              role="status"
-              className="mt-4 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-xs text-[var(--color-ink-muted)]"
-            >
-              Đang lưu vào file JSON cục bộ, chưa dùng Postgres. Xem và backup
-              ở trang <Link href="/data" className="text-[var(--color-accent)] underline">Dữ liệu</Link>.
-            </p>
-          ) : null}
+              {DATA_SOURCE === "file" ? (
+                <p
+                  role="status"
+                  className="mb-6 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2 text-xs text-[var(--color-ink-muted)]"
+                >
+                  Đang lưu vào file JSON cục bộ, chưa dùng Postgres. Xem và backup
+                  ở trang <Link href="/data" className="text-[var(--color-accent)] underline">Dữ liệu</Link>.
+                </p>
+              ) : null}
 
-          <main id="main" className="flex-1 py-6">
-            {children}
+              {children}
+            </div>
           </main>
 
-          <footer className="border-t border-[var(--color-border)] py-4 text-xs text-[var(--color-ink-muted)]">
-            Nguồn dữ liệu hiện tại: nhập tay. Integration Jira, Calendar,
-            Obsidian sẽ cắm vào cùng task store ở Phase 2.
+          <footer className="shrink-0 border-t border-[var(--color-border)] px-4 py-4 text-center text-xs text-[var(--color-ink-muted)] sm:px-8">
+            Nguồn dữ liệu hiện tại: nhập tay. Integration Jira, Calendar, Obsidian
+            sẽ cắm vào cùng task store ở Phase 2.
           </footer>
         </div>
       </body>

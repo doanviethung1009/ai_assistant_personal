@@ -1,10 +1,12 @@
 import { ApiErrorPanel } from "@/components/api-error";
+import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { StatsStrip } from "@/components/stats-strip";
 import { TaskSection } from "@/components/task-section";
 import { getAgenda, getStats, listProjects } from "@/lib/api";
 import { formatFullPlainDate } from "@/lib/format";
 import type { Agenda, Project, Stats } from "@/lib/types";
+import { CalendarDays } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -33,38 +35,58 @@ export default async function TodayPage() {
     agenda.in_progress.length === 0;
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">Hôm nay</h1>
-        <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          {formatFullPlainDate(agenda.reference_date)}
-        </p>
+    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+      <div className="flex items-start justify-between relative">
+        <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-emerald-500 rounded-lg blur opacity-10 pointer-events-none"></div>
+        <div className="relative">
+          <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-[var(--color-ink)] to-gray-400 bg-clip-text text-transparent flex items-center gap-3">
+            <div className="p-2 bg-[var(--color-accent)]/10 rounded-xl">
+              <CalendarDays className="size-7 text-[var(--color-accent)]" />
+            </div>
+            Hôm nay
+          </h1>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium tracking-wide">
+            {formatFullPlainDate(agenda.reference_date)}
+          </p>
+        </div>
+        <div className="relative z-10">
+          <JiraQuickSync />
+        </div>
       </div>
 
       <StatsStrip stats={stats} />
 
-      <QuickAddForm projects={projects} defaultScheduleToday />
+      <div className="relative rounded-2xl bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)] p-2 shadow-sm border border-[var(--color-border)]">
+        <QuickAddForm projects={projects} defaultScheduleToday />
+      </div>
 
       {nothingToDo ? (
-        <p className="rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-ink-muted)]">
-          Chưa có việc nào cho hôm nay. Thêm task ở trên, hoặc mở{" "}
-          <span className="text-[var(--color-ink)]">Tất cả task</span> rồi bấm
-          &ldquo;Hôm nay&rdquo; để xếp lịch.
-        </p>
+        <div className="rounded-2xl border border-dashed border-emerald-500/30 bg-emerald-500/5 p-12 text-center shadow-inner mt-4">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/10 mb-4 shadow-sm">
+            <CalendarDays className="size-8 text-emerald-500" />
+          </div>
+          <p className="text-base font-bold text-[var(--color-ink)]">Tuyệt vời! Bạn đã hoàn thành hết mục tiêu hôm nay.</p>
+          <p className="mt-2 text-sm text-[var(--color-ink-muted)] max-w-sm mx-auto leading-relaxed">
+            Thêm task ở trên, hoặc mở <span className="font-bold text-[var(--color-ink)]">Tất cả task</span> rồi bấm
+            &ldquo;Hôm nay&rdquo; để xếp lịch tiếp theo nhé.
+          </p>
+        </div>
       ) : null}
 
-      <TaskSection title="Quá hạn" tasks={agenda.overdue} tone="danger" />
-      <TaskSection title="Đang làm" tasks={agenda.in_progress} tone="warn" />
-      <TaskSection title="Đã xếp cho hôm nay" tasks={agenda.scheduled_today} />
-      <TaskSection
-        title="Sắp đến hạn trong 7 ngày, chưa xếp lịch"
-        tasks={agenda.due_soon}
-      />
-      <TaskSection
-        title="Đã xong hôm nay"
-        tasks={agenda.completed_today}
-        tone="success"
-      />
+      <div className="flex flex-col gap-4">
+        <TaskSection title="Quá hạn" tasks={agenda.overdue} tone="danger" />
+        <TaskSection title="Đang làm" tasks={agenda.in_progress} tone="warn" />
+        <TaskSection title="Đã xếp cho hôm nay" tasks={agenda.scheduled_today} tone="accent" />
+        <TaskSection
+          title="Sắp đến hạn trong 7 ngày"
+          tasks={agenda.due_soon}
+        />
+        <TaskSection
+          title="Đã xong hôm nay"
+          tasks={agenda.completed_today}
+          tone="success"
+        />
+      </div>
     </div>
   );
 }

@@ -81,16 +81,16 @@ export const PHASES: Phase[] = [
     key: "integration",
     title: "Kết nối nguồn ngoài",
     goal: "Gom task từ Jira, Calendar, Obsidian vào cùng một task store.",
-    status: "planned",
+    status: "doing",
     architecture:
-      "Thêm mcp-servers/, scheduler poll định kỳ, Telegram bot làm giao diện di động.",
+      "Tích hợp trực tiếp qua API (Jira Cloud), scheduler poll định kỳ, Telegram bot làm giao diện di động.",
     items: [
       {
         label: "Chốt Jira Cloud hay Data Center",
-        status: "planned",
-        note: "Đang chặn cả phase. Auth và endpoint khác nhau hoàn toàn",
+        status: "done",
+        note: "Đã chốt dùng Jira Cloud (Basic Auth) - Thực thi tại jira-actions.ts",
       },
-      { label: "MCP server cho Jira", status: "planned" },
+      { label: "Tích hợp Jira lấy task qua JQL trực tiếp", status: "done", note: "Lấy dự án/tag qua Custom Fields và JQL tương đối" },
       { label: "MCP server cho Google Calendar", status: "planned" },
       { label: "Đọc Obsidian vault từ đĩa", status: "planned" },
       { label: "Scheduler poll mỗi 2-5 phút", status: "planned", note: "Polling vì hệ thống sau NAT" },
