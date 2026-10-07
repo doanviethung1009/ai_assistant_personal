@@ -4,6 +4,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:12] | Category: [TOOL]
+- **Prompt:** "giờ về git khi có nhiều agent nhiều người cùng nhau làm thì làm sao để update và push git hiệu quả và cần review lại mới update vào main mới nhất cho toàn bộ dự án?"
+- **Xử lý:**
+  - Cập nhật quy tắc `.agents/skills/git-commit/SKILL.md` để cấm AI Agent đẩy (push) code trực tiếp lên nhánh `main`.
+  - Thiết lập quy trình **Branching & PR Workflow**: AI bắt buộc phải tạo nhánh mới (`git checkout -b feat/tên-nhánh`), commit và push lên nhánh đó. Sau đó yêu cầu User hoặc QA Agent review code (Pull Request) trước khi cho phép gộp vào `main`.
+  - Sinh Changelog, Commit và Push lên Git.
+- **Phản hồi:** Đã chuyển đổi thành công mô hình Git sang tiêu chuẩn Team / Multi-Agent an toàn tuyệt đối.
+
+---
+
 ### [07-10-2026 13:09] | Category: [TOOL]
 - **Prompt:** "trong folder share tôi có bổ sung md của claude và chatgpt operation hãy phân tích và bổ sung vào các file cần, md, log ... để phù hợp"
 - **Xử lý:**

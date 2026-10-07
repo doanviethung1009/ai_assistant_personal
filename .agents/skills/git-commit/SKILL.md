@@ -66,17 +66,31 @@ BREAKING CHANGE: field `trash_total` đổi tên thành `deleted_total`.
    tách commit khác (ví dụ: thêm steering mới và sửa logic nghiệp vụ là hai
    commit riêng, dù làm trong cùng một phiên).
 
-## Thứ tự lệnh thường dùng
+## Thứ tự lệnh thường dùng (Multi-Agent / Team Workflow)
+
+**Tuyệt đối KHÔNG push thẳng lên `main`** nếu dự án có nhiều Agent hoặc nhiều người cùng làm việc. 
+Luôn tạo nhánh mới (Feature Branch), push lên nhánh đó và yêu cầu Code Review.
 
 ```bash
+# 1. Tạo nhánh mới TỪ main mới nhất
+git checkout main && git pull --ff-only
+git checkout -b feat/ten-tinh-nang-moi
+
+# 2. Làm việc, kiểm tra và stage file
 git status --short
 git diff -- <file đã sửa>
 git add <file 1> <file 2>
+
+# 3. Commit theo chuẩn Conventional
 git commit -m "feat(web): thêm bộ lọc theo tag ở trang Sổ tay"
-git push origin main
+
+# 4. Đẩy nhánh lên Remote
+git push -u origin feat/ten-tinh-nang-moi
 ```
 
-Quy trình thăng cấp lên `uat`/`prod` sau khi đã commit vào `main` nằm ở
+Sau khi hoàn tất lệnh Push, Agent phải **báo cáo lại cho User (hoặc Agent Reviewer)** để họ tiến hành mở Pull Request (PR) và Code Review trước khi merge vào `main`.
+
+Quy trình thăng cấp lên `uat`/`prod` sau khi PR đã được merge vào `main` nằm ở
 [docs/git-workflow.md](../../../docs/git-workflow.md) — không lặp ở đây.
 Thứ tự lệnh deploy thực tế theo từng tình huống nằm ở
 [docs/deploy-runbook.md](../../../docs/deploy-runbook.md).
