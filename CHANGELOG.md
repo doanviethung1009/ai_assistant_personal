@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- đổi tên nhãn cẩm nang tổng quát thành cẩm nang agent ides (`b709e43`)
 - thêm tính năng popup xem chi tiết prompt trong ai trace (`ec12b81`)
 - tối ưu sidebar dạng collapsible và bổ sung prompt templates vào cẩm nang ai (`95b6168`)
 - tạo route riêng /ai/[slug] để đọc cấu hình agent độc lập khỏi trang tài liệu chung (`1c46649`)
