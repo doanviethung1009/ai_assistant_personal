@@ -103,6 +103,8 @@ commit; (3) bạn đồng ý trước khi push.
 2. **Mục Ownership trong spec**: backend-dev sửa `apps/core/...`, frontend-dev sửa `apps/web/...`, hai bên không trùng file.
 3. **`make gen-types`**: backend đổi API thì sinh lại `apps/web/lib/generated/openapi.d.ts` để web có type mới.
 
+> Muốn xem luồng này chạy thật, với prompt, lỗi bắt được và chỗ chưa trơn tru: `docs/MULTI_AGENT_TRIAL.md`.
+
 ## 5. Cách dùng: gõ gì trong từng tình huống
 
 Bạn gõ prompt ở session Claude Code (chạy `claude` ở thư mục gốc). Có thể gọi đích danh bằng
@@ -197,7 +199,7 @@ Những chỗ cấu hình còn hở, nên biết trước khi tin tuyệt đối
 3. **Lệnh lint của backend-dev có nhánh `ruff check apps/core`** khi stack chưa chạy, nhưng máy host không cài ruff. Thực tế `make lint` chạy trong container, nên cần `make up` trước.
 4. **Hook là regex trên chuỗi lệnh** nên có thể chặn nhầm (xem mục 6) và không chặn được lệnh nguy hiểm đi vòng qua ngôn ngữ khác (ví dụ script Python tự xoá file). Quyền `deny` là lớp bổ trợ, không phải bảo hiểm tuyệt đối.
 5. **Chạy song song cần worktree riêng.** Hai agent cùng ghi vào một working tree sẽ đè nhau, bất kể Ownership.
-6. **Chưa có spec thật nào.** `docs/specs/` có `_TEMPLATE.md` và spec mẫu `EXAMPLE-note-archive.md` (không triển khai). Luồng 7 bước mới được cấu hình, chưa chạy thử trên một Epic thật.
+6. **Đã chạy thử trọn luồng một lần** trên tính năng Lưu trữ note (xem `docs/MULTI_AGENT_TRIAL.md`, spec thật `docs/specs/note-archive.md`). Mới một Epic, chạy không có Docker nên chưa có `make smoke` và chưa xem giao diện thật.
 
 ## 9. Xử lý sự cố
 

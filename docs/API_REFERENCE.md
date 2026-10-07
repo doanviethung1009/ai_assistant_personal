@@ -28,6 +28,8 @@ Các API này hỗ trợ việc quản lý công việc (Task), theo dõi tiến
 ## 2. API Quản lý Ghi chú (Notes)
 Base path: `/api/v1/notes`
 
+Danh sách (`GET /`) và `GET /stats` nhận thêm tham số `archived` (bool, mặc định `false`): `false` chỉ trả note đang dùng, `true` chỉ trả note đã lưu trữ. `offset` tối đa 1 000 000. Chi tiết: `docs/specs/note-archive.md`.
+
 Notes khác với Tasks ở chỗ nó không có vòng đời (chưa làm/hoàn thành) và không có deadline. Dùng để lưu trữ kiến thức, snippet, hoặc ghi chú rời rạc.
 
 | Phương thức | Endpoint | Chức năng | Ghi chú |
@@ -42,6 +44,8 @@ Notes khác với Tasks ở chỗ nó không có vòng đời (chưa làm/hoàn 
 | `PATCH` | `/{note_id}` | Cập nhật note | Cập nhật title, content, is_pinned... |
 | `DELETE` | `/{note_id}` | Xoá mềm note | Note sẽ bị đưa vào `/trash` |
 | `POST` | `/{note_id}/restore` | Khôi phục note | |
+| `POST` | `/{note_id}/archive` | Lưu trữ note | Ẩn khỏi danh sách mặc định, không bị dọn như thùng rác. Gọi lặp lại trả 200 và giữ `archived_at` lần đầu. 404 nếu note không có hoặc đang trong thùng rác |
+| `POST` | `/{note_id}/unarchive` | Bỏ lưu trữ | Idempotent như trên |
 | `POST` | `/{note_id}/pin` | Ghim / Bỏ ghim | Toggle trạng thái ghim của note lên đầu |
 
 ## 3. API Quản lý Dự án (Projects)

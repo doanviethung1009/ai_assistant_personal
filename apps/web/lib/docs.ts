@@ -299,6 +299,20 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
   },
   {
+    slug: "multi-agent-trial",
+    title: "Ví dụ thực chiến: chạy trọn luồng multi-agent",
+    description: "Bản ghi một lần chạy thật 7 bước với tính năng Lưu trữ note: prompt, kết quả từng agent, lỗi bắt được, chỗ chưa trơn tru và checklist cho orchestrator.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "MULTI_AGENT_TRIAL.md"),
+  },
+  {
+    slug: "spec-note-archive",
+    title: "Spec thật: Lưu trữ note",
+    description: "Spec do architect viết sau khi đối chiếu code thật (CHỐT), kèm phụ lục chỉ ra 14 chỗ sai của bản mẫu viết tay.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "specs", "note-archive.md"),
+  },
+  {
     slug: "spec-example-note-archive",
     title: "Spec mẫu: Lưu trữ note",
     description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",

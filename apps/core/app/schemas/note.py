@@ -137,6 +137,11 @@ class NoteRead(BaseModel):
         default=None, description="Khác null nghĩa là đang ở trong thùng rác"
     )
 
+    archived_at: datetime | None = Field(
+        default=None,
+        description="Khác null nghĩa là đã lưu trữ: ẩn khỏi danh sách mặc định, không bị dọn",
+    )
+
     @computed_field  # type: ignore[prop-decorator]
     @property
     def days_until_purge(self) -> int | None:

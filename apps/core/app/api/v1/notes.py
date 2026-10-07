@@ -40,7 +40,7 @@ router = APIRouter(prefix="/notes", tags=["notes"])
 async def list_note_trash(
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
 ) -> NoteTrashResponse:
     purged = await note_service.purge_expired(session)
     notes, total = await note_service.list_trash(session, limit=limit, offset=offset)
@@ -83,9 +83,12 @@ async def empty_note_trash(session: SessionDep) -> NotePurgeResponse:
     "/stats",
     response_model=dict[str, int],
     summary="Số note theo từng loại",
+    description="Đếm trong view đang chọn: archived=false (mặc định) hoặc true.",
 )
-async def note_stats(session: SessionDep) -> dict[str, int]:
-    return await note_service.count_by_kind(session)
+async def note_stats(
+    session: SessionDep, archived: Annotated[bool, Query()] = False
+) -> dict[str, int]:
+    return await note_service.count_by_kind(session, archived=archived)
 
 
 # ── Collection ─────────────────────────────────────────────────────────
@@ -100,8 +103,9 @@ async def list_notes(
     tags: Annotated[list[str] | None, Query()] = None,
     q: Annotated[str | None, Query(max_length=200)] = None,
     pinned_only: Annotated[bool, Query()] = False,
+    archived: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
     sort_by: Annotated[SortField, Query()] = "updated_at",
     sort_desc: Annotated[bool, Query()] = True,
 ) -> Page[NoteRead]:
@@ -112,6 +116,7 @@ async def list_notes(
         tags=tags or [],
         query=q,
         pinned_only=pinned_only,
+        archived=archived,
         limit=limit,
         offset=offset,
         sort_by=sort_by,
@@ -185,6 +190,30 @@ async def delete_note(
 )
 async def restore_note(session: SessionDep, note_id: uuid.UUID) -> NoteRead:
     note = await note_service.restore_note(session, note_id)
+    return NoteRead.model_validate(note)
+
+
+@router.post(
+    "/{note_id}/archive",
+    response_model=NoteRead,
+    summary="Lưu trữ note",
+    description=(
+        "Ẩn khỏi danh sách mặc định, không bị dọn như thùng rác. Idempotent: "
+        "note đã lưu trữ giữ nguyên archived_at cũ."
+    ),
+)
+async def archive_note(session: SessionDep, note_id: uuid.UUID) -> NoteRead:
+    note = await note_service.archive_note(session, note_id)
+    return NoteRead.model_validate(note)
+
+
+@router.post(
+    "/{note_id}/unarchive",
+    response_model=NoteRead,
+    summary="Bỏ lưu trữ note",
+)
+async def unarchive_note(session: SessionDep, note_id: uuid.UUID) -> NoteRead:
+    note = await note_service.unarchive_note(session, note_id)
     return NoteRead.model_validate(note)
 
 

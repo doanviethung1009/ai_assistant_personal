@@ -344,7 +344,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Số note theo từng loại */
+        /**
+         * Số note theo từng loại
+         * @description Đếm trong view đang chọn: archived=false (mặc định) hoặc true.
+         */
         get: operations["note_stats_api_v1_notes_stats_get"];
         put?: never;
         post?: never;
@@ -414,6 +417,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/notes/{note_id}/archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Lưu trữ note
+         * @description Ẩn khỏi danh sách mặc định, không bị dọn như thùng rác. Idempotent: note đã lưu trữ giữ nguyên archived_at cũ.
+         */
+        post: operations["archive_note_api_v1_notes__note_id__archive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/notes/{note_id}/unarchive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Bỏ lưu trữ note */
+        post: operations["unarchive_note_api_v1_notes__note_id__unarchive_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/notes/{note_id}/use": {
         parameters: {
             query?: never;
@@ -454,6 +494,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/ai-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Danh sách nhật ký AI */
+        get: operations["list_ai_logs_api_v1_ai_logs_get"];
+        put?: never;
+        /** Ghi một nhật ký AI */
+        post: operations["create_ai_log_api_v1_ai_logs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/ai-logs/{log_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chi tiết nhật ký AI */
+        get: operations["get_ai_log_api_v1_ai_logs__log_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -486,6 +561,48 @@ export interface components {
             readonly totals: {
                 [key: string]: number;
             };
+        };
+        /**
+         * AiLogCategory
+         * @enum {string}
+         */
+        AiLogCategory: "app" | "api" | "web" | "tool" | "other";
+        /** AiLogCreate */
+        AiLogCreate: {
+            /** @default other */
+            category: components["schemas"]["AiLogCategory"];
+            /** Prompt */
+            prompt: string;
+            /** Handling */
+            handling: string;
+            /** Response */
+            response: string;
+        };
+        /** AiLogRead */
+        AiLogRead: {
+            /** @default other */
+            category: components["schemas"]["AiLogCategory"];
+            /** Prompt */
+            prompt: string;
+            /** Handling */
+            handling: string;
+            /** Response */
+            response: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /** ComponentHealth */
         ComponentHealth: {
@@ -542,7 +659,6 @@ export interface components {
              * @description Vì sao cần và khi nào dùng
              */
             description?: string | null;
-      assignee?: string | null;
             /**
              * Context
              * @description Nơi áp dụng: host, database, môi trường
@@ -609,7 +725,6 @@ export interface components {
             content: string;
             /** Description */
             description: string | null;
-      assignee: string | null;
             /** Context */
             context: string | null;
             /** Project Id */
@@ -643,6 +758,11 @@ export interface components {
              * @description Khác null nghĩa là đang ở trong thùng rác
              */
             deleted_at?: string | null;
+            /**
+             * Archived At
+             * @description Khác null nghĩa là đã lưu trữ: ẩn khỏi danh sách mặc định, không bị dọn
+             */
+            archived_at?: string | null;
             /**
              * Days Until Purge
              * @description Số ngày còn lại trước khi bị xoá vĩnh viễn. Null nếu chưa xoá.
@@ -705,7 +825,6 @@ export interface components {
             content?: string | null;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
             /** Context */
             context?: string | null;
             /** Project Id */
@@ -716,6 +835,20 @@ export interface components {
             is_pinned?: boolean | null;
             /** Is Dangerous */
             is_dangerous?: boolean | null;
+        };
+        /** Page[AiLogRead] */
+        Page_AiLogRead_: {
+            /** Items */
+            items: components["schemas"]["AiLogRead"][];
+            /**
+             * Total
+             * @description Tổng số bản ghi khớp filter, không tính phân trang
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
         };
         /** Page[NoteRead] */
         Page_NoteRead_: {
@@ -751,7 +884,6 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
             /**
              * Color
              * @description Mã hex, ví dụ #2563eb
@@ -770,7 +902,6 @@ export interface components {
             name: string;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
             /**
              * Color
              * @description Mã hex, ví dụ #2563eb
@@ -819,7 +950,6 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
             /** Color */
             color?: string | null;
             /** Is Archived */
@@ -872,7 +1002,8 @@ export interface components {
             title: string;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
+            /** Assignee */
+            assignee?: string | null;
             /** @default todo */
             status: components["schemas"]["TaskStatus"];
             /** @default medium */
@@ -915,7 +1046,8 @@ export interface components {
             title: string;
             /** Description */
             description: string | null;
-      assignee: string | null;
+            /** Assignee */
+            assignee: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -1004,7 +1136,8 @@ export interface components {
             title: string;
             /** Description */
             description: string | null;
-      assignee: string | null;
+            /** Assignee */
+            assignee: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -1111,7 +1244,8 @@ export interface components {
             title?: string | null;
             /** Description */
             description?: string | null;
-      assignee?: string | null;
+            /** Assignee */
+            assignee?: string | null;
             status?: components["schemas"]["TaskStatus"] | null;
             priority?: components["schemas"]["TaskPriority"] | null;
             /** Project Id */
@@ -1395,6 +1529,7 @@ export interface operations {
                 q?: string | null;
                 scheduled_on?: string | null;
                 due_before?: string | null;
+                assignee?: string | null;
                 /** @description Gồm cả done và cancelled */
                 include_closed?: boolean;
                 limit?: number;
@@ -1889,7 +2024,9 @@ export interface operations {
     };
     note_stats_api_v1_notes_stats_get: {
         parameters: {
-            query?: never;
+            query?: {
+                archived?: boolean;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1907,6 +2044,15 @@ export interface operations {
                     };
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
     list_notes_api_v1_notes_get: {
@@ -1918,6 +2064,7 @@ export interface operations {
                 tags?: string[] | null;
                 q?: string | null;
                 pinned_only?: boolean;
+                archived?: boolean;
                 limit?: number;
                 offset?: number;
                 sort_by?: "updated_at" | "created_at" | "title" | "use_count" | "last_used_at";
@@ -2110,6 +2257,68 @@ export interface operations {
             };
         };
     };
+    archive_note_api_v1_notes__note_id__archive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unarchive_note_api_v1_notes__note_id__unarchive_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                note_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoteRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mark_note_used_api_v1_notes__note_id__use_post: {
         parameters: {
             query?: never;
@@ -2157,6 +2366,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SystemInfo"];
+                };
+            };
+        };
+    };
+    list_ai_logs_api_v1_ai_logs_get: {
+        parameters: {
+            query?: {
+                category?: components["schemas"]["AiLogCategory"][] | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AiLogRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_ai_log_api_v1_ai_logs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AiLogCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiLogRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ai_log_api_v1_ai_logs__log_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                log_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiLogRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

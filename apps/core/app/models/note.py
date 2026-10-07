@@ -97,6 +97,15 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True), default=None
     )
 
+    # ── Lưu trữ ─────────────────────────────────────────────────────
+    # Khác thùng rác: note lưu trữ vẫn "sống" (đọc, sửa, copy được), không bao
+    # giờ bị purge_expired dọn, và vẫn chiếm chỗ unique (source, external_id).
+    # Chỉ ẩn khỏi danh sách mặc định. Giữ nguyên khi note bị xoá mềm để phục
+    # hồi về đúng trạng thái cũ.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+
     # ── Nguồn gốc: khai báo sẵn cho integration ở Phase 2 ───────────
     source: Mapped[NoteSource] = mapped_column(
         enum_column(NoteSource, "note_source"),
@@ -143,6 +152,12 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "ix_notes_deleted_at",
             "deleted_at",
             postgresql_where=text("deleted_at IS NOT NULL"),
+        ),
+        # Phục vụ view Lưu trữ; phần lớn note không lưu trữ nên index nhỏ.
+        Index(
+            "ix_notes_archived_at",
+            "archived_at",
+            postgresql_where=text("archived_at IS NOT NULL"),
         ),
     )
 

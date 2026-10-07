@@ -1,11 +1,16 @@
+import Link from "next/link";
+import { redirect } from "next/navigation";
+
 import { ApiErrorPanel } from "@/components/api-error";
 import { NoteFilters, type NoteFilterState } from "@/components/note-filters";
 import { NoteForm } from "@/components/note-form";
 import { NoteItem } from "@/components/note-item";
-import { getNoteStats, listNotes, listProjects } from "@/lib/api";
+import { IS_LOCAL, getNoteStats, listNotes, listProjects } from "@/lib/api";
 import { NOTE_KINDS, type Note, type NoteKind, type NoteSortField } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+const PAGE_SIZE = 50;
 
 const SORT_FIELDS: NoteSortField[] = [
   "updated_at",
@@ -21,6 +26,32 @@ function single(value: string | string[] | undefined): string {
   return value ?? "";
 }
 
+/**
+ * Dựng URL /notes giữ nguyên bộ lọc và tab. Dùng chung cho tab, phân trang và
+ * link gợi ý để mọi chỗ đều không đánh rơi tham số nào.
+ */
+function notesHref(
+  filters: NoteFilterState,
+  overrides: { archived?: boolean; page?: number } = {},
+): string {
+  const archived = overrides.archived ?? filters.archived;
+  const query = new URLSearchParams();
+  if (filters.q) query.set("q", filters.q);
+  if (filters.kind) query.set("kind", filters.kind);
+  if (filters.pinned) query.set("pinned", "1");
+  if (filters.sort !== "updated_at") query.set("sort", filters.sort);
+  if (archived) query.set("archived", "1");
+  if (overrides.page && overrides.page > 1) {
+    query.set("page", String(overrides.page));
+  }
+  const qs = query.toString();
+  return qs ? `/notes?${qs}` : "/notes";
+}
+
+function sumCounts(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((sum, value) => sum + value, 0);
+}
+
 function parseFilters(
   params: Record<string, string | string[] | undefined>,
 ): NoteFilterState {
@@ -34,6 +65,8 @@ function parseFilters(
     kind: (NOTE_KINDS as string[]).includes(rawKind) ? (rawKind as NoteKind) : "",
     pinned: single(params.pinned) === "1",
     sort: (SORT_FIELDS as string[]).includes(rawSort) ? rawSort : "updated_at",
+    // File/memory mode không có lưu trữ: ép về tab Đang dùng dù URL ghi gì.
+    archived: !IS_LOCAL && single(params.archived) === "1",
   };
 }
 
@@ -42,30 +75,56 @@ export default async function NotesPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const filters = parseFilters(await searchParams);
+  const rawParams = await searchParams;
+  const filters = parseFilters(rawParams);
+  // Trần 10_000 trang: số quá lớn làm offset vượt int64 của Postgres và backend trả 500.
+  const currentPage = Math.min(
+    10_000,
+    Math.max(1, Number.parseInt(single(rawParams.page), 10) || 1),
+  );
+  const archiveSupported = !IS_LOCAL;
 
   let notes: Note[];
   let total: number;
   let counts: Record<string, number>;
+  let activeTotal: number;
+  let archivedTotal: number;
+  let archivedMatches = 0;
   let projects: { id: string; key: string; name: string }[];
 
   try {
-    const [page, stats, projectList] = await Promise.all([
-      listNotes({
-        kind: filters.kind ? [filters.kind] : undefined,
-        query: filters.q || undefined,
-        pinnedOnly: filters.pinned,
-        sortBy: filters.sort as NoteSortField,
-        // title sắp xếp tăng dần mới tự nhiên, các field thời gian thì giảm dần
-        sortDesc: filters.sort !== "title",
-        limit: 200,
-      }),
-      getNoteStats(),
-      listProjects(true),
-    ]);
+    const listOptions = {
+      kind: filters.kind ? [filters.kind] : undefined,
+      query: filters.q || undefined,
+      pinnedOnly: filters.pinned,
+      sortBy: filters.sort as NoteSortField,
+      // title sắp xếp tăng dần mới tự nhiên, các field thời gian thì giảm dần
+      sortDesc: filters.sort !== "title",
+    };
+    // Số trên hai tab luôn lấy từ stats của từng view, bất kể đang xem tab nào.
+    const [page, activeStats, archivedStats, projectList, hint] =
+      await Promise.all([
+        listNotes({
+          ...listOptions,
+          archived: filters.archived,
+          limit: PAGE_SIZE,
+          offset: (currentPage - 1) * PAGE_SIZE,
+        }),
+        getNoteStats({ archived: false }),
+        archiveSupported ? getNoteStats({ archived: true }) : Promise.resolve({}),
+        listProjects(true),
+        // Gợi ý "khớp trong Lưu trữ": rủi ro UX chính là tìm không ra note cũ
+        // vì đã lưu trữ. Chỉ tốn thêm request khi đang tìm ở tab Đang dùng.
+        archiveSupported && !filters.archived && filters.q
+          ? listNotes({ ...listOptions, archived: true, limit: 1 })
+          : Promise.resolve(null),
+      ]);
     notes = page.items;
     total = page.total;
-    counts = stats;
+    counts = filters.archived ? archivedStats : activeStats;
+    activeTotal = sumCounts(activeStats);
+    archivedTotal = sumCounts(archivedStats);
+    archivedMatches = hint?.total ?? 0;
     projects = projectList;
   } catch (error) {
     return (
@@ -75,7 +134,14 @@ export default async function NotesPage({
     );
   }
 
-  const totalAll = Object.values(counts).reduce((sum, value) => sum + value, 0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // ?page= vượt số trang thật (xoá bớt note, hoặc gõ tay) thì về trang cuối thay vì
+  // hiện danh sách rỗng đi kèm dòng "N mục". Nằm ngoài try vì redirect() ném lỗi nội bộ.
+  if (currentPage > totalPages) {
+    redirect(notesHref(filters, { page: totalPages }));
+  }
+
+  const totalAll = sumCounts(counts);
   const isFiltered = filters.q !== "" || filters.kind !== "" || filters.pinned;
 
   return (
@@ -90,13 +156,42 @@ export default async function NotesPage({
 
       <NoteForm projects={projects} />
 
+      {archiveSupported ? (
+        <nav aria-label="Chế độ xem sổ tay" className="flex gap-2 text-sm">
+          <TabLink
+            href={notesHref(filters, { archived: false })}
+            active={!filters.archived}
+            label={`Đang dùng (${activeTotal})`}
+          />
+          <TabLink
+            href={notesHref(filters, { archived: true })}
+            active={filters.archived}
+            label={`Lưu trữ (${archivedTotal})`}
+          />
+        </nav>
+      ) : null}
+
       <NoteFilters state={filters} counts={counts} total={totalAll} />
+
+      {archivedMatches > 0 ? (
+        <p className="text-sm text-[var(--color-ink-muted)]">
+          Có {archivedMatches} mục khớp trong Lưu trữ.{" "}
+          <Link
+            href={notesHref(filters, { archived: true })}
+            className="underline"
+          >
+            Xem
+          </Link>
+        </p>
+      ) : null}
 
       <p className="text-sm text-[var(--color-ink-muted)]">
         {total === 0
           ? isFiltered
             ? "Không có mục nào khớp bộ lọc"
-            : "Sổ tay đang trống"
+            : filters.archived
+              ? "Chưa có mục nào được lưu trữ"
+              : "Sổ tay đang trống"
           : `${total} mục${isFiltered ? " khớp bộ lọc" : ""}`}
       </p>
 
@@ -109,10 +204,35 @@ export default async function NotesPage({
       ) : (
         <ul className="flex flex-col gap-3">
           {notes.map((note) => (
-            <NoteItem key={note.id} note={note} />
+            <NoteItem
+              key={note.id}
+              note={note}
+              archiveSupported={archiveSupported}
+            />
           ))}
         </ul>
       )}
+
+      {totalPages > 1 ? (
+        <nav
+          aria-label="Phân trang"
+          className="flex items-center justify-between text-sm"
+        >
+          <PageLink
+            href={notesHref(filters, { page: currentPage - 1 })}
+            disabled={currentPage <= 1}
+            label="Trang trước"
+          />
+          <span className="text-[var(--color-ink-muted)]">
+            Trang {currentPage} / {totalPages} · Tổng: {total} kết quả
+          </span>
+          <PageLink
+            href={notesHref(filters, { page: currentPage + 1 })}
+            disabled={currentPage >= totalPages}
+            label="Trang sau"
+          />
+        </nav>
+      ) : null}
 
       <section className="rounded-lg border border-dashed border-[var(--color-border)] p-4">
         <h2 className="text-sm font-semibold">Về nội dung của sổ tay</h2>
@@ -131,7 +251,64 @@ export default async function NotesPage({
         <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
           Xoá là xoá mềm: mục đã xoá nằm ở tab Thùng rác và còn phục hồi được.
         </p>
+        {archiveSupported ? (
+          <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
+            Lưu trữ khác Thùng rác: mục lưu trữ chỉ bị ẩn khỏi danh sách hằng
+            ngày, vẫn sửa và copy được, và không bao giờ tự bị xoá.
+          </p>
+        ) : null}
       </section>
     </div>
+  );
+}
+
+/** Tab chọn view Đang dùng / Lưu trữ; dùng Link để giữ trang là Server Component. */
+function TabLink({
+  href,
+  active,
+  label,
+}: {
+  href: string;
+  active: boolean;
+  label: string;
+}) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      className={`rounded-md border px-3 py-1.5 transition-colors ${
+        active
+          ? "border-[var(--color-accent)] bg-[var(--color-surface-raised)] font-medium"
+          : "border-[var(--color-border)] hover:bg-[var(--color-surface-hover)]"
+      }`}
+    >
+      {label}
+    </Link>
+  );
+}
+
+function PageLink({
+  href,
+  disabled,
+  label,
+}: {
+  href: string;
+  disabled: boolean;
+  label: string;
+}) {
+  if (disabled) {
+    return (
+      <span className="cursor-not-allowed rounded-md border border-[var(--color-border)] px-3 py-1.5 text-[var(--color-ink-muted)] opacity-40">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <Link
+      href={href}
+      className="rounded-md border border-[var(--color-border)] px-3 py-1.5 transition-colors hover:bg-[var(--color-surface-hover)]"
+    >
+      {label}
+    </Link>
   );
 }

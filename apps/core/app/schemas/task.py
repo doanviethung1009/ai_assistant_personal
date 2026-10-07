@@ -107,6 +107,7 @@ class TaskRead(BaseModel):
     id: uuid.UUID
     title: str
     description: str | None
+    assignee: str | None
     status: TaskStatus
     priority: TaskPriority
     project_id: uuid.UUID | None

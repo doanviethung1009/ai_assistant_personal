@@ -65,6 +65,14 @@ export function TrashNoteItem({ note }: { note: Note }) {
             ) : null}
           </div>
 
+          {/* Phục hồi giữ nguyên archived_at nên note sẽ về tab Lưu trữ; báo trước
+              để người dùng không tưởng note mất tích. */}
+          {note.archived_at != null ? (
+            <p className="mt-2 text-xs text-[var(--color-ink-muted)]">
+              Đã lưu trữ — phục hồi sẽ về tab Lưu trữ
+            </p>
+          ) : null}
+
           <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-ink-muted)]">
             <div className="flex gap-1">
               <dt>Đã xoá:</dt>

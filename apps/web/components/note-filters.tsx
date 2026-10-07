@@ -19,6 +19,8 @@ export interface NoteFilterState {
   kind: NoteKind | "";
   pinned: boolean;
   sort: string;
+  /** Đang xem tab Lưu trữ. Không tính vào "đang lọc": nó là chọn view, không phải điều kiện. */
+  archived: boolean;
 }
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
@@ -48,6 +50,9 @@ export function NoteFilters({
       className="flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3"
       aria-label="Lọc sổ tay"
     >
+      {/* Form GET chỉ gửi field có trong form; thiếu input này thì bấm Lọc ở
+          tab Lưu trữ sẽ nhảy về tab Đang dùng. */}
+      {state.archived ? <input type="hidden" name="archived" value="1" /> : null}
       <div className="min-w-[200px] flex-1">
         <label
           htmlFor="note-search"
@@ -128,7 +133,7 @@ export function NoteFilters({
 
       {isFiltered ? (
         <Link
-          href="/notes"
+          href={state.archived ? "/notes?archived=1" : "/notes"}
           className="rounded-md border border-[var(--color-border)] px-3 py-2 text-sm transition-colors hover:bg-[var(--color-surface-hover)]"
         >
           Bỏ lọc

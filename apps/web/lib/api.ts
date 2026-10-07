@@ -54,6 +54,21 @@ export class CoreApiError extends Error {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Chặn path injection khi nối `id` vào URL core API.
+ *
+ * Server Action là endpoint HTTP công khai: client gửi được `id` tuỳ ý. Nếu là
+ * "../tasks/<uuid>/restore?" thì fetch chuẩn hoá `..` và gọi một route khác
+ * KÈM API key của server (confused deputy). Backend dùng UUID cho path param nên
+ * chỉ cần từ chối mọi chuỗi không phải UUID ở đây.
+ */
+function pathId(id: string): string {
+  if (!UUID_RE.test(id)) throw new CoreApiError("id không hợp lệ", 400);
+  return id;
+}
+
 // ── Đường cục bộ: engine + persistence ─────────────────────────────────
 
 // Cờ phải sống qua hot reload, nếu không mỗi lần sửa file là seed lại
@@ -178,7 +193,7 @@ export async function setCurrentUsersApi(names: string[]): Promise<void> {
 
 export function getAgenda(referenceDate?: string): Promise<Agenda> {
   if (IS_LOCAL) return local(() => engine.getAgenda());
-  const query = referenceDate ? `?reference_date=${referenceDate}` : "";
+  const query = referenceDate ? `?reference_date=${encodeURIComponent(referenceDate)}` : "";
   return coreFetch<Agenda>(`/api/v1/tasks/agenda${query}`);
 }
 
@@ -219,7 +234,7 @@ export function listTasks(options: ListTasksOptions = {}): Promise<Paged<Task>> 
 
 export function getTask(id: string): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.getTask(id));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}`);
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}`);
 }
 
 export function listProjects(includeArchived = false): Promise<Project[]> {
@@ -261,7 +276,7 @@ export function patchTask(
   input: Record<string, unknown>,
 ): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.patchTask(id, input));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -278,7 +293,7 @@ export function deleteTask(id: string, permanent = false): Promise<void> {
     );
   }
   const query = permanent ? "?permanent=true" : "";
-  return coreFetch<void>(`/api/v1/tasks/${id}${query}`, { method: "DELETE" });
+  return coreFetch<void>(`/api/v1/tasks/${pathId(id)}${query}`, { method: "DELETE" });
 }
 
 // ── Thùng rác ──────────────────────────────────────────────────────────
@@ -309,7 +324,7 @@ export function listTrash(limit = 100, offset = 0): Promise<TrashResponse> {
 
 export function restoreTask(id: string): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.restoreTask(id));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}/restore`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}/restore`, {
     method: "POST",
   });
 }
@@ -317,7 +332,7 @@ export function restoreTask(id: string): Promise<TaskDetail> {
 /** Xoá vĩnh viễn một task đang ở trong thùng rác. */
 export function purgeTask(id: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.purgeTask(id));
-  return coreFetch<void>(`/api/v1/tasks/${id}?permanent=true`, {
+  return coreFetch<void>(`/api/v1/tasks/${pathId(id)}?permanent=true`, {
     method: "DELETE",
   });
 }
@@ -352,7 +367,7 @@ export function logTime(
   note?: string | null,
 ): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.logTime(id, minutes, note));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}/time`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}/time`, {
     method: "POST",
     body: JSON.stringify({ minutes, note: note ?? null }),
   });
@@ -370,7 +385,7 @@ export function patchProject(
   },
 ): Promise<Project> {
   if (IS_LOCAL) return local(() => engine.patchProject(id, input));
-  return coreFetch<Project>(`/api/v1/projects/${id}`, {
+  return coreFetch<Project>(`/api/v1/projects/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -383,7 +398,7 @@ export function deleteProject(id: string): Promise<void> {
       return undefined as any;
     });
   }
-  return coreFetch<void>(`/api/v1/projects/${id}`, {
+  return coreFetch<void>(`/api/v1/projects/${pathId(id)}`, {
     method: "DELETE",
   });
 }
@@ -420,12 +435,27 @@ export interface ListNotesOptions {
   sortDesc?: boolean;
   assignee?: string | null;
   forCurrentUser?: boolean;
+  /** true = chỉ note đã lưu trữ. Mặc định (false) = chỉ note đang dùng. */
+  archived?: boolean;
 }
 
 export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> {
-  if (IS_LOCAL) return local(() => engine.listNotes(options));
+  if (IS_LOCAL) {
+    // File/memory mode chưa có khái niệm lưu trữ. Trả trang rỗng thay vì để
+    // engine âm thầm bỏ qua cờ và hiện toàn bộ note ở tab Lưu trữ.
+    if (options.archived) {
+      return Promise.resolve({
+        items: [],
+        total: 0,
+        limit: options.limit ?? 100,
+        offset: options.offset ?? 0,
+      });
+    }
+    return local(() => engine.listNotes(options));
+  }
 
   const params = new URLSearchParams();
+  if (options.archived) params.set("archived", "true");
   options.kind?.forEach((value) => params.append("kind", value));
   options.tags?.forEach((value) => params.append("tags", value));
   if (options.projectId) params.set("project_id", options.projectId);
@@ -442,12 +472,39 @@ export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> 
 
 export function getNote(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.getNote(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}`);
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}`);
 }
 
-export function getNoteStats(): Promise<Record<string, number>> {
-  if (IS_LOCAL) return local(() => engine.countNotesByKind());
-  return coreFetch<Record<string, number>>("/api/v1/notes/stats");
+/** Đếm note theo loại trong đúng view đang xem (đang dùng hoặc lưu trữ). */
+export function getNoteStats(
+  options: { archived?: boolean } = {},
+): Promise<Record<string, number>> {
+  if (IS_LOCAL) {
+    if (options.archived) return Promise.resolve({});
+    return local(() => engine.countNotesByKind());
+  }
+  const query = options.archived ? "?archived=true" : "";
+  return coreFetch<Record<string, number>>(`/api/v1/notes/stats${query}`);
+}
+
+/**
+ * Lưu trữ note: ẩn khỏi danh sách mặc định nhưng không bị dọn như thùng rác.
+ * Chỉ hỗ trợ DATA_SOURCE=api; engine cục bộ chưa có trạng thái này nên
+ * từ chối rõ ràng thay vì giả vờ thành công.
+ */
+export function archiveNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/archive`, { method: "POST" });
+}
+
+/** Đưa note từ Lưu trữ về danh sách đang dùng. Cùng giới hạn như archiveNote. */
+export function unarchiveNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/unarchive`, { method: "POST" });
+}
+
+function localArchiveUnsupported(): CoreApiError {
+  return new CoreApiError("Lưu trữ note chỉ hỗ trợ khi DATA_SOURCE=api", 501);
 }
 
 export interface CreateNoteInput {
@@ -475,7 +532,7 @@ export function patchNote(
   input: Record<string, unknown>,
 ): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.patchNote(id, input));
-  return coreFetch<Note>(`/api/v1/notes/${id}`, {
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -492,13 +549,13 @@ export function deleteNote(id: string, permanent = false): Promise<void> {
     );
   }
   const query = permanent ? "?permanent=true" : "";
-  return coreFetch<void>(`/api/v1/notes/${id}${query}`, { method: "DELETE" });
+  return coreFetch<void>(`/api/v1/notes/${pathId(id)}${query}`, { method: "DELETE" });
 }
 
 /** Ghi nhận một lần dùng, để sắp xếp theo mức độ hay dùng. */
 export function markNoteUsed(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.markNoteUsed(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}/use`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/use`, { method: "POST" });
 }
 
 export function listNoteTrash(
@@ -532,13 +589,13 @@ export function listNoteTrash(
 
 export function restoreNote(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.restoreNote(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}/restore`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/restore`, { method: "POST" });
 }
 
 /** Xoá vĩnh viễn một note đang ở trong thùng rác. */
 export function purgeNote(id: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.purgeNote(id));
-  return coreFetch<void>(`/api/v1/notes/${id}?permanent=true`, {
+  return coreFetch<void>(`/api/v1/notes/${pathId(id)}?permanent=true`, {
     method: "DELETE",
   });
 }
