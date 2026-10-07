@@ -4,49 +4,58 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, isItemActive, type NavItem } from "@/lib/nav";
 
+import { useState } from "react";
+import { ChevronDown, ChevronRight } from "lucide-react";
+
 export function MainNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Điều hướng chính" className="flex flex-col gap-8 px-4 py-6">
-      <div>
-        <h3 className="mb-3 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-muted)] opacity-70">
-          Hàng ngày
-        </h3>
-        <ul className="flex flex-col gap-1.5">
-          {PRIMARY_NAV.map((item) => (
-            <li key={item.href}>
-              <PrimaryLink item={item} pathname={pathname} />
-            </li>
-          ))}
-        </ul>
-      </div>
+    <nav aria-label="Điều hướng chính" className="flex flex-col gap-6 px-4 py-6">
+      <CollapsibleSection title="Hàng ngày" defaultOpen={true}>
+        {PRIMARY_NAV.map((item) => (
+          <li key={item.href}>
+            <PrimaryLink item={item} pathname={pathname} />
+          </li>
+        ))}
+      </CollapsibleSection>
 
-      <div>
-        <h3 className="mb-3 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-muted)] opacity-70">
-          Tài liệu & Hệ thống
-        </h3>
-        <ul className="flex flex-col gap-1.5">
-          {SECONDARY_NAV.map((item) => (
-            <li key={item.href}>
-              <SecondaryLink item={item} pathname={pathname} />
-            </li>
-          ))}
-        </ul>
-      </div>
-      <div>
-        <h3 className="mb-3 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-muted)] opacity-70">
-          Hệ sinh thái AI
-        </h3>
-        <ul className="flex flex-col gap-1.5">
-          {AI_NAV.map((item) => (
-            <li key={item.href}>
-              <SecondaryLink item={item} pathname={pathname} />
-            </li>
-          ))}
-        </ul>
-      </div>
+      <CollapsibleSection title="Hệ sinh thái AI" defaultOpen={true}>
+        {AI_NAV.map((item) => (
+          <li key={item.href}>
+            <SecondaryLink item={item} pathname={pathname} />
+          </li>
+        ))}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Tài liệu & Hệ thống" defaultOpen={false}>
+        {SECONDARY_NAV.map((item) => (
+          <li key={item.href}>
+            <SecondaryLink item={item} pathname={pathname} />
+          </li>
+        ))}
+      </CollapsibleSection>
     </nav>
+  );
+}
+
+function CollapsibleSection({ title, children, defaultOpen }: { title: string, children: React.ReactNode, defaultOpen: boolean }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+  return (
+    <div>
+      <button 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex w-full items-center justify-between px-3 mb-2 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-muted)] opacity-70 hover:opacity-100 transition-opacity"
+      >
+        <span>{title}</span>
+        {isOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+      </button>
+      {isOpen && (
+        <ul className="flex flex-col gap-1.5 animate-in slide-in-from-top-2 fade-in duration-200">
+          {children}
+        </ul>
+      )}
+    </div>
   );
 }
 

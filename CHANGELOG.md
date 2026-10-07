@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- tạo route riêng /ai/[slug] để đọc cấu hình agent độc lập khỏi trang tài liệu chung (`1c46649`)
 - bổ sung cẩm nang ai chung và nhập môn vào khu vực ai sidebar (`50c79e6`)
 - tạo khu vực riêng biệt cho hệ sinh thái AI trên thanh điều hướng (`cfedaed`)
 - mở rộng hệ sinh thái multi-agent với 3 roles và 3 skills chuyên sâu mới (`08ef627`)

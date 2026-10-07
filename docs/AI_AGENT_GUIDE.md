@@ -140,6 +140,14 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 - 🐳 **`devops-engineer.md`**: Kỹ sư hạ tầng, nắm trùm Docker, CI/CD, Makefile và bảo mật Zero-Trust.
 - 🧠 **`ai-rag-engineer.md`**: Chuyên gia LLM, làm việc với Vector Database (pgvector) và Prompt Engineering.
 
-**Cách sử dụng:**
-Khi giao việc, thay vì dùng Agent mặc định (Fullstack Architect từ `AGENTS.md`), bạn có thể gọi đích danh một nhân cách:
-> *"Hãy đóng vai `@.agents/roles/database-architect.md` và chạy skill db-migration để tạo bảng Vault!"*
+**Cách sử dụng (Gợi ý Prompts):**
+Khi giao việc, thay vì dùng Agent mặc định (Fullstack Architect từ `AGENTS.md`), bạn hãy dùng các mẫu prompt trực quan sau để gọi đích danh một nhân cách:
+
+**💡 Mẫu 1 (Code Frontend UI/UX):**
+> *"Mở nhân cách `@.agents/roles/frontend-engineer.md`. Hãy tạo một component trang Dashboard hiển thị thống kê. Yêu cầu có hiệu ứng Hover, thiết kế theo phong cách Glassmorphism. Tuyệt đối tuân thủ `web-conventions.md`."*
+
+**💡 Mẫu 2 (Kiến trúc & Database):**
+> *"Nhập vai `@.agents/roles/database-architect.md`. Hãy tạo bảng `Vault` để lưu mật khẩu. Sau đó gọi skill `@.agents/skills/db-migration/SKILL.md` để sinh file Alembic an toàn. Không tự ý sửa code giao diện."*
+
+**💡 Mẫu 3 (Nhờ AI duyệt PR / Soát lỗi):**
+> *"Tôi vừa push code lên nhánh `feat/new-api`. Đóng vai `@.agents/roles/qa-tester.md`, hãy chạy kỹ năng `@.agents/skills/pr-review/SKILL.md` để soát lỗi kiến trúc, bảo mật và bắt rác trước khi tôi merge."*

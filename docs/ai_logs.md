@@ -4,6 +4,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:28] | Category: [TOOL]
+- **Prompt:** "check lại chỗ AI agent có bổ sung được ví dụ cho trực quan và tối ưu lại menu, menu hiện tại bị dài bấm vào dưới cùng hơi khó khăn khi chọn"
+- **Xử lý:**
+  - **Tối ưu Menu Sidebar:** Cấu trúc lại Component `main-nav.tsx` thành dạng Collapsible (Accordion - Đóng/Mở). Gom 3 nhóm (Hàng ngày, Hệ sinh thái AI, Tài liệu) vào các block có thể thu gọn. Nhóm "Tài liệu & Hệ thống" (ít dùng) được thu gọn mặc định để tiết kiệm diện tích.
+  - **Bổ sung Ví dụ Trực quan:** Thêm 3 Mẫu Câu lệnh (Prompt Templates) cụ thể vào Mục 8 của `AI_AGENT_GUIDE.md` để người dùng biết cách "nhập vai" AI (Ví dụ: Code Frontend, Tạo Database, Duyệt PR).
+  - Chạy `make changelog`, Commit và Push.
+- **Phản hồi:** Giao diện đã gọn gàng tuyệt đối, xoá bỏ tình trạng phải cuộn chuột mỏi tay. Tài liệu AI cũng đã có các mẫu câu lệnh thực tế để bạn copy/paste ngay lập tức.
+
+---
+
 ### [07-10-2026 13:25] | Category: [TOOL]
 - **Prompt:** "sao bầm vào tab nó vẫn ra chỗ tài liệu vậy?"
 - **Xử lý:**
