@@ -4,6 +4,18 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:25] | Category: [TOOL]
+- **Prompt:** "sao bầm vào tab nó vẫn ra chỗ tài liệu vậy?"
+- **Xử lý:**
+  - Xác định nguyên nhân: Do dùng chung tham số `?doc=...`, giao diện render lại nguyên trang `/docs` kèm theo khung chọn tài liệu khổng lồ, gây nhầm lẫn.
+  - Khởi tạo route mới hoàn toàn chuyên dụng cho AI: `apps/web/app/ai/[slug]/page.tsx`.
+  - Route này chỉ render duy nhất nội dung file Markdown của AI mà không hiển thị các tài liệu không liên quan.
+  - Đổi toàn bộ link trong `nav.ts` từ `/docs?doc=...` sang `/ai/...`. Giao diện Sidebar giờ đây tự động highlight chính xác tab đang chọn.
+  - Chạy `make changelog`, Commit và Push.
+- **Phản hồi:** Đã tách biệt hoàn toàn giao diện xem tài liệu AI khỏi trang Docs chung.
+
+---
+
 ### [07-10-2026 13:23] | Category: [TOOL]
 - **Prompt:** "ủa sao nhấn vào các nội dung của ai thì nhẩy về trang tài liệu là sao? với chỉ có codex và claude thôi hở ?"
 - **Xử lý:**
