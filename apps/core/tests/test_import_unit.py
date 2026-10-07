@@ -10,7 +10,9 @@ import pytest
 
 from app.models.enums import AiLogCategory, TaskStatus
 from app.services.import_service import (
+    _HSL_RE,
     TASK_FIELDS,
+    _raise_if_lock_timeout,
     diff_fields,
     map_ai_log_category,
     normalize_color,
@@ -29,7 +31,7 @@ KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,19}$")
         ("đường", "DUONG"),
         ("Đà Nẵng", "DA_NANG"),
         ("1ABC", "P_1ABC"),
-        ("OMC", "OMC"),
+        ("PROJ", "PROJ"),
         ("  a - b  ", "A_B"),
     ],
 )
@@ -65,12 +67,76 @@ def test_normalize_color() -> None:
     assert normalize_color("hsl(0, 100%, 50%)") == "#ff0000"
 
 
-def test_normalize_color_is_not_redos_prone() -> None:
-    # Bản regex cũ backtrack bậc hai trên dãy dấu cách: 8000 dấu cách mất ~0,4s.
+@pytest.mark.parametrize(
+    "payload",
+    [
+        "hsl(1" + " " * 8000,
+        "hsl(1" + " " * 8000 + "x",
+        "hsl(1 1%" + " " * 8000,
+        "hsl(1 1% 1%" + " " * 8000,
+        "hsl(1" + " 1" * 4000,
+        "hsl(1deg" + " " * 8000 + "%",
+    ],
+)
+def test_hsl_regex_is_not_redos_prone(payload: str) -> None:
+    """Gọi THẲNG regex (không qua normalize_color): kiểm giới hạn độ dài sẽ che mất lỗi.
+
+    Regex cũ `\\s*[, ]\\s*` backtrack bậc hai: 8000 dấu cách mất ~0,4s, test này đỏ.
+    """
     start = time.perf_counter()
-    assert normalize_color("hsl(1" + " " * 100_000) is None
-    assert normalize_color("hsl(1" + " " * 60) is None  # ngắn hơn giới hạn, vẫn phải nhanh
+    _HSL_RE.fullmatch(payload)
     assert (time.perf_counter() - start) < 0.05
+
+
+def test_normalize_color_short_adversarial_input_is_fast() -> None:
+    # Ngắn hơn MAX_COLOR_LEN nên thật sự đi qua regex.
+    payload = "hsl(1" + " " * 55
+    assert len(payload) <= 64
+    start = time.perf_counter()
+    assert normalize_color(payload) is None
+    assert normalize_color("hsl(1" + " " * 100_000) is None  # bị chặn bởi giới hạn độ dài
+    assert (time.perf_counter() - start) < 0.05
+
+
+def test_retryable_lock_codes_become_conflict() -> None:
+    from sqlalchemy.exc import DBAPIError
+
+    from app.services.errors import ConflictError
+
+    class FakeOrig(Exception):
+        def __init__(self, sqlstate: str) -> None:
+            super().__init__("x")
+            self.sqlstate = sqlstate
+
+    for code in ("55P03", "40P01"):
+        with pytest.raises(ConflictError):
+            _raise_if_lock_timeout(DBAPIError("stmt", {}, FakeOrig(code)))
+    # Mã khác không bị nuốt: hàm không ném gì để caller xử lý như lỗi dữ liệu.
+    _raise_if_lock_timeout(DBAPIError("stmt", {}, FakeOrig("23514")))
+
+
+def test_short_commit_secret_is_not_leaked_in_validation_error() -> None:
+    from pydantic import ValidationError
+
+    from app.core.config import Settings
+
+    short = "ngan-lo-ra-x"
+    with pytest.raises(ValidationError) as info:
+        Settings(import_commit_secret=short)  # type: ignore[call-arg]
+    assert short not in str(info.value)
+
+
+def test_commit_secret_is_trimmed_and_blank_is_unset() -> None:
+    from app.core.config import Settings
+
+    raw_padded = "  " + "a" * 20 + " \n"
+    padded = Settings(import_commit_secret=raw_padded)  # type: ignore[call-arg]
+    assert padded.import_commit_secret is not None
+    assert padded.import_commit_secret.get_secret_value() == "a" * 20
+    assert "aaaa" not in repr(padded)
+    blank_value = "   "
+    blank = Settings(import_commit_secret=blank_value)  # type: ignore[call-arg]
+    assert blank.import_commit_secret is None
 
 
 def test_normalize_color_rejects_overlong_input() -> None:

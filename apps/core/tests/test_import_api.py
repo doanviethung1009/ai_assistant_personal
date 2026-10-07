@@ -136,6 +136,34 @@ async def test_commit_disabled_when_secret_not_configured(
     assert await _count("tasks") == 0
 
 
+async def test_malformed_external_url_is_a_warning_not_a_500(client: httpx.AsyncClient) -> None:
+    data = json.loads(DATAFILE)
+    data["tasks"][0]["external_url"] = "http://[::1"
+    data["tasks"][1]["external_url"] = "https://[bad]x/"
+    resp = await client.post("/api/v1/import/datafile", json=data)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["errors"] == 0
+    assert sum(1 for i in body["issues"] if i["code"] == "external_url_dropped") == 2
+
+
+async def test_wrong_secret_is_logged_without_the_value(
+    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level("WARNING")
+    wrong = "mat-khau-sai-rat-dac-biet"
+    resp = await client.post(
+        "/api/v1/import/datafile",
+        params=COMMIT_PARAMS,
+        content=DATAFILE,
+        headers={**JSON_HEADERS, "X-Import-Secret": wrong},
+    )
+    assert resp.status_code == 403
+    assert "nhập thật bị từ chối" in caplog.text
+    assert wrong not in caplog.text
+    assert IMPORT_SECRET not in caplog.text
+
+
 async def test_dry_run_needs_no_secret(client: httpx.AsyncClient) -> None:
     resp = await client.post(
         "/api/v1/import/datafile",

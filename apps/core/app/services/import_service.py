@@ -41,7 +41,7 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
-from sqlalchemy import Table, insert, select, text, update
+from sqlalchemy import Select, Table, insert, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -326,7 +326,7 @@ class _Spec:
     table: Table
     fields: tuple[str, ...]
     soft_delete: bool
-    natural_of: Callable[[dict[str, Any]], Hashable | None]
+    natural_of: Callable[[_Parsed], Hashable | None]
     fetch_natural: Callable[..., Awaitable[dict[Any, dict[str, Any]]]] | None
     dup_code: str
     label_max: int = 80
@@ -498,7 +498,12 @@ def _stamps(
 
 
 def _is_http_url(value: str) -> bool:
-    parts = urlparse(value.strip())
+    try:
+        parts = urlparse(value.strip())
+    except ValueError:
+        # urlparse ném ValueError với IPv6 hỏng như `http://[::1`; một URL sai dạng
+        # chỉ là "không dùng được", không được làm cả request thành 500.
+        return False
     return parts.scheme.lower() in ("http", "https") and bool(parts.netloc)
 
 
@@ -840,6 +845,18 @@ def _chunks[T](items: Sequence[T], size: int) -> Iterable[Sequence[T]]:
         yield items[start : start + size]
 
 
+def _lock_rows(stmt: Select[Any], table: Table) -> Select[Any]:
+    """Khoá dòng đọc được để ghi sau đó, theo thứ tự id cố định.
+
+    - FOR NO KEY UPDATE (`key_share=True`) thay vì FOR UPDATE: ta không đổi khoá
+      chính, nên không cần chặn khoá KEY SHARE mà INSERT task/note có FK tới
+      project lấy; dùng FOR UPDATE sẽ làm các thao tác đó chờ vô lý.
+    - ORDER BY id: hai lần khoá cùng tập dòng theo cùng thứ tự thì không thể
+      chờ vòng tròn (deadlock) với nhau.
+    """
+    return stmt.order_by(table.c.id).with_for_update(key_share=True)
+
+
 async def _fetch_by_ids(
     session: AsyncSession, table: Table, ids: Sequence[uuid.UUID], *, lock: bool = False
 ) -> dict[uuid.UUID, dict[str, Any]]:
@@ -853,7 +870,7 @@ async def _fetch_by_ids(
     for chunk in _chunks(list(ids), READ_BATCH):
         stmt = select(table).where(table.c.id.in_(chunk))
         if lock:
-            stmt = stmt.with_for_update()
+            stmt = _lock_rows(stmt, table)
         result = await session.execute(stmt)
         for row in result:
             data = dict(row._mapping)
@@ -869,7 +886,7 @@ async def _natural_projects(
     for chunk in _chunks(keys, READ_BATCH):
         stmt = select(table).where(table.c.key.in_(chunk))
         if lock:
-            stmt = stmt.with_for_update()
+            stmt = _lock_rows(stmt, table)
         result = await session.execute(stmt)
         for row in result:
             data = dict(row._mapping)
@@ -899,7 +916,7 @@ def _natural_sourced(table: Table) -> Callable[..., Awaitable[dict[Any, dict[str
                     table.c.deleted_at.is_(None),
                 )
                 if lock:
-                    stmt = stmt.with_for_update()
+                    stmt = _lock_rows(stmt, table)
                 result = await session.execute(stmt)
                 for row in result:
                     data = dict(row._mapping)
@@ -909,10 +926,19 @@ def _natural_sourced(table: Table) -> Callable[..., Awaitable[dict[Any, dict[str
     return fetch
 
 
-def _sourced_natural(values: dict[str, Any]) -> Hashable | None:
-    if values.get("external_id") is None:
+def _sourced_natural(r: _Parsed) -> Hashable | None:
+    """Khoá tự nhiên (source, external_id) của task/note.
+
+    `source` và `external_id` là MỘT CẶP: file thiếu khoá của một trong hai thì
+    cặp không xác định (mặc định `source=manual` ghép với external_id thật sẽ
+    thành khoá bịa), nên coi như không có khoá tự nhiên.
+    """
+    if _PAIR_FIELDS & r.fallback or r.values.get("external_id") is None:
         return None
-    return (values["source"].value, values["external_id"])
+    return (r.values["source"].value, r.values["external_id"])
+
+
+_PAIR_FIELDS = frozenset({"source", "external_id"})
 
 
 PROJECT_SPEC = _Spec(
@@ -920,7 +946,7 @@ PROJECT_SPEC = _Spec(
     Project.__table__,
     PROJECT_FIELDS,
     False,
-    lambda v: v["key"],
+    lambda r: r.values["key"],
     _natural_projects,
     "duplicate_project_key",
 )
@@ -943,7 +969,7 @@ NOTE_SPEC = _Spec(
     "duplicate_external_id",
 )
 AI_LOG_SPEC = _Spec(
-    "ai_log", AiLog.__table__, AI_LOG_FIELDS, False, lambda v: None, None, "duplicate_id"
+    "ai_log", AiLog.__table__, AI_LOG_FIELDS, False, lambda r: None, None, "duplicate_id"
 )
 
 
@@ -978,7 +1004,7 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
             )
             broken.add(r.index)
         seen_ids.setdefault(r.file_id, r.index)
-        nat = spec.natural_of(r.values)
+        nat = spec.natural_of(r)
         if nat is not None:
             if nat in seen_nat:
                 ctx.error(
@@ -993,7 +1019,7 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
 
     lock = not ctx.dry_run
     by_id = await _fetch_by_ids(session, spec.table, [r.file_id for r in live], lock=lock)
-    nat_keys = [n for r in live if (n := spec.natural_of(r.values)) is not None]
+    nat_keys = [n for r in live if (n := spec.natural_of(r)) is not None]
     nat_rows = (
         await spec.fetch_natural(session, nat_keys, lock=lock)
         if spec.fetch_natural and nat_keys
@@ -1004,7 +1030,7 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
     for r in live:
         if r.index in broken:
             continue
-        nat = spec.natural_of(r.values)
+        nat = spec.natural_of(r)
         target = by_id.get(r.file_id)
         matched_by = "id"
         if target is None and nat is not None:
@@ -1059,10 +1085,14 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
         # Field dự phòng chỉ bị loại khi DB đang có giá trị thật (khác NULL); nếu DB
         # đang NULL thì áp giá trị dự phòng cũng vô hại và còn lấp được chỗ trống
         # (vd task đổi sang done mà DB chưa có completed_at).
+        if spec.entity == "task":
+            _reconcile_completed(r, target)
+        pair_unknown = bool(_PAIR_FIELDS & r.fallback) and set(spec.fields) >= _PAIR_FIELDS
         eff_fields = [
             name
             for name in spec.fields
             if not (name in r.fallback and target.get(name) is not None)
+            and not (pair_unknown and name in _PAIR_FIELDS)
         ]
         changes = diff_fields(target, r.values, eff_fields)
         if not changes:
@@ -1101,6 +1131,32 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
             )
         )
     return plan
+
+
+def _reconcile_completed(r: _Parsed, target: Mapping[str, Any]) -> None:
+    """Giữ `completed_at` nhất quán với status HIỆU LỰC sau khi ghi đè.
+
+    Status hiệu lực = status trong file, trừ khi file không nói gì về status (khi
+    đó DB giữ nguyên status). Quy tắc:
+    - hiệu lực là trạng thái MỞ (không done, không cancelled) -> completed_at = NULL
+      (task mở lại thì không có ngày hoàn thành; để lại sẽ làm thống kê "hoàn thành
+      7 ngày" sai). Giống task_service: reopen từ trạng thái đóng xoá completed_at;
+    - `cancelled` là trạng thái đóng nhưng KHÔNG được ép: file thật (Jira sync) lưu
+      thời điểm đóng ở completed_at của task cancelled, xoá nó là mất dữ liệu thật;
+    - hiệu lực là `done` mà file không cho giá trị -> giữ ngày hoàn thành thật của DB,
+      chỉ khi DB cũng trống mới dùng updated_at.
+    Cần làm TRƯỚC khi tính danh sách field áp dụng vì nó đổi giá trị lẫn đánh dấu dự phòng.
+    """
+    status_missing = "status" in r.fallback and target.get("status") is not None
+    status = _canon("status", target["status"] if status_missing else r.values["status"])
+    if status not in ("done", "cancelled"):
+        # Chỉ xoá khi file không cho giá trị; file nói tường minh một ngày thì giữ
+        # đúng như file (nếu không, nhập lại cùng file sẽ không idempotent).
+        if r.values["completed_at"] is None:
+            r.fallback.discard("completed_at")
+    elif status == "done" and r.values["completed_at"] is None:
+        r.values["completed_at"] = target.get("completed_at") or r.values["updated_at"]
+        r.fallback.discard("completed_at")
 
 
 def _audit(
@@ -1258,8 +1314,13 @@ async def _plan_events(
 def _generated_event(
     ctx: _Ctx, task_id: uuid.UUID, event_type: TaskEventType, payload: dict[str, Any]
 ) -> dict[str, Any]:
+    event_id = uuid.uuid4()
+    # Có audit CREATED để script hoàn tác dọn luôn event do lần nhập sinh ra
+    # (nếu không, hoàn tác task `replaced` để lại event `updated` mồ côi mô tả
+    # một thay đổi đã bị quay lại).
+    ctx.audit.append(_audit("task_event", event_id, ImportAction.CREATED, None, []))
     return {
-        "id": uuid.uuid4(),
+        "id": event_id,
         "task_id": task_id,
         "event_type": event_type,
         "actor": "import:datafile",
@@ -1357,18 +1418,20 @@ async def _take_lock(session: AsyncSession) -> None:
     await session.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": LOCK_TIMEOUT})
 
 
-# SQLSTATE 55P03 = lock_not_available (hết lock_timeout).
-_LOCK_NOT_AVAILABLE = "55P03"
+# SQLSTATE 55P03 = lock_not_available (hết lock_timeout); 40P01 = deadlock_detected
+# (Postgres chọn nạn nhân và huỷ transaction của ta). Cả hai là xung đột tạm thời với
+# một thao tác khác, thử lại được, nên đều là 409 chứ không phải lỗi dữ liệu hay 500.
+_RETRYABLE_LOCK_CODES = frozenset({"55P03", "40P01"})
 
 
 def _raise_if_lock_timeout(exc: SQLAlchemyError) -> None:
-    """Đổi lỗi hết thời gian chờ khoá dòng của Postgres thành 409 dễ hiểu."""
+    """Đổi lỗi khoá tạm thời (hết lock_timeout, deadlock) thành 409 dễ hiểu."""
     orig = getattr(exc, "orig", None)
     for candidate in (orig, getattr(orig, "__cause__", None)):
         code = getattr(candidate, "sqlstate", None) or getattr(candidate, "pgcode", None)
-        if code == _LOCK_NOT_AVAILABLE:
+        if code in _RETRYABLE_LOCK_CODES:
             raise ConflictError(
-                "Dữ liệu đang bị một thao tác khác khoá quá lâu, hãy thử lại sau."
+                "Dữ liệu đang bị một thao tác khác khoá hoặc xung đột, hãy thử lại sau."
             ) from exc
 
 

@@ -86,9 +86,10 @@ class ImportProject(_Row):
     key: str = Field(max_length=100)
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
-    # File thật chứa `hsl(...)`; service chuẩn hoá về hex. Giới hạn 64 ký tự khớp
-    # MAX_COLOR_LEN của normalize_color (phòng ReDoS).
-    color: str | None = Field(default=None, max_length=64)
+    # Any ở mức parse: màu lạ (số, chuỗi quá dài...) không được làm hỏng cả project.
+    # normalize_color chặn độ dài (MAX_COLOR_LEN, phòng ReDoS) và trả None kèm cảnh
+    # báo `color_dropped` với mọi dạng không nhận ra (D7).
+    color: Any = None
     is_archived: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None

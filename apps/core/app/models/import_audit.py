@@ -38,6 +38,10 @@ def _in_list(column: str, enum_cls: type[StrEnum]) -> str:
     """Sinh `col IN ('a','b')` từ enum, để CHECK luôn khớp enum Python.
 
     Giá trị lấy từ enum do code định nghĩa (không phải đầu vào người dùng).
+
+    CẠM BẪY: `alembic check` KHÔNG so sánh CHECK constraint, nên thêm giá trị vào
+    enum mà không viết migration DROP/ADD CONSTRAINT sẽ không bị phát hiện, và DB
+    sẽ từ chối giá trị mới.
     """
     values = ", ".join(f"'{member.value}'" for member in enum_cls)
     return f"{column} IN ({values})"

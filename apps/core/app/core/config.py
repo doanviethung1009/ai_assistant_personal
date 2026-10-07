@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -15,6 +15,9 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         case_sensitive=False,
+        # ValidationError mặc định in cả giá trị đầu vào. Với secret ngắn hơn
+        # min_length, giá trị đó sẽ lọt vào log khởi động; ẩn đi cho mọi setting.
+        hide_input_in_errors=True,
     )
 
     # ── Chung ───────────────────────────────────────────────────────
@@ -40,7 +43,8 @@ class Settings(BaseSettings):
     # nhập, nên API key một mình không đủ để cho phép ghi đè: người gửi phải biết
     # thêm bí mật này (header X-Import-Secret). Để trống = tắt hẳn nhập thật; dry-run
     # không cần. Tối thiểu 16 ký tự khi có đặt.
-    import_commit_secret: str | None = Field(default=None, min_length=16)
+    # SecretStr: repr/log/dump không in giá trị.
+    import_commit_secret: SecretStr | None = Field(default=None, min_length=16)
 
     # ── LLM gateway (chưa dùng ở Phase 1) ───────────────────────────
     litellm_base_url: str | None = None
@@ -72,9 +76,11 @@ class Settings(BaseSettings):
     @classmethod
     def _blank_secret_is_unset(cls, value: object) -> object:
         # compose hay truyền biến rỗng (`IMPORT_COMMIT_SECRET=`): coi là chưa cấu hình
-        # thay vì làm app không khởi động được vì vi phạm min_length.
-        if isinstance(value, str) and not value.strip():
-            return None
+        # thay vì làm app không khởi động được vì vi phạm min_length. Cắt khoảng trắng
+        # hai đầu vì header HTTP bị cắt khoảng trắng: secret có khoảng trắng đầu/cuối
+        # sẽ không bao giờ khớp với giá trị client gửi.
+        if isinstance(value, str):
+            return value.strip() or None
         return value
 
     @field_validator("database_url")

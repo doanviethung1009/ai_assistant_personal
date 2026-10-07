@@ -121,14 +121,23 @@ class AiLogCategory(StrEnum):
 
 
 class ImportKind(StrEnum):
-    """Loại file nguồn của một lần nhập (xem models/import_audit.py)."""
+    """Loại file nguồn của một lần nhập (xem models/import_audit.py).
+
+    CẠM BẪY: ba enum Import* có CHECK constraint ở DB, và `alembic check` KHÔNG so
+    sánh CHECK. Thêm giá trị ở đây mà quên viết migration DROP/ADD CONSTRAINT thì
+    `alembic check` vẫn xanh nhưng INSERT giá trị mới bị DB từ chối.
+    """
 
     DATAFILE = "datafile"
     AI_LOGS = "ai_logs"
 
 
 class ImportEntity(StrEnum):
-    """Thực thể bị một lần nhập chạm tới, dùng cho import_audit."""
+    """Thực thể bị một lần nhập chạm tới, dùng cho import_audit.
+
+    Thêm giá trị phải tự viết migration DROP/ADD CONSTRAINT cho
+    `ck_import_audit_entity_valid` (`alembic check` không thấy CHECK).
+    """
 
     PROJECT = "project"
     TASK = "task"
@@ -138,5 +147,8 @@ class ImportEntity(StrEnum):
 
 
 class ImportAction(StrEnum):
+    """Thêm giá trị phải tự viết migration DROP/ADD CONSTRAINT cho
+    `ck_import_audit_action_valid` (`alembic check` không thấy CHECK)."""
+
     CREATED = "created"
     REPLACED = "replaced"

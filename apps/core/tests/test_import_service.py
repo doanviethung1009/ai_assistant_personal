@@ -17,6 +17,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import engine
@@ -157,12 +158,21 @@ async def test_import_into_empty_db(session: AsyncSession) -> None:
 
     counts = await _row_counts(session)
     assert counts["import_runs"] == 1
-    # 3 project + 3 task + 2 event + 1 note
-    assert counts["import_audit"] == 9
+    # 3 project + 3 task + 2 event từ file + 3 event `synced` do lần nhập sinh + 1 note
+    assert counts["import_audit"] == 12
     actions = await session.scalar(
         text("SELECT count(*) FROM import_audit WHERE action = 'created'")
     )
-    assert actions == 9
+    assert actions == 12
+    # Mọi event có import_id trong payload đều phải có dòng audit tương ứng.
+    orphan = await session.scalar(
+        text(
+            "SELECT count(*) FROM task_events e WHERE e.payload->>'import_id' IS NOT NULL "
+            "AND NOT EXISTS (SELECT 1 FROM import_audit a WHERE a.entity = 'task_event' "
+            "AND a.entity_id = e.id)"
+        )
+    )
+    assert orphan == 0
     run = (await session.execute(text("SELECT kind, file_sha256, actor FROM import_runs"))).one()
     assert (run.kind, run.file_sha256, run.actor) == ("datafile", SHA, "import:datafile")
 
@@ -745,6 +755,144 @@ async def test_project_key_over_100_chars_is_row_error(session: AsyncSession) ->
     assert report.counts["projects"].invalid == 1
 
 
+async def test_non_string_or_overlong_color_is_dropped_not_fatal(session: AsyncSession) -> None:
+    data = _load()
+    data["projects"][0]["color"] = 123
+    data["projects"][1]["color"] = "x" * 100
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert report.errors == 0
+    assert report.counts["projects"].invalid == 0
+    # 123, chuỗi quá dài, và "red" của project thứ ba trong fixture.
+    assert sum(1 for i in report.issues if i.code == "color_dropped") == 3
+    colors = (
+        await session.execute(text("SELECT color FROM projects WHERE color IS NOT NULL"))
+    ).all()
+    assert colors == []
+
+
+async def test_check_constraints_reject_unknown_values(session: AsyncSession) -> None:
+    """Chứng minh CHECK thật sự chặn ở DB, không chỉ khai trong model."""
+    report = await _import(session)
+    run_id = report.import_id
+    bad_statements = [
+        (
+            "INSERT INTO import_runs (id, kind, file_sha256, schema_version, counts, actor) "
+            "VALUES (:i, 'x', :s, 1, CAST('{}' AS jsonb), 'a')",
+            {"i": uuid.uuid4(), "s": "0" * 64},
+        ),
+        (
+            "INSERT INTO import_audit (id, import_id, entity, entity_id, action) "
+            "VALUES (:i, :r, 'lạ', :e, 'created')",
+            {"i": uuid.uuid4(), "r": run_id, "e": uuid.uuid4()},
+        ),
+        (
+            "INSERT INTO import_audit (id, import_id, entity, entity_id, action) "
+            "VALUES (:i, :r, 'task', :e, 'deleted')",
+            {"i": uuid.uuid4(), "r": run_id, "e": uuid.uuid4()},
+        ),
+    ]
+    for sql, params in bad_statements:
+        with pytest.raises(IntegrityError):
+            await session.execute(text(sql), params)
+        await session.rollback()
+
+
+async def test_replace_to_non_done_clears_completed_at(session: AsyncSession) -> None:
+    await _import(session)
+    assert (await _task(session, T1))["completed_at"] is not None
+
+    data = _load()
+    data["tasks"][0]["status"] = "todo"
+    del data["tasks"][0]["completed_at"]  # khoá vắng mặt
+    report = await _import(session, data, expect=1)
+    assert report.committed, report.issues
+    assert {c.field for c in report.replacements[0].changes} == {"status", "completed_at"}
+    row = await _task(session, T1)
+    assert row["status"] == "todo"
+    assert row["completed_at"] is None
+
+
+async def test_cancelled_task_keeps_completed_at_and_reimport_is_idempotent(
+    session: AsyncSession,
+) -> None:
+    """File thật có task cancelled kèm completed_at (thời điểm đóng): không được xoá."""
+    data = _load()
+    data["tasks"][1]["status"] = "cancelled"
+    data["tasks"][1]["completed_at"] = "2026-09-21T10:00:00.000Z"
+    await _import(session, data)
+    again = await _import(session, data)
+    assert again.counts["tasks"].replaced == 0
+    assert (await _task(session, T2))["completed_at"] == _utc(2026, 9, 21, 10)
+
+
+async def test_missing_status_key_keeps_done_and_its_completed_at(session: AsyncSession) -> None:
+    await _import(session)
+    real_done = _utc(2026, 9, 18, 7)
+    await session.execute(
+        text("UPDATE tasks SET completed_at = :c WHERE id = :i"), {"c": real_done, "i": T1}
+    )
+    await session.commit()
+
+    data = _load()
+    del data["tasks"][0]["status"]  # DB giữ done
+    data["tasks"][0]["completed_at"] = None  # null tường minh
+    data["tasks"][0]["title"] = "Doi tieu de"
+    report = await _import(session, data, expect=1)
+    assert report.committed, report.issues
+    row = await _task(session, T1)
+    assert row["status"] == "done"
+    assert row["completed_at"] == real_done
+    assert row["title"] == "Doi tieu de"
+
+
+async def test_source_and_external_id_are_treated_as_a_pair(session: AsyncSession) -> None:
+    await _import(session)
+    # Một task khác trong DB đang giữ khoá (jira, DEMO-2) sau khi T2 đổi external_id.
+    thief = uuid.uuid4()
+    await session.execute(
+        text("UPDATE tasks SET external_id = 'DEMO-2-OLD' WHERE id = :i"), {"i": T2}
+    )
+    await session.execute(
+        text(
+            "INSERT INTO tasks (id, title, source, external_id) "
+            "VALUES (:i, 'Giu khoa', 'jira', 'DEMO-2')"
+        ),
+        {"i": thief},
+    )
+    await session.commit()
+
+    data = _load()
+    del data["tasks"][1]["external_id"]  # thiếu một khoá của cặp
+    data["tasks"][1]["title"] = "Doi tieu de"
+    report = await _import(session, data, expect=1)
+    # Không có natural_key_conflict (cũng không có lỗi ràng buộc DB): cặp bị bỏ qua.
+    assert report.committed, report.issues
+    assert {c.field for c in report.replacements[0].changes} == {"title"}
+    row = await _task(session, T2)
+    assert (row["source"], row["external_id"]) == ("jira", "DEMO-2-OLD")
+    assert row["title"] == "Doi tieu de"
+
+
+async def test_replace_audits_generated_events(session: AsyncSession) -> None:
+    await _import(session)
+    await session.execute(text("UPDATE tasks SET title = 'Sua' WHERE id = :i"), {"i": T1})
+    await session.commit()
+    report = await _import(session, expect=1)
+    updated_event = await session.scalar(
+        text("SELECT id FROM task_events WHERE payload->>'import_id' = :r"),
+        {"r": str(report.import_id)},
+    )
+    audited = await session.scalar(
+        text(
+            "SELECT count(*) FROM import_audit WHERE import_id = :r AND entity = 'task_event' "
+            "AND entity_id = :e AND action = 'created'"
+        ),
+        {"r": report.import_id, "e": updated_event},
+    )
+    assert audited == 1
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  File thật của User (chỉ đọc, bỏ qua khi thiếu biến môi trường)
 # ═══════════════════════════════════════════════════════════════════════
@@ -815,13 +963,16 @@ async def test_real_file_ai_logs(session: AsyncSession, client: Any) -> None:
     assert REAL_AILOGS
     path = Path(REAL_AILOGS)
     sha_before, mtime_before, body = _read_only_fingerprint(path)
-    envelope = AiLogsEnvelope.model_validate(json.loads(body))
+    raw = json.loads(body)
+    envelope = AiLogsEnvelope.model_validate(raw)
+    # File ai-logs thật được công cụ log append liên tục: không ghi cứng số lượng.
+    n = len(raw["ai_logs"])
 
     dry = await import_service.import_ai_logs(
         session, envelope, dry_run=True, expect_replaced=None, file_sha256=sha_before
     )
     assert dry.errors == 0
-    assert dry.counts["ai_logs"].received == 61
+    assert dry.counts["ai_logs"].received == n
 
     real = await import_service.import_ai_logs(
         session,
@@ -832,11 +983,11 @@ async def test_real_file_ai_logs(session: AsyncSession, client: Any) -> None:
         file_sha256=sha_before,
     )
     assert real.committed
-    assert real.counts["ai_logs"].created == 61
+    assert real.counts["ai_logs"].created == n
     # Sau khi nhập, endpoint đọc phải trả 200 (handling thiếu đã được điền).
     resp = await client.get("/api/v1/ai-logs", params={"limit": 100})
     assert resp.status_code == 200
-    assert resp.json()["total"] == 61
+    assert resp.json()["total"] == n
 
     sha_after, mtime_after, _ = _read_only_fingerprint(path)
     assert (sha_after, mtime_after) == (sha_before, mtime_before)

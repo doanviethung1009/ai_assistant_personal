@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import secrets
 from typing import Annotated, Any
 
@@ -30,6 +31,8 @@ from app.api.deps import SessionDep
 from app.core.config import settings
 from app.schemas.imports import AiLogsEnvelope, DataFileEnvelope, ImportReport
 from app.services import import_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -121,6 +124,7 @@ def _parse[M: BaseModel](body: bytes, model: type[M]) -> M:
 
 
 def _guard_commit(
+    request: Request,
     dry_run: bool,
     expect_replaced: int | None,
     expect_sha256: str | None,
@@ -141,7 +145,12 @@ def _guard_commit(
             detail="dry_run=false bắt buộc có expect_replaced và expect_sha256.",
         )
     configured = settings.import_commit_secret
+    # Nguồn của request để điều tra dò mật khẩu; TUYỆT ĐỐI không log giá trị secret.
+    client = request.client.host if request.client else "không rõ"
     if configured is None:
+        logger.warning(
+            "nhập thật bị từ chối: chưa cấu hình IMPORT_COMMIT_SECRET (client=%s)", client
+        )
         raise HTTPException(
             status_code=403,
             detail=(
@@ -152,8 +161,13 @@ def _guard_commit(
     # compare_digest trên bytes: chống đoán bí mật qua thời gian so sánh, và không
     # văng TypeError với ký tự ngoài ASCII. Giá trị KHÔNG được log hay echo lại.
     if secret is None or not secrets.compare_digest(
-        secret.encode("utf-8"), configured.encode("utf-8")
+        secret.encode("utf-8"), configured.get_secret_value().encode("utf-8")
     ):
+        logger.warning(
+            "nhập thật bị từ chối: %s mật khẩu nhập (client=%s)",
+            "thiếu" if secret is None else "sai",
+            client,
+        )
         raise HTTPException(
             status_code=403,
             detail="Thiếu hoặc sai mật khẩu nhập dữ liệu (header X-Import-Secret).",
@@ -174,7 +188,7 @@ async def import_datafile(
     expect_sha256: ExpectSha256Query = None,
     import_secret: ImportSecretHeader = None,
 ) -> ImportReport:
-    _guard_commit(dry_run, expect_replaced, expect_sha256, import_secret)
+    _guard_commit(request, dry_run, expect_replaced, expect_sha256, import_secret)
     body = await _read_body(request)
     envelope = _parse(body, DataFileEnvelope)
     return await import_service.import_datafile(
@@ -201,7 +215,7 @@ async def import_ai_logs(
     expect_sha256: ExpectSha256Query = None,
     import_secret: ImportSecretHeader = None,
 ) -> ImportReport:
-    _guard_commit(dry_run, expect_replaced, expect_sha256, import_secret)
+    _guard_commit(request, dry_run, expect_replaced, expect_sha256, import_secret)
     body = await _read_body(request)
     envelope = _parse(body, AiLogsEnvelope)
     return await import_service.import_ai_logs(
