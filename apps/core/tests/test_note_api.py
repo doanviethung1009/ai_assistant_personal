@@ -53,3 +53,9 @@ async def test_archive_unknown_note_404(client: httpx.AsyncClient) -> None:
     assert (await client.post(f"{BASE}/{missing}/archive")).status_code == 404
     assert (await client.post(f"{BASE}/{missing}/unarchive")).status_code == 404
     assert (await client.post(f"{BASE}/not-a-uuid/archive")).status_code == 422
+
+
+async def test_offset_has_upper_bound(client: httpx.AsyncClient) -> None:
+    """offset không trần làm Postgres lỗi int64 và trả 500; giờ phải là 422."""
+    resp = await client.get("/api/v1/notes", params={"offset": 2_000_000})
+    assert resp.status_code == 422

@@ -40,7 +40,7 @@ router = APIRouter(prefix="/notes", tags=["notes"])
 async def list_note_trash(
     session: SessionDep,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
 ) -> NoteTrashResponse:
     purged = await note_service.purge_expired(session)
     notes, total = await note_service.list_trash(session, limit=limit, offset=offset)
@@ -105,7 +105,7 @@ async def list_notes(
     pinned_only: Annotated[bool, Query()] = False,
     archived: Annotated[bool, Query()] = False,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
     sort_by: Annotated[SortField, Query()] = "updated_at",
     sort_desc: Annotated[bool, Query()] = True,
 ) -> Page[NoteRead]:

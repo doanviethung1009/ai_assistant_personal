@@ -76,9 +76,10 @@ export default async function NotesPage({
 }) {
   const rawParams = await searchParams;
   const filters = parseFilters(rawParams);
-  const currentPage = Math.max(
-    1,
-    Number.parseInt(single(rawParams.page), 10) || 1,
+  // Trần 10_000 trang: số quá lớn làm offset vượt int64 của Postgres và backend trả 500.
+  const currentPage = Math.min(
+    10_000,
+    Math.max(1, Number.parseInt(single(rawParams.page), 10) || 1),
   );
   const archiveSupported = !IS_LOCAL;
 

@@ -54,6 +54,21 @@ export class CoreApiError extends Error {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Chặn path injection khi nối `id` vào URL core API.
+ *
+ * Server Action là endpoint HTTP công khai: client gửi được `id` tuỳ ý. Nếu là
+ * "../tasks/<uuid>/restore?" thì fetch chuẩn hoá `..` và gọi một route khác
+ * KÈM API key của server (confused deputy). Backend dùng UUID cho path param nên
+ * chỉ cần từ chối mọi chuỗi không phải UUID ở đây.
+ */
+function pathId(id: string): string {
+  if (!UUID_RE.test(id)) throw new CoreApiError("id không hợp lệ", 400);
+  return id;
+}
+
 // ── Đường cục bộ: engine + persistence ─────────────────────────────────
 
 // Cờ phải sống qua hot reload, nếu không mỗi lần sửa file là seed lại
@@ -457,7 +472,7 @@ export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> 
 
 export function getNote(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.getNote(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}`);
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}`);
 }
 
 /** Đếm note theo loại trong đúng view đang xem (đang dùng hoặc lưu trữ). */
@@ -479,13 +494,13 @@ export function getNoteStats(
  */
 export function archiveNote(id: string): Promise<Note> {
   if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
-  return coreFetch<Note>(`/api/v1/notes/${id}/archive`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/archive`, { method: "POST" });
 }
 
 /** Đưa note từ Lưu trữ về danh sách đang dùng. Cùng giới hạn như archiveNote. */
 export function unarchiveNote(id: string): Promise<Note> {
   if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
-  return coreFetch<Note>(`/api/v1/notes/${id}/unarchive`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/unarchive`, { method: "POST" });
 }
 
 function localArchiveUnsupported(): CoreApiError {
@@ -517,7 +532,7 @@ export function patchNote(
   input: Record<string, unknown>,
 ): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.patchNote(id, input));
-  return coreFetch<Note>(`/api/v1/notes/${id}`, {
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -534,13 +549,13 @@ export function deleteNote(id: string, permanent = false): Promise<void> {
     );
   }
   const query = permanent ? "?permanent=true" : "";
-  return coreFetch<void>(`/api/v1/notes/${id}${query}`, { method: "DELETE" });
+  return coreFetch<void>(`/api/v1/notes/${pathId(id)}${query}`, { method: "DELETE" });
 }
 
 /** Ghi nhận một lần dùng, để sắp xếp theo mức độ hay dùng. */
 export function markNoteUsed(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.markNoteUsed(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}/use`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/use`, { method: "POST" });
 }
 
 export function listNoteTrash(
@@ -574,13 +589,13 @@ export function listNoteTrash(
 
 export function restoreNote(id: string): Promise<Note> {
   if (IS_LOCAL) return local(() => engine.restoreNote(id));
-  return coreFetch<Note>(`/api/v1/notes/${id}/restore`, { method: "POST" });
+  return coreFetch<Note>(`/api/v1/notes/${pathId(id)}/restore`, { method: "POST" });
 }
 
 /** Xoá vĩnh viễn một note đang ở trong thùng rác. */
 export function purgeNote(id: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.purgeNote(id));
-  return coreFetch<void>(`/api/v1/notes/${id}?permanent=true`, {
+  return coreFetch<void>(`/api/v1/notes/${pathId(id)}?permanent=true`, {
     method: "DELETE",
   });
 }
