@@ -278,6 +278,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "note-archive.md"),
   },
   {
+    slug: "spec-import-json-to-postgres",
+    title: "Spec (DRAFT): Nhập JSON vào Postgres",
+    description: "Đường nhập an toàn, lặp lại được từ file JSON của web vào Postgres qua core API, kèm 14 quyết định chờ User chốt.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "import-json-to-postgres.md"),
+  },
+  {
     slug: "spec-example-note-archive",
     title: "Spec mẫu: Lưu trữ note",
     description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",
