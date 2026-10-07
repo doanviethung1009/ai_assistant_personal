@@ -528,3 +528,54 @@ export function BackendLayersDiagram() {
     </Diagram>
   );
 }
+
+// ═══════════════════════════════════════════════════════════════════════
+//  6. Luồng phối hợp Multi-Agent
+// ═══════════════════════════════════════════════════════════════════════
+
+export function AIAgentsWorkflowDiagram() {
+  return (
+    <Diagram
+      step={6}
+      title="Luồng phối hợp Multi-Agent"
+      description="Quá trình một Epic được bóc tách và thực thi qua 8 vai trò AI chuyên biệt."
+      width={940}
+      height={380}
+      altText="Sơ đồ phối hợp 8 agents từ lúc lên ý tưởng đến lúc merge code."
+      footnote="Mỗi Agent tự động kích hoạt các skill tương ứng (như db-migration, security-audit, qc-uat) khi tới lượt mình."
+    >
+      {/* Hàng 1 */}
+      <Box x={20} y={40} w={180} h={60} label="Product Owner" lines={["Giao Epic"]} tone="accent" />
+      <Arrow points={[{ x: 200, y: 70 }, { x: 250, y: 70 }]} animated />
+
+      <Box x={250} y={40} w={180} h={60} label="Software Architect" lines={["System Design"]} tone="warn" />
+      <Arrow points={[{ x: 430, y: 70 }, { x: 480, y: 70 }]} animated delay={0.3} />
+
+      <Box x={480} y={40} w={180} h={60} label="Database Architect" lines={["Alembic Migration"]} tone="success" />
+      <Arrow points={[{ x: 660, y: 70 }, { x: 710, y: 70 }]} animated delay={0.6} />
+
+      <Box x={710} y={40} w={180} h={60} label="Backend Engineer" lines={["FastAPI / API Logic"]} />
+      
+      {/* Vòng xuống hàng 2 */}
+      <Arrow points={[{ x: 800, y: 100 }, { x: 800, y: 160 }]} animated delay={0.9} />
+
+      {/* Hàng 2 (Từ phải qua trái) */}
+      <Box x={710} y={160} w={180} h={60} label="Security Auditor" lines={["Audit / Fix IDOR, SQLi"]} tone="danger" />
+      <Arrow points={[{ x: 710, y: 190 }, { x: 660, y: 190 }]} animated delay={1.2} />
+
+      <Box x={480} y={160} w={180} h={60} label="Frontend Engineer" lines={["Next.js UI / UX"]} />
+      <Arrow points={[{ x: 480, y: 190 }, { x: 430, y: 190 }]} animated delay={1.5} />
+
+      <Box x={250} y={160} w={180} h={60} label="DevOps Engineer" lines={["Docker / Deploy"]} />
+      <Arrow points={[{ x: 250, y: 190 }, { x: 200, y: 190 }]} animated delay={1.8} />
+
+      <Box x={20} y={160} w={180} h={60} label="Tech Lead" lines={["Code Review & QC"]} tone="warn" pulse />
+
+      {/* Vòng xuống hàng 3 */}
+      <Arrow points={[{ x: 110, y: 220 }, { x: 110, y: 280 }]} animated delay={2.1} />
+
+      {/* Hàng 3 */}
+      <Box x={20} y={280} w={180} h={60} label="Main Branch" lines={["Merge & Go-Live"]} tone="success" />
+    </Diagram>
+  );
+}

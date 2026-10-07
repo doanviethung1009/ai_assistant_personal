@@ -11,6 +11,9 @@
 # ═══════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
+# Cạm bẫy: hook quét TOÀN BỘ chuỗi lệnh bằng regex, không phân tích cú pháp shell.
+# Nên cụm lệnh nguy hiểm nằm trong body của `gh pr create` hay commit message
+# cũng bị chặn (đã gặp thật). Gặp trường hợp đó thì diễn đạt lại câu chữ, đừng gỡ hook.
 cmd="$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("tool_input",{}).get("command",""))')"
 
 block() { echo "BLOCKED by .claude/hooks/guard-bash.sh: $1" >&2; exit 2; }

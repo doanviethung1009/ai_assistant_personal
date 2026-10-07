@@ -4,6 +4,7 @@ import { Menu } from "lucide-react";
 
 import { MainNav } from "@/components/main-nav";
 import { DATA_SOURCE } from "@/lib/api";
+import { ChatAssistant } from "@/components/chat-assistant";
 
 import "./globals.css";
 
@@ -91,6 +92,9 @@ export default function RootLayout({
             sẽ cắm vào cùng task store ở Phase 2.
           </footer>
         </div>
+        
+        {/* Chat AI Assistant Layer */}
+        <ChatAssistant />
       </body>
     </html>
   );

@@ -113,6 +113,7 @@ Chỉ orchestrator được cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký 
 |---|---|
 | Agent báo `BLOCKED by .claude/hooks/guard-bash.sh` | Lệnh bị hook chặn. Đọc lý do, đổi cách làm hoặc tự chạy tay nếu thật sự cần |
 | Agent không thấy rule / skill | Symlink `.claude/rules` hoặc `.claude/skills` bị hỏng. Kiểm tra bằng `ls -la .claude` |
+| Hook chặn nhầm khi viết commit message hoặc body PR | `guard-bash.sh` quét cả chuỗi lệnh bằng regex, nên tên một lệnh nguy hiểm xuất hiện trong văn bản cũng bị coi là lệnh thật. Diễn đạt lại câu chữ (ví dụ "các lệnh git huỷ thay đổi"), không tắt hook. Viết file bằng công cụ Edit/Write cũng tránh được |
 | Hook không chạy | Mất quyền thực thi. Chạy `chmod +x .claude/hooks/*.sh` |
 | Không đọc được `.env` | Chủ ý. Cần biết biến nào thì xem `.env.example` |
 | Task lớn bị lạc hướng | Mở session mới, bắt đầu bằng "đọc `docs/AI_HANDOFF_STATE.md`" |
