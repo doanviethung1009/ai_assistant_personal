@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- khởi tạo bộ hồ sơ nhân cách (roles) cho mô hình multi-agent (`a4cf46c`)
 - bổ sung kỹ năng pr-review để AI thực hiện QA/QC cho pull request (`dd972d6`)
 - thiết lập cấu hình config.toml cho hệ sinh thái OpenAI Codex mới (`f190409`)
 - thiết lập tương thích toàn cầu cho Cursor, Claude CLI và Copilot (`f3d4361`)

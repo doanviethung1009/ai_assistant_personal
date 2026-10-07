@@ -4,6 +4,18 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:17] | Category: [TOOL]
+- **Prompt:** "bổ sung tài liệu hết chưa bạn, review lại quy trình vận hành agent và quy trình code, quy trình phát triển sản phẩm và bổ sung tài liệu"
+- **Xử lý:**
+  - Thực hiện Audit (Kiểm toán) toàn bộ tài liệu dự án. Xác nhận các luồng Kỹ thuật (Architecture), Vận hành Agent (Agentic Guide), và DevOps (Git/Deploy) đã hoàn chỉnh và khớp nối với nhau.
+  - Bổ sung tài liệu hợp nhất cuối cùng: `docs/PRODUCT_DEVELOPMENT_LIFECYCLE.md` (Quy trình Phát triển Sản phẩm 6 bước).
+  - Bản đồ hóa toàn bộ vòng đời của một tính năng: Phân vai (Roles) -> Code (Rules/Skills) -> Tự kiểm thử (QC) -> Đẩy nhánh (Branching) -> Duyệt chéo (PR Review) -> Triển khai (UAT/Prod).
+  - Khai báo hiển thị lên giao diện Web UI (Cập nhật `docs.ts`).
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Dự án chính thức đạt trạng thái "Hoàn hảo về Quy trình". Sẵn sàng scale (mở rộng) ra quy mô công ty hoặc nhóm lớn (Enterprise-ready).
+
+---
+
 ### [07-10-2026 13:15] | Category: [TOOL]
 - **Prompt:** "vậy cũng nên bổ sung rule, skill và md cho các agent với các chức năng khác nhau nhỉ? đẻ tương lai có thể áp dụng ngay"
 - **Xử lý:**

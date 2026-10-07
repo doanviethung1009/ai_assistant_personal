@@ -283,6 +283,13 @@ export const DOCS: DocEntry[] = [
     description: "Tài liệu chuyên sâu về cơ chế hoạt động của Codex CLI/IDE và cách nạp hệ thống Agent.",
     category: "Quy ước Code (AI Rules)",
     file: path.join("docs", "CODEX_OPERATING_GUIDE.md"),
+  },
+  {
+    slug: "pdlc",
+    title: "Quy trình Phát triển Sản phẩm (PDLC)",
+    description: "Vòng đời khép kín 6 bước từ lúc lên ý tưởng (Ideation) đến khi Go-Live cho hệ thống Multi-Agent.",
+    category: "Tổng quan & Hướng dẫn",
+    file: path.join("docs", "PRODUCT_DEVELOPMENT_LIFECYCLE.md"),
   }
 ];
 
