@@ -4,6 +4,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 14:12] | Category: [DOCS]
+- **Prompt:** "À, makeup lại chỗ tài liệu AI đi. Hãy thêm một bài ví dụ hoàn chỉnh dựa theo dự án của tôi để người trong dự án có thể hiểu..."
+- **Xử lý:** 
+  - Khởi tạo file `docs/AI_REAL_WORLD_EXAMPLE.md` chứa toàn bộ Case Study sát với thực tế dự án: Chuyển đổi từ Local JSON lên mô hình Multi-App (Portal/FastAPI/Postgres/Docker) và tính năng Vault (Zero-Knowledge).
+  - Minh hoạ hội thoại Prompts chi tiết qua 6 bước: Architect thiết kế -> DBA tạo bảng -> Backend + Security code API -> Frontend vẽ UI và giải mã AES-256 -> DevOps đóng gói -> Tech Lead duyệt code.
+  - Cập nhật cấu hình `docs.ts` và thêm menu "Ví dụ Thực chiến" vào Sidebar `nav.ts`. Git Push.
+- **Phản hồi:** Đã viết xong 1 bài hướng dẫn siêu thực tế! Nó phác hoạ tương lai của toàn bộ dự án này.
+
+---
+
 ### [07-10-2026 14:05] | Category: [TOOL]
 - **Prompt:** "bổ sung giải thích và bổ sung thêm flow của ai agent hoạt động với nhiều role, có cần thêm role quản trị để duyệt code hay commit không..."
 - **Xử lý:**

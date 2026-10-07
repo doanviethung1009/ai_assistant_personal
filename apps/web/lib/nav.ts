@@ -17,6 +17,7 @@ import {
   Database,
   Bot,
   BrainCircuit,
+  Target,
   type LucideIcon
 } from "lucide-react";
 
@@ -59,6 +60,7 @@ export const AI_NAV: NavItem[] = [
   { href: "/ai-logs", label: "Nhật ký AI (Trace)", icon: Sparkles },
   { href: "/ai/ai-agent-guide", label: "Cẩm nang AI (Agent IDEs)", icon: BookOpen },
   { href: "/ai/new-agent-onboarding", label: "Nhập môn AI", icon: Shield },
+  { href: "/ai/ai-real-world-example", label: "Ví dụ Thực chiến", icon: Target },
   { href: "/ai/claude-operating-guide", label: "Claude Agent", icon: Bot },
   { href: "/ai/codex-operating-guide", label: "Codex Agent", icon: BrainCircuit },
 ];

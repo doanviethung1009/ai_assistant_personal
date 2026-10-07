@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- bổ sung role tech lead và tài liệu hoá luồng phối hợp multi agent 5 bước (`61ee3b7`)
 - bổ sung 2 role architect, security và 2 skill thiết kế, kiểm toán bảo mật (`da8a225`)
 - update label to Cẩm nang AI (Agent IDEs) (`78fcd86`)
 - áp dụng popup xem chi tiết cho cả phần phản hồi của ai trong trace log (`2f6a230`)

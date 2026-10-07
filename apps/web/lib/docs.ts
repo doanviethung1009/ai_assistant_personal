@@ -61,6 +61,13 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "rules", "ai-logger.md"),
   },
   {
+    slug: "ai-real-world-example",
+    title: "Ví dụ Thực chiến: Multi-App & Vault",
+    description: "Case study mô tả quy trình 6 bước phối hợp 8 AI Agent để xây dựng hệ thống Két bảo mật và Portal thực tế.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "AI_REAL_WORLD_EXAMPLE.md"),
+  },
+  {
     slug: "ai-data-storage",
     title: "Lưu trữ Dữ liệu AI",
     description: "Kiến trúc lưu trữ 2 luồng: Trace Log (Markdown) và Entity (Database/JSON) dành cho AI.",
