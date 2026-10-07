@@ -6,6 +6,7 @@ import {
   DeploymentDiagram,
   TaskLifecycleDiagram,
   WriteFlowDiagram,
+  AIAgentsWorkflowDiagram,
 } from "@/components/architecture-diagrams";
 import { DiagramDefs } from "@/components/diagram";
 import { MotionToggle } from "@/components/motion-toggle";
@@ -16,6 +17,7 @@ export const metadata = {
 };
 
 const SECTIONS = [
+  { id: "ai-agents", label: "Luồng Multi-Agent" },
   { id: "deployment", label: "Triển khai" },
   { id: "write-flow", label: "Luồng ghi" },
   { id: "lifecycle", label: "Vòng đời task" },
@@ -123,6 +125,10 @@ export default function ArchitecturePage() {
 
       {/* ── Sơ đồ ───────────────────────────────────────────────────── */}
       <MotionToggle>
+        <section id="ai-agents" className="scroll-mt-6">
+          <AIAgentsWorkflowDiagram />
+        </section>
+
         <section id="deployment" className="scroll-mt-6">
           <DeploymentDiagram />
         </section>
