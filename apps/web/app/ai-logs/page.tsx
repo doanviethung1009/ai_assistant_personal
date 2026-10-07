@@ -1,5 +1,6 @@
 import { listAiLogs } from "@/lib/api";
 import { Markdown } from "@/components/markdown";
+import { PromptViewer } from "@/components/prompt-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -55,9 +56,7 @@ export default async function AiLogsPage() {
                 
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-[var(--color-ink)]">Prompt:</h3>
-                  <div className="mt-1 rounded-md bg-black/20 p-3 text-sm text-[var(--color-ink-muted)]">
-                    {log.prompt}
-                  </div>
+                  <PromptViewer prompt={log.prompt} />
                 </div>
 
                 <div>

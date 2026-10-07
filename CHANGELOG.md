@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- tối ưu sidebar dạng collapsible và bổ sung prompt templates vào cẩm nang ai (`95b6168`)
 - tạo route riêng /ai/[slug] để đọc cấu hình agent độc lập khỏi trang tài liệu chung (`1c46649`)
 - bổ sung cẩm nang ai chung và nhập môn vào khu vực ai sidebar (`50c79e6`)
 - tạo khu vực riêng biệt cho hệ sinh thái AI trên thanh điều hướng (`cfedaed`)

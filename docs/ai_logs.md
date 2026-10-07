@@ -4,6 +4,18 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:30] | Category: [TOOL]
+- **Prompt:** "chỗ ai trace log tab có thể để tôi xem detail nội dung của 1 promt không khi bấm view popup"
+- **Xử lý:**
+  - Khởi tạo Client Component `PromptViewer` để chuyên dụng xử lý giao diện hiển thị Prompt.
+  - Tích hợp tính năng cắt ngắn văn bản (`line-clamp`) trên màn hình chính để tiết kiệm không gian khi Prompt quá dài.
+  - Thêm nút **Xem chi tiết** (chỉ hiện ra khi rê chuột vào - Hover effect).
+  - Khi click vào nút, hiển thị Popup (Modal) sử dụng thiết kế Glassmorphism, hiệu ứng Fade/Zoom-in mượt mà, nội dung được render trong khung `pre` giữ nguyên định dạng ngắt dòng của Prompt gốc.
+  - Chạy `make changelog`, Commit và Push.
+- **Phản hồi:** Đã phát triển thành công tính năng "View Popup" cho AI Trace. UI vô cùng mượt mà.
+
+---
+
 ### [07-10-2026 13:28] | Category: [TOOL]
 - **Prompt:** "check lại chỗ AI agent có bổ sung được ví dụ cho trực quan và tối ưu lại menu, menu hiện tại bị dài bấm vào dưới cùng hơi khó khăn khi chọn"
 - **Xử lý:**
