@@ -91,7 +91,7 @@ Xử lý phát hiện, viết tài liệu này, đăng ký docs, ghi AI log, com
 | Spec mẫu sai 14 chỗ (phân trang không tồn tại, stats sai, `_alive()`) | `architect` | Làm theo bản mẫu thì stats sai, thao tác trên note lưu trữ trả 404 | Spec mới |
 | `openapi.d.ts` bị vá tay: thêm `assignee` vào cả Note và Project | orchestrator (khi sinh lại) | Type nói dối, `tsc` xanh giả | Sinh lại, bỏ dòng thừa ở `engine.ts` |
 | `TaskRead` thiếu `assignee`: API **không bao giờ trả** người được giao | orchestrator (nhờ type sinh lại) | Chế độ API không hiện được `assignee` | Thêm trường, thêm test |
-| Server Action nối `id` tuỳ ý vào URL core API kèm API key (path injection, confused deputy) | `security-auditor` | `id = "../tasks/<uuid>/restore?"` khiến server gọi route khác bằng khoá của nó | `pathId()` chỉ nhận UUID cho mọi route note |
+| Server Action nối `id` tuỳ ý vào URL core API kèm API key (path injection, confused deputy) | `security-auditor` | `id = "../tasks/<uuid>/restore?"` khiến server gọi route khác bằng khoá của nó | `pathId()` chỉ nhận UUID; áp cho route note trước, task và project sau |
 | `?page=` quá lớn làm offset vượt int64, backend trả 500 | `security-auditor` | Request rác gây 500 | Trần `page` 10 000 ở web, `offset ≤ 1 000 000` ở backend |
 | Test `purge_expired` yếu: note còn sống vốn không bao giờ bị dọn, kể cả khi code sai | `code-reviewer` | Test xanh nhưng không chứng minh gì | Thêm 2 test thật |
 | Thiếu test HTTP cho unarchive, PATCH, note trong thùng rác | `code-reviewer` | Hồi quy khó thấy | Thêm 3 test |
@@ -114,7 +114,7 @@ Xử lý phát hiện, viết tài liệu này, đăng ký docs, ghi AI log, com
 - **Chưa chạy `make smoke` và chưa chạy app thật** vì máy không có Docker. Giao diện (tab, nút, phân trang, gợi ý, chuyển hướng trang cuối) chỉ được kiểm bằng `tsc` và đọc logic, chưa nhìn trên trình duyệt.
 - Postgres chạy thử là bản 14 cục bộ, CI dùng bản 17.
 - Chế độ file JSON (`DATA_SOURCE=file`, mặc định hiện nay của web) **chưa có tính năng này**: tab bị ẩn, `api.ts` trả 501. Muốn dùng cần mở epic riêng (`lib/store/engine.ts` và tăng `SCHEMA_VERSION`).
-- Path injection ở các route **task và project** chưa sửa (chỉ route note); đã tách thành việc riêng.
+- Path injection ở route **task và project** không nằm trong epic này. Lúc đầu chỉ sửa route note, phần còn lại được tách thành một việc riêng và đã sửa xong ở một phiên khác (commit `e5f2d0c`), nên hiện mọi route trong `lib/api.ts` đều qua `pathId()`.
 
 ## 6. Cách lặp lại cho Epic của bạn
 
