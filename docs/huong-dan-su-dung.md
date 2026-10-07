@@ -259,6 +259,26 @@ Nhóm **Dự án này** trên thanh điều hướng:
 Hai nhóm **Tích hợp** và **Vận hành** đang mờ vì thuộc giai đoạn sau, chưa có
 trang thật.
 
+## Làm việc với AI agent để phát triển dự án
+
+Phần này dành cho người **phát triển** repo, không phải người dùng app.
+
+1. **Mở repo bằng Claude Code** ở thư mục gốc (`claude`). Agent tự đọc `CLAUDE.md`,
+   `AGENTS.md` và nạp luật trong `.agents/rules/` theo file đang sửa. Bắt đầu session
+   mới bằng câu: *"Đọc `docs/AI_HANDOFF_STATE.md` rồi tóm tắt trạng thái hiện tại"*.
+2. **Việc nhỏ** (sửa 1–2 file) cứ nói thẳng, agent chính tự làm.
+3. **Việc lớn chạm nhiều tầng** (DB + API + web): nhờ agent gọi `architect` ra spec trong
+   `docs/specs/`, bạn đọc và chốt, rồi mới cho `backend-dev` và `frontend-dev` code.
+   Cuối cùng `code-reviewer` soát diff trước khi commit.
+4. **Lệnh nên dùng** đều có trong `make` (chạy `make` để xem), ví dụ `make smoke`,
+   `make lint`, `make migration m="..."`.
+5. **Commit và push**: agent commit theo Conventional Commits khi bạn cho phép;
+   `git push` luôn hỏi lại bạn. Force push và xoá volume Docker bị chặn cứng.
+6. **Mô tả việc rõ ràng** sẽ nhanh hơn nhiều: nêu route web, API cần gọi, và kết quả mong đợi.
+
+Đọc thêm trong tab **Tài liệu**: *Claude CLI Quickstart* (cách chạy và các hàng rào an toàn)
+và *Demo: Multi-Agent Workflow* (quy trình 7 bước và prompt mẫu).
+
 ## Mẹo dùng
 
 **Ghi ngay, sắp xếp sau.** Gõ tiêu đề rồi bấm Thêm là đủ. Đừng bắt mình điền đủ

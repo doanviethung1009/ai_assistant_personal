@@ -714,3 +714,12 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Review cấu hình `.claude/` (symlink, hook, quyền); viết `docs/CLAUDE_CLI_QUICKSTART.md`, đăng ký slug `claude-cli-quickstart` trong `apps/web/lib/docs.ts`, thêm script idempotent `scripts/patches/register_claude_cli_quickstart_doc.py` (tên tránh `patch_*` vì hook `no-patch-scripts.sh` chặn).
   - Push nhánh, mở PR #1. Hook `guard-bash.sh` chặn nhầm body PR chứa tên một lệnh git nguy hiểm; đã diễn đạt lại, rồi ghi chú cạm bẫy này vào hook và mục xử lý sự cố của Quickstart.
 - **Phản hồi:** Nhánh đã push, PR https://github.com/doanviethung1009/ai_assistant_personal/pull/1. Các file chưa commit của task chat được giữ ngoài PR.
+
+---
+
+### [07-10-2026 17:00] | Category: [TOOL]
+- **Prompt:** "bổ sung thêm hướng dẫn multi agent và hướng dẫn sử dụng cho dự án"
+- **Xử lý:**
+  - `docs/MULTI_AGENT_WORKFLOW.md`: thêm phần biến thể Claude Code (bảng đối chiếu role với subagent, quy trình 7 bước, prompt mẫu, khi nào không cần subagent).
+  - `docs/huong-dan-su-dung.md`: thêm mục "Làm việc với AI agent để phát triển dự án". Cả hai tài liệu đã có trong `docs.ts` nên không cần đăng ký thêm.
+- **Phản hồi:** Đã bổ sung hai tài liệu, hiện trên tab Tài liệu.

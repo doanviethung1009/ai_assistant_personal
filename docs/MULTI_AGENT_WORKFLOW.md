@@ -42,6 +42,51 @@ Dưới đây là Vòng đời hoàn thiện một Epic (Ví dụ: Tính năng G
 
 ---
 
+## 🤖 Biến thể cho Claude Code: orchestrator + subagent
+
+Năm bước trên dùng "đóng vai" (`@.agents/roles/*.md`), phù hợp IDE như Cursor hay Gemini. Với **Claude Code**, repo có sẵn subagent thật trong `.claude/agents/`, mỗi subagent chạy trong context riêng, có danh sách tool giới hạn. Session chính đóng vai **orchestrator**: chia việc, gọi subagent, tổng hợp, và là nơi duy nhất commit, cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts`, ghi AI log.
+
+### Bảng tương ứng giữa hai cách
+
+| Bước | Đóng vai (IDE) | Subagent (Claude Code) | Tool được dùng | Ghi chú |
+|---|---|---|---|---|
+| 1. Thiết kế | `software-architect` | `architect` | Read, Grep, Glob, Write, Edit, WebFetch | Chỉ ra file `docs/specs/<epic>.md`, không viết code |
+| 2a. Backend | `backend-engineer`, `database-architect` | `backend-dev` | + Bash | Chỉ sửa `apps/core/` |
+| 2b. Frontend | `frontend-engineer` | `frontend-dev` | + Bash | Chỉ sửa `apps/web/` |
+| 3. Kiểm thử DB | `database-architect` | `db-reviewer` | Read, Grep, Glob, Bash | Chỉ đọc: khoá bảng, mất dữ liệu, index, rollback |
+| 4. Duyệt | `tech-lead`, `qa-tester`, `security-auditor` | `code-reviewer` | Read, Grep, Glob, Bash | Chỉ đọc, context sạch, review diff so với `main` |
+| 5. Triển khai | `devops-engineer` | (không có) | | Orchestrator làm, theo skill `docker-deploy` |
+
+### Quy trình 7 bước cho một Epic chạm từ 2 tầng
+
+1. **User** mô tả Epic, nói rõ route và API nếu đã biết.
+2. **architect** viết `docs/specs/<epic>.md` theo `docs/specs/_TEMPLATE.md`. Mục **Ownership** phải liệt kê file mỗi agent được sửa, không trùng nhau.
+3. **User duyệt spec** (đổi trạng thái thành CHỐT). Chưa chốt thì không code.
+4. **backend-dev** làm trước (model, migration, API), chạy `make lint` và `make smoke`, rồi `make gen-types` để web có type mới.
+5. **frontend-dev** làm sau khi contract đã có. Chỉ chạy song song với backend khi spec đủ chi tiết, và mỗi agent dùng một git worktree riêng.
+6. **db-reviewer** (nếu có migration hoặc đổi model) rồi **code-reviewer** trên toàn bộ diff. Reviewer không sửa file; orchestrator chuyển lỗi về dev agent.
+7. **Orchestrator** cập nhật docs, ghi AI log, commit theo skill `git-commit`. `git push` luôn hỏi User.
+
+### Prompt mẫu
+
+```text
+Epic: thêm tag cho Note. Dùng architect ra spec trong docs/specs/ rồi dừng chờ tôi duyệt.
+```
+
+```text
+Spec note-tags đã CHỐT. Chạy backend-dev trước, xong thì frontend-dev, sau đó db-reviewer và code-reviewer. Tổng hợp lỗi, chưa commit.
+```
+
+### Khi nào KHÔNG cần subagent
+
+Sửa 1–2 file trong một tầng thì orchestrator tự làm. Mỗi subagent tốn thêm một lượt khởi động context, nên chỉ đáng khi việc đủ lớn hoặc cần reviewer độc lập.
+
+### Hàng rào bắt buộc
+
+Hook `guard-bash.sh` và `no-patch-scripts.sh` áp dụng cho mọi subagent, và `git push` bị hỏi xác nhận. Chi tiết xem [Claude CLI Quickstart](CLAUDE_CLI_QUICKSTART.md).
+
+---
+
 ## 💡 Tổng kết sức mạnh của mô hình này:
 1. **Phân lập Context:** Mỗi Agent chỉ đọc và thao tác trên phần việc của nó (Frontend không đụng Backend, QA không tự tiện sửa Database).
 2. **Chéo kiểm tra (Cross-check):** Code do Dev-Agent viết sẽ bị bắt lỗi bởi QA-Agent và bị từ chối bởi TechLead-Agent nếu kém chất lượng.
