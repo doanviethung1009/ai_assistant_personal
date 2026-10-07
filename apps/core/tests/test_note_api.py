@@ -43,9 +43,7 @@ async def test_archive_flow(client: httpx.AsyncClient) -> None:
 
 async def test_archived_param_validation(client: httpx.AsyncClient) -> None:
     assert (await client.get(BASE, params={"archived": "abc"})).status_code == 422
-    assert (
-        await client.get(f"{BASE}/stats", params={"archived": "abc"})
-    ).status_code == 422
+    assert (await client.get(f"{BASE}/stats", params={"archived": "abc"})).status_code == 422
 
 
 async def test_archive_unknown_note_404(client: httpx.AsyncClient) -> None:
@@ -59,3 +57,33 @@ async def test_offset_has_upper_bound(client: httpx.AsyncClient) -> None:
     """offset không trần làm Postgres lỗi int64 và trả 500; giờ phải là 422."""
     resp = await client.get("/api/v1/notes", params={"offset": 2_000_000})
     assert resp.status_code == 422
+
+
+async def test_archive_is_idempotent_over_http(client: httpx.AsyncClient) -> None:
+    note_id = await _create(client)
+    first = (await client.post(f"{BASE}/{note_id}/archive")).json()["archived_at"]
+    again = await client.post(f"{BASE}/{note_id}/archive")
+    assert again.status_code == 200
+    assert again.json()["archived_at"] == first
+
+    unarchived = await client.post(f"{BASE}/{note_id}/unarchive")
+    assert unarchived.json()["archived_at"] is None
+    assert (await client.post(f"{BASE}/{note_id}/unarchive")).status_code == 200
+
+
+async def test_archive_and_unarchive_trashed_note_is_404(client: httpx.AsyncClient) -> None:
+    note_id = await _create(client)
+    assert (await client.delete(f"{BASE}/{note_id}")).status_code in (200, 204)
+
+    assert (await client.post(f"{BASE}/{note_id}/archive")).status_code == 404
+    assert (await client.post(f"{BASE}/{note_id}/unarchive")).status_code == 404
+
+
+async def test_patch_archived_note_keeps_it_archived(client: httpx.AsyncClient) -> None:
+    note_id = await _create(client)
+    await client.post(f"{BASE}/{note_id}/archive")
+
+    patched = await client.patch(f"{BASE}/{note_id}", json={"title": "đổi tên"})
+    assert patched.status_code == 200
+    assert patched.json()["title"] == "đổi tên"
+    assert patched.json()["archived_at"] is not None

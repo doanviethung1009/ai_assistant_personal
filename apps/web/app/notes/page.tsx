@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { ApiErrorPanel } from "@/components/api-error";
 import { NoteFilters, type NoteFilterState } from "@/components/note-filters";
@@ -133,8 +134,14 @@ export default async function NotesPage({
     );
   }
 
-  const totalAll = sumCounts(counts);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  // ?page= vượt số trang thật (xoá bớt note, hoặc gõ tay) thì về trang cuối thay vì
+  // hiện danh sách rỗng đi kèm dòng "N mục". Nằm ngoài try vì redirect() ném lỗi nội bộ.
+  if (currentPage > totalPages) {
+    redirect(notesHref(filters, { page: totalPages }));
+  }
+
+  const totalAll = sumCounts(counts);
   const isFiltered = filters.q !== "" || filters.kind !== "" || filters.pinned;
 
   return (

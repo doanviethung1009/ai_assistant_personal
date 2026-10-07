@@ -21,9 +21,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     # Cột nullable, không default nên chỉ đổi metadata, không viết lại bảng và
     # không cần backfill: mọi note hiện có coi như chưa lưu trữ.
-    op.add_column(
-        "notes", sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True)
-    )
+    op.add_column("notes", sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True))
     # CREATE INDEX thường (không CONCURRENTLY) vì bảng notes nhỏ. Partial để
     # index chỉ chứa note lưu trữ, cùng kiểu với ix_notes_deleted_at.
     op.create_index(
