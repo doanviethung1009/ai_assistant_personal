@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:33] | Category: [TOOL]
+- **Prompt:** "ý tôi là xem chi tiết bạn trả lời trong trace log nữa"
+- **Xử lý:**
+  - Tái cấu trúc component `PromptViewer` thành `ContentViewer` để có thể tái sử dụng cho nhiều trường dữ liệu.
+  - Tích hợp thêm cờ `isMarkdown={true}` để render an toàn các cú pháp Markdown (như Code block, Bold, Italic) bên trong Popup.
+  - Áp dụng `ContentViewer` cho cả 2 khối: **Prompt** (hiển thị Text thô) và **Phản hồi & Xử lý** (hiển thị Markdown). Cắt ngắn toàn bộ nội dung dài bên ngoài danh sách.
+  - Xóa file cũ, Git Push.
+- **Phản hồi:** Đã áp dụng tính năng Xem chi tiết Popup cho cả phần AI Phản hồi!
+
+---
+
 ### [07-10-2026 13:32] | Category: [TOOL]
 - **Prompt:** "vậy nên để IDE chứ nhỉ?"
 - **Xử lý:** Đổi tên hiển thị trên thanh điều hướng bên trái từ "Cẩm nang AI (Cursor/Copilot)" thành **"Cẩm nang Agent IDEs"** cho tính bao quát, phản ánh đúng mục tiêu hỗ trợ cho nhóm công cụ (Cursor, Windsurf, Antigravity, Copilot). Chạy `make changelog` và Git Push.

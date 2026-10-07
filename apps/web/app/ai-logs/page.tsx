@@ -1,6 +1,5 @@
 import { listAiLogs } from "@/lib/api";
-import { Markdown } from "@/components/markdown";
-import { PromptViewer } from "@/components/prompt-viewer";
+import { ContentViewer } from "@/components/content-viewer";
 
 export const dynamic = "force-dynamic";
 
@@ -56,14 +55,12 @@ export default async function AiLogsPage() {
                 
                 <div className="mb-4">
                   <h3 className="text-sm font-semibold text-[var(--color-ink)]">Prompt:</h3>
-                  <PromptViewer prompt={log.prompt} />
+                  <ContentViewer content={log.prompt} title="Chi tiết Prompt" />
                 </div>
 
                 <div>
                   <h3 className="text-sm font-semibold text-[var(--color-ink)] mb-2">Phản hồi & Xử lý:</h3>
-                  <div className="text-sm prose prose-invert max-w-none">
-                    <Markdown>{log.response}</Markdown>
-                  </div>
+                  <ContentViewer content={log.response} title="Chi tiết Phản hồi (Markdown)" isMarkdown={true} />
                 </div>
               </article>
             ))
