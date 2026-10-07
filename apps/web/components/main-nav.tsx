@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { PRIMARY_NAV, SECONDARY_NAV, isItemActive, type NavItem } from "@/lib/nav";
+import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, isItemActive, type NavItem } from "@/lib/nav";
 
 export function MainNav() {
   const pathname = usePathname();
@@ -28,6 +28,18 @@ export function MainNav() {
         </h3>
         <ul className="flex flex-col gap-1.5">
           {SECONDARY_NAV.map((item) => (
+            <li key={item.href}>
+              <SecondaryLink item={item} pathname={pathname} />
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div>
+        <h3 className="mb-3 px-3 text-[10px] font-bold uppercase tracking-wider text-[var(--color-ink-muted)] opacity-70">
+          Hệ sinh thái AI
+        </h3>
+        <ul className="flex flex-col gap-1.5">
+          {AI_NAV.map((item) => (
             <li key={item.href}>
               <SecondaryLink item={item} pathname={pathname} />
             </li>

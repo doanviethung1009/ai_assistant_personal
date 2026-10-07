@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:21] | Category: [TOOL]
+- **Prompt:** "liên quan đến AI nên để 1 tab mới cho tường minh không? bổ sung thêm mô tả nếu thiếu nha"
+- **Xử lý:**
+  - Tái cấu trúc thanh điều hướng bên trái (Sidebar) của ứng dụng Web.
+  - Tách các tính năng AI ra khỏi nhóm "Tài liệu & Hệ thống" để tạo thành một khu vực hoàn toàn độc lập mang tên **"Hệ sinh thái AI"**.
+  - Bổ sung 3 menu mới vào khu vực này: "Nhật ký AI (Trace)", "Claude Agent" và "Codex Agent" sử dụng các icon đẹp mắt (`Bot`, `Sparkles`, `BrainCircuit`).
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã thiết kế lại giao diện Sidebar. Giờ đây toàn bộ các cấu hình, kỹ năng, và nhật ký của hệ sinh thái AI đều có một góc riêng biệt, cực kỳ tường minh trên giao diện!
+
+---
+
 ### [07-10-2026 13:19] | Category: [TOOL]
 - **Prompt:** "ủa đủ agent function cho 1 system chưa, dựa theo target architechture và các mô hình tương lai để đề xuất thêm agent skill và agent function ở role đi"
 - **Xử lý:**

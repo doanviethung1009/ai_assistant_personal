@@ -15,6 +15,8 @@ import {
   Sparkles,
   Settings,
   Database,
+  Bot,
+  BrainCircuit,
   type LucideIcon
 } from "lucide-react";
 
@@ -49,9 +51,14 @@ export const SECONDARY_NAV: NavItem[] = [
   { href: "/roadmap", label: "Lộ trình", icon: Map },
   { href: "/docs", label: "Tài liệu", icon: FileText },
   { href: "/api-docs", label: "API", icon: Terminal },
-  { href: "/ai-logs", label: "AI Trace", icon: Sparkles },
   { href: "/system", label: "Hệ thống", icon: Settings },
   { href: "/data", label: "Dữ liệu", icon: Database },
+];
+
+export const AI_NAV: NavItem[] = [
+  { href: "/ai-logs", label: "Nhật ký AI (Trace)", icon: Sparkles },
+  { href: "/docs?doc=claude-operating-guide", label: "Claude Agent", icon: Bot },
+  { href: "/docs?doc=codex-operating-guide", label: "Codex Agent", icon: BrainCircuit },
 ];
 
 export function isItemActive(href: string, pathname: string): boolean {
