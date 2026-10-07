@@ -31,41 +31,20 @@ export default async function TeamPage({
     ]);
     const allTasks = tasksRes.items;
     
-    // Lọc ra các assignee duy nhất (bỏ null)
-    // Tính tổng số task cho từng người (ngoại trừ các currentUsers)
-    const assigneeCounts: Record<string, number> = {};
-    for (const t of allTasks) {
-      if (t.assignee && (currentUsers.length === 0 || !currentUsers.includes(t.assignee))) {
-        assigneeCounts[t.assignee] = (assigneeCounts[t.assignee] || 0) + 1;
-      } else if (!t.assignee && t.source === 'jira') {
-        assigneeCounts["Unassigned (Jira)"] = (assigneeCounts["Unassigned (Jira)"] || 0) + 1;
-      }
-    }
-    const assignees = Object.keys(assigneeCounts).sort();
-
-    // Lọc task theo điều kiện
+    // 1. Khởi tạo danh sách cơ bản (bao gồm cả current user để có cái nhìn tổng hợp)
     let teamTasks = allTasks.filter(t => {
-      if (t.assignee) return currentUsers.length === 0 || !currentUsers.includes(t.assignee);
+      if (t.assignee) return true; // Lấy tất cả task có gán người thực hiện
       return t.source === 'jira'; // Task Jira chưa ai nhận thì nằm ở backlog Team
     });
     
-    // 1. Theo assignee
-    if (currentAssignee) {
-      if (currentAssignee === "Unassigned (Jira)") {
-        teamTasks = teamTasks.filter(t => !t.assignee && t.source === 'jira');
-      } else {
-        teamTasks = teamTasks.filter(t => t.assignee === currentAssignee);
-      }
-    }
-    
-    // 2. Theo status
+    // 2. Lọc theo status
     if (currentStatus === "open") {
       teamTasks = teamTasks.filter(t => OPEN_STATUSES.includes(t.status));
     } else if (currentStatus === "closed") {
       teamTasks = teamTasks.filter(t => !OPEN_STATUSES.includes(t.status));
     }
 
-    // 2.5 Theo từ khoá (title, tags)
+    // 3. Lọc theo từ khoá (title, tags)
     if (currentQ) {
       const needle = currentQ.trim().toLowerCase();
       teamTasks = teamTasks.filter(t => 
@@ -76,13 +55,18 @@ export default async function TeamPage({
     
     // Helper để lấy timestamp an toàn
     const getTaskDateMs = (t: typeof teamTasks[0]) => {
-      const dateStr = t.updated_at || t.created_at;
+      // Nếu task đã hoàn thành/hủy, ưu tiên thời gian hoàn thành (completed_at)
+      // Nếu đang mở, dùng updated_at hoặc created_at
+      const dateStr = (!OPEN_STATUSES.includes(t.status) && t.completed_at) 
+        ? t.completed_at 
+        : (t.updated_at || t.created_at);
+        
       if (!dateStr) return 0;
       const ms = new Date(dateStr).getTime();
       return Number.isNaN(ms) ? 0 : ms;
     };
 
-    // 2.6 Theo mốc thời gian (cập nhật gần nhất - vì Jira sync quan trọng update)
+    // 4. Theo mốc thời gian (cập nhật gần nhất - vì Jira sync quan trọng update)
     if (currentTime !== "all") {
       const now = new Date().getTime();
       let limit = 0;
@@ -96,7 +80,7 @@ export default async function TeamPage({
       }
     }
     
-    // 2.7 Theo khoảng thời gian tùy chọn (Date Range)
+    // 5. Theo khoảng thời gian tùy chọn (Date Range)
     if (currentFrom) {
       const fromMs = new Date(currentFrom).getTime();
       if (!Number.isNaN(fromMs)) {
@@ -107,6 +91,37 @@ export default async function TeamPage({
       const toMs = new Date(currentTo).getTime() + 24 * 60 * 60 * 1000 - 1; // Hết ngày đó
       if (!Number.isNaN(toMs)) {
         teamTasks = teamTasks.filter(t => getTaskDateMs(t) <= toMs);
+      }
+    }
+
+    // --- Tính toán lại số lượng Task CỦA TỪNG NGƯỜI (Dựa trên bộ lọc đã áp dụng ở trên) ---
+    const assigneeCounts: Record<string, number> = {};
+    
+    // Khởi tạo danh sách assignees đầy đủ từ allTasks với giá trị 0
+    for (const t of allTasks) {
+      if (t.assignee) {
+        assigneeCounts[t.assignee] = 0;
+      } else if (!t.assignee && t.source === 'jira') {
+        assigneeCounts["Unassigned (Jira)"] = 0;
+      }
+    }
+
+    // Đếm số lượng task thoả mãn bộ lọc
+    for (const t of teamTasks) {
+      if (t.assignee) {
+        assigneeCounts[t.assignee] = (assigneeCounts[t.assignee] || 0) + 1;
+      } else if (!t.assignee && t.source === 'jira') {
+        assigneeCounts["Unassigned (Jira)"] = (assigneeCounts["Unassigned (Jira)"] || 0) + 1;
+      }
+    }
+    const assignees = Object.keys(assigneeCounts).sort();
+
+    // 6. Cuối cùng, lọc theo Assignee để ra danh sách task hiển thị
+    if (currentAssignee) {
+      if (currentAssignee === "Unassigned (Jira)") {
+        teamTasks = teamTasks.filter(t => !t.assignee && t.source === 'jira');
+      } else {
+        teamTasks = teamTasks.filter(t => t.assignee === currentAssignee);
       }
     }
     

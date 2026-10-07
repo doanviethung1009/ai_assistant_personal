@@ -4,10 +4,16 @@ Sinh tự động bằng `bash scripts/changelog.sh --write` từ `git log`,
 gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 Đừng sửa tay — chạy lại script sau khi có commit mới.
 
-## [Chưa phát hành] — cập nhật lần cuối 2026-10-03
+## [Chưa phát hành] — cập nhật lần cuối 2026-10-07
 
 ### Thêm mới
 
+- update UI to glassmorphism, fix team time filter, add jira sync enhancements (`5c45a9d`)
+- tự động tạo màu riêng biệt cho từng dự án dựa trên mã (`a46b509`)
+- tối ưu đồng bộ dự án Jira và gợi ý tên người dùng (`1f0e83c`)
+- wipe tasks by specific assignee (`5dfd4a9`)
+- hỗ trợ đồng bộ Jira, đa người dùng và cải tiến lọc task (`3da2833`)
+- thêm tính năng Két bảo mật (Vault) mã hoá AES-256-GCM (`a84572b`)
 - render ai-logs page from data store instead of raw markdown (`76be2ec`)
 - add import/export support for ai-logs and enforce data migration rules (`996d1d2`)
 - enforce dual logging to both markdown and json for ai traces, add helper script (`21b6301`)
@@ -27,6 +33,8 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Sửa lỗi
 
+- cập nhật xử lý AI logs từ json và bổ sung type/enum (`c1e0a52`)
+- use limit=100 for ai logs to match fastapi validation (`54379e6`)
 - resolve typescript and syntax errors in data import and history page (`ca11f1d`)
 - force flush ai-logs.json on initialization so the file is visible (`162199d`)
 - add v4 migration and state initialization for ai_logs array in JSON data file (`c561b0c`)
@@ -40,6 +48,9 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- cập nhật danh sách skill thực tế vào tài liệu hướng dẫn Agent (`48e0e12`)
+- bổ sung skill hướng dẫn triển khai RBAC (roles, rules, privileges) (`4f186e7`)
+- trace verification log (`aadf749`)
 - trace fix errors log (`0bc3fe2`)
 - add local JSON storage split vs group evaluation rule to web-conventions (`8567a3e`)
 - document local JSON storage migration and SCHEMA_VERSION mechanism (`92c77c0`)

@@ -201,12 +201,52 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "skills", "add-entity", "SKILL.md"),
   },
   {
+    slug: "skill-qc-uat",
+    title: "Skill: QC & Nghiệm thu",
+    description:
+      "Quy trình kiểm thử chất lượng giao diện, logic và dữ liệu trước khi bàn giao.",
+    category: "Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "qc-uat", "SKILL.md"),
+  },
+  {
     slug: "jira-api-knowledge",
     title: "Kiến thức & API Jira",
     description:
       "Lưu trữ các kiến thức và luồng API tích hợp Jira (Sync/Fetch), phục vụ mở rộng Agent Skills.",
     category: "Kiến trúc & Tích hợp",
     file: path.join("docs", "JIRA_API_KNOWLEDGE.md"),
+  },
+  {
+    slug: "architecture-patterns",
+    title: "Kiến trúc Hệ thống (Patterns)",
+    description:
+      "Tư vấn và phân tích kiến trúc Monolith, Microservices, Micro-frontends, và cơ chế đồng bộ Real-time.",
+    category: "Kiến trúc & Tích hợp",
+    file: path.join("docs", "ARCHITECTURE_PATTERNS.md"),
+  },
+  {
+    slug: "target-architecture",
+    title: "Đề xuất Kiến trúc Mục tiêu",
+    description:
+      "Bản thiết kế kiến trúc chuẩn bị cho giai đoạn hoàn thiện Task, Notes (pgvector) và Vault (Zero-Knowledge).",
+    category: "Kiến trúc & Tích hợp",
+    file: path.join("docs", "TARGET_ARCHITECTURE.md"),
+  },
+  {
+    slug: "docker-architecture",
+    title: "Kiến trúc Docker & Deploy",
+    description:
+      "Giải mã định nghĩa các file Docker (Rootless, Standalone, pgvector) và cách điều khiển hạ tầng.",
+    category: "DevOps & Triển khai",
+    file: path.join("docs", "DOCKER_ARCHITECTURE.md"),
+  },
+  {
+    slug: "deployment-strategies",
+    title: "Chiến lược Triển khai (Deploy)",
+    description:
+      "Tư vấn và so sánh các phương pháp vận hành: Local, Docker Compose VPS, và Serverless Vercel.",
+    category: "DevOps & Triển khai",
+    file: path.join("docs", "DEPLOYMENT_STRATEGIES.md"),
   }
 ];
 
