@@ -278,6 +278,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "note-archive.md"),
   },
   {
+    slug: "spec-task-scope",
+    title: "Spec (DRAFT): Tách task công việc và cá nhân",
+    description: "Thêm cột tasks.scope (work/personal), định nghĩa 'việc của tôi', rào chắn để đồng bộ Jira và nhập file không đụng task cá nhân, kèm 15 quyết định chờ User chốt.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "task-scope.md"),
+  },
+  {
     slug: "spec-import-json-to-postgres",
     title: "Spec (DRAFT): Nhập JSON vào Postgres",
     description: "Đường nhập an toàn, lặp lại được từ file JSON của web vào Postgres qua core API, kèm 14 quyết định chờ User chốt.",
