@@ -285,6 +285,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
   },
   {
+    slug: "claude-cli-quickstart",
+    title: "Claude CLI Quickstart (multi-agent)",
+    description: "Chạy Claude Code với cấu hình multi-agent của repo: subagent, hook an toàn, quyền và quy trình commit/push.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "CLAUDE_CLI_QUICKSTART.md"),
+  },
+  {
     slug: "codex-operating-guide",
     title: "Cẩm nang vận hành OpenAI Codex",
     description: "Tài liệu chuyên sâu về cơ chế hoạt động của Codex CLI/IDE và cách nạp hệ thống Agent.",

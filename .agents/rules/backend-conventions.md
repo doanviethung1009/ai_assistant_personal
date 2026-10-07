@@ -1,4 +1,8 @@
 ---
+# Claude Code đọc `paths`, Kiro/Antigravity đọc `fileMatchPattern` - giữ cả hai.
+paths:
+  - "apps/core/**"
+  - "apps/**/*.py"
 inclusion: fileMatch
 fileMatchPattern: ["apps/core/**/*", "apps/**/*api*/**/*", "apps/**/*backend*/**/*", "apps/**/*.py"]
 ---

@@ -1,4 +1,8 @@
 ---
+# Claude Code đọc `paths`, Kiro/Antigravity đọc `fileMatchPattern` - giữ cả hai.
+paths:
+  - "apps/web/**"
+  - "apps/**/*.tsx"
 inclusion: fileMatch
 fileMatchPattern: ["apps/web/**/*", "apps/**/*web*/**/*", "apps/**/*ui*/**/*", "apps/**/*admin*/**/*", "apps/**/*.tsx"]
 ---

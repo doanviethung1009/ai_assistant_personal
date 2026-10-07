@@ -45,3 +45,7 @@ Thumbs.db
 .idea/
 .vscode/*
 !.vscode/settings.json
+
+# Claude Code: cài đặt cá nhân, không commit
+.claude/settings.local.json
+CLAUDE.local.md

@@ -1,6 +1,6 @@
 # Vận hành và bản đồ code
 
-Trước khi làm task lớn hoặc khi bắt đầu session mới, đọc `#status` để biết
+Trước khi làm task lớn hoặc khi bắt đầu session mới, đọc `docs/AI_HANDOFF_STATE.md` để biết
 trạng thái hiện tại, phần nào đã verify và phần nào chưa.
 
 ## Đừng tự mò lệnh, đã có Makefile
@@ -67,14 +67,14 @@ apps/web/
 ## Quy ước dễ vi phạm — đã tách ra ngoài để đỡ tốn token
 
 Nội dung chi tiết không còn nạp vào mọi request. Chúng nạp **đúng lúc cần**
-qua `inclusion: fileMatch` (tự động, theo file đang sửa) hoặc qua skill (tự
+qua frontmatter `paths:` (Claude Code, qua symlink `.claude/rules`) / `fileMatchPattern` (Kiro) — tự động theo file đang sửa hoặc qua skill (tự
 động, theo mô tả việc đang làm):
 
 | Đang làm gì | Nạp từ đâu | Kiểu nạp |
 |---|---|---|
-| Sửa file trong `apps/core/` | `.kiro/steering/backend-conventions.md` | fileMatch |
-| Sửa file trong `apps/web/` | `.kiro/steering/web-conventions.md` | fileMatch |
-| Viết comment/docstring (bất kỳ `.py`/`.ts`/`.tsx`/`.sh`) | `.kiro/steering/comment-style.md` | fileMatch |
+| Sửa file trong `apps/core/` | `.agents/rules/backend-conventions.md` | fileMatch |
+| Sửa file trong `apps/web/` | `.agents/rules/web-conventions.md` | fileMatch |
+| Viết comment/docstring (bất kỳ `.py`/`.ts`/`.tsx`/`.sh`) | `.agents/rules/comment-style.md` | fileMatch |
 | Commit, viết message, chạy hook | skill `git-commit` | tự phát hiện theo mô tả |
 | Thêm entity mới (model → UI → export) | skill `add-entity` | tự phát hiện theo mô tả |
 
