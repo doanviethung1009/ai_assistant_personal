@@ -285,6 +285,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
   },
   {
+    slug: "multi-agent-system",
+    title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
+    description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
+  },
+  {
     slug: "claude-cli-quickstart",
     title: "Claude CLI Quickstart (multi-agent)",
     description: "Chạy Claude Code với cấu hình multi-agent của repo: subagent, hook an toàn, quyền và quy trình commit/push.",
