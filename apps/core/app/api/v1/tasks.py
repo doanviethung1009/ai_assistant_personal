@@ -139,6 +139,7 @@ async def list_tasks(
         priority=priority_in,
         project_id=project_id,
         source=source,
+        assignee=assignee,
         tags=tags or [],
         query=q,
         scheduled_on=scheduled_on,

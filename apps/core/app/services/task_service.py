@@ -42,6 +42,7 @@ class TaskFilters:
     priority: list[TaskPriority] | None = None
     project_id: uuid.UUID | None = None
     source: TaskSource | None = None
+    assignee: str | None = None
     tags: list[str] = field(default_factory=list)
     query: str | None = None
     scheduled_on: date | None = None
@@ -90,6 +91,8 @@ def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
         stmt = stmt.where(Task.project_id == filters.project_id)
     if filters.source is not None:
         stmt = stmt.where(Task.source == filters.source)
+    if filters.assignee:
+        stmt = stmt.where(Task.assignee == filters.assignee)
     if filters.tags:
         # contains → toán tử @> của Postgres, dùng được index GIN
         stmt = stmt.where(Task.tags.contains(filters.tags))

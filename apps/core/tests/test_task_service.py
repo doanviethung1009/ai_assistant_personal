@@ -81,3 +81,15 @@ async def test_restore_conflicts_with_recreated_external_id(session: AsyncSessio
 async def test_update_unknown_task_is_not_found(session: AsyncSession) -> None:
     with pytest.raises(NotFoundError):
         await task_service.update_task(session, uuid.uuid4(), TaskUpdate(title="x"))
+
+
+async def test_list_filters_by_assignee(session: AsyncSession) -> None:
+    """Tham số assignee từng bị route bỏ qua, trả về mọi task."""
+    await task_service.create_task(session, TaskCreate(title="của An", assignee="An"))
+    await task_service.create_task(session, TaskCreate(title="của Bình", assignee="Bình"))
+
+    items, total = await task_service.list_tasks(
+        session, task_service.TaskFilters(assignee="An")
+    )
+    assert total == 1
+    assert [t.title for t in items] == ["của An"]
