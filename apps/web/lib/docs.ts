@@ -89,14 +89,6 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "NEW_AGENT_ONBOARDING.md"),
   },
   {
-    slug: "agent-prompts",
-    title: "Thư viện Prompt mẫu",
-    description:
-      "Các mẫu câu lệnh giao tiếp với AI tối ưu nhất (Tạo chức năng, Debug, Refactor, Commit).",
-    category: "2. Làm việc với AI Agent",
-    file: path.join("docs", "AGENT_PROMPT_EXAMPLES.md"),
-  },
-  {
     slug: "multi-agent-workflow",
     title: "Demo: Multi-Agent Workflow",
     description:
@@ -113,8 +105,8 @@ export const DOCS: DocEntry[] = [
   },
   {
     slug: "ai-agent-guide",
-    title: "Hướng dẫn AI Agent",
-    description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
+    title: "Cẩm nang AI Agent: cấu trúc, nền tảng, prompt mẫu",
+    description: "Cấu hình AI nằm ở đâu, mỗi công cụ (Claude, Codex, Cursor, Copilot) đọc gì, prompt mẫu theo tình huống và lỗi thường gặp.",
     category: "2. Làm việc với AI Agent",
     file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },

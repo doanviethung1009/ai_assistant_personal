@@ -18,7 +18,7 @@ Ngay khi bắt đầu một phiên chat, AI Agent KHÔNG ĐƯỢC đoán mò b�
    - Đọc file `docs/project-review.md`. Đây là bước SIÊU QUAN TRỌNG. Thay vì đọc 20 file riêng lẻ, chỉ cần đọc file này để nắm toàn cảnh kiến trúc (DB, UI, Rules) và tiết kiệm Token.
 3. **Đọc Cấu trúc Dự án (Project Structure):**
    - Đọc `docs/PROJECT_STRUCTURE.md` để biết file code nào nằm ở đâu (`apps/web` hay `apps/core`).
-3. **Đọc Kiến trúc Mục tiêu (Target Architecture):**
+4. **Đọc Kiến trúc Mục tiêu (Target Architecture):**
    - Nếu User yêu cầu làm tính năng lớn liên quan đến Database, Task, Note, Vault, phải đọc `docs/TARGET_ARCHITECTURE.md` để thiết kế cho đúng hướng.
 
 ---
@@ -40,15 +40,24 @@ AI không nên code bằng "bản năng" (zero-shot) đối với các tác vụ
 
 - **Vị trí Skill:** Tất cả các luồng làm việc chuẩn đã được đóng gói tại `.agents/skills/`.
 - **Cách dùng:** Khi được giao việc (ví dụ: Commit Git, Thêm bảng DB, Phân quyền RBAC), AI phải chủ động vào thư mục skill tương ứng, đọc file `SKILL.md` và làm y hệt như một cái máy check-list (từng bước một).
-- **Các Skill đang có sẵn:**
+- **Các Skill đang có sẵn (10):**
   - `add-entity`: Thêm luồng dữ liệu mới từ DB lên Frontend.
+  - `db-migration`: Tạo và áp migration Alembic an toàn.
   - `git-commit`: Chuẩn hoá commit message và sinh Changelog.
   - `qc-uat`: Kịch bản nghiệm thu phát hiện lỗi UI/UX, Logic, Dữ liệu.
-  - `rbac-implementation`: Triển khai phân quyền người dùng.
+  - `pr-review`: Review nhánh/PR trước khi merge.
+  - `security-audit`, `e2ee-vault`, `rbac-implementation`: Bảo mật, Vault E2EE, phân quyền.
+  - `architecture-design`, `docker-deploy`: Thiết kế hệ thống, triển khai.
 
 ---
 
-## 4. Tóm tắt Vòng lặp Công việc của AI (AI Work Loop)
+## 4. Nếu bạn là Claude Code: làm việc theo mô hình orchestrator
+
+Việc nhỏ (1–2 file, một tầng) thì tự làm. Việc chạm từ hai tầng trở lên thì dùng subagent trong `.claude/agents/` (architect → backend-dev/frontend-dev → db-reviewer, code-reviewer, security-auditor). Chỉ session chính (orchestrator) được cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts`, ghi AI log và commit. Chi tiết: `docs/MULTI_AGENT_SYSTEM.md`.
+
+---
+
+## 5. Tóm tắt Vòng lặp Công việc của AI (AI Work Loop)
 
 ```mermaid
 graph TD
