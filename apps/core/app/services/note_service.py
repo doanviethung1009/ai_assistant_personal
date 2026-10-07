@@ -39,6 +39,8 @@ class NoteFilters:
     tags: list[str] = field(default_factory=list)
     query: str | None = None
     pinned_only: bool = False
+    # False: chỉ note đang dùng. True: chỉ note lưu trữ. Không có "cả hai".
+    archived: bool = False
     limit: int = 50
     offset: int = 0
     sort_by: SortField = "updated_at"
@@ -54,8 +56,17 @@ def _alive():
     return Note.deleted_at.is_(None)
 
 
+def _archive_view(archived: bool):
+    """Điều kiện chọn view Đang dùng / Lưu trữ cho danh sách và thống kê.
+
+    CỐ TÌNH tách khỏi _alive(): _alive() dùng cho get_note, nếu nhét điều kiện
+    lưu trữ vào đó thì note lưu trữ thành 404 và không unarchive/copy/sửa được.
+    """
+    return Note.archived_at.is_not(None) if archived else Note.archived_at.is_(None)
+
+
 def _apply_filters(stmt: Select[Any], filters: NoteFilters) -> Select[Any]:
-    stmt = stmt.where(_alive())
+    stmt = stmt.where(_alive(), _archive_view(filters.archived))
 
     if filters.kind:
         stmt = stmt.where(Note.kind.in_(filters.kind))
@@ -145,8 +156,18 @@ async def list_trash(
     return list(result.scalars().unique().all()), int(total or 0)
 
 
-async def count_by_kind(session: AsyncSession) -> dict[str, int]:
-    stmt = select(Note.kind, func.count()).where(_alive()).group_by(Note.kind)
+async def count_by_kind(
+    session: AsyncSession, *, archived: bool = False
+) -> dict[str, int]:
+    """Đếm theo kind trong đúng view đang xem (Đang dùng hoặc Lưu trữ).
+
+    Shape dict giữ nguyên: web cộng mọi value thành tổng, thêm khoá lạ sẽ sai.
+    """
+    stmt = (
+        select(Note.kind, func.count())
+        .where(_alive(), _archive_view(archived))
+        .group_by(Note.kind)
+    )
     result = await session.execute(stmt)
     return {row[0].value: row[1] for row in result.all()}
 
@@ -200,6 +221,35 @@ async def mark_used(session: AsyncSession, note_id: uuid.UUID) -> Note:
     note.use_count += 1
     note.last_used_at = now_utc()
     await session.flush()
+    await session.refresh(note)
+    return note
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Lưu trữ
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def archive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+    """Ẩn note khỏi danh sách mặc định mà không đưa vào thùng rác.
+
+    Idempotent: bấm đúp hoặc hai tab cùng bấm không được ra lỗi, và phải giữ
+    archived_at của lần đầu. Note đã xoá mềm thì 404 (get_note).
+    """
+    note = await get_note(session, note_id)
+    if note.archived_at is None:
+        note.archived_at = now_utc()
+        await session.flush()
+    await session.refresh(note)
+    return note
+
+
+async def unarchive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+    """Đưa note về danh sách đang dùng. Idempotent như archive_note."""
+    note = await get_note(session, note_id)
+    if note.archived_at is not None:
+        note.archived_at = None
+        await session.flush()
     await session.refresh(note)
     return note
 
