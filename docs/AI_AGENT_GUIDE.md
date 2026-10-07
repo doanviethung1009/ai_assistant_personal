@@ -126,3 +126,17 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 ### D. GitHub Copilot
 - **Cách dùng:** Mở VS Code, bật Copilot Chat.
 - **Thao tác:** Gõ `@workspace` kèm câu hỏi. Copilot sẽ tự động bị ép đọc luật từ `.github/copilot-instructions.md`. Mặc dù không tự trị (autonomous) mạnh như Cursor, Copilot vẫn sẽ code đúng chuẩn convention của dự án.
+
+---
+
+## 8. Quản lý Nhân cách (Agent Roles / Personas)
+
+Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn các "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
+
+- 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, cực kỳ am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.
+- ⚙️ **`backend-engineer.md`**: Kiến trúc sư hệ thống, tối ưu FastAPI, bảo mật Database, kiểm soát luồng dữ liệu khắt khe.
+- 🛡️ **`qa-tester.md`**: Kẻ đập phá hệ thống. Chuyên soi rác, bắt lỗi PR (`pr-review`) và đấm bay những đoạn code kém an toàn.
+
+**Cách sử dụng:**
+Khi giao việc, thay vì dùng Agent mặc định (Fullstack Architect từ `AGENTS.md`), bạn có thể gọi đích danh một nhân cách:
+> *"Hãy đóng vai `@.agents/roles/qa-tester.md` và chạy skill pr-review cho cái nhánh tôi vừa push!"*

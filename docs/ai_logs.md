@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:15] | Category: [TOOL]
+- **Prompt:** "vậy cũng nên bổ sung rule, skill và md cho các agent với các chức năng khác nhau nhỉ? đẻ tương lai có thể áp dụng ngay"
+- **Xử lý:**
+  - Khởi tạo kiến trúc Quản lý Nhân cách (Agent Roles/Personas) cho mô hình Multi-Agent tương lai.
+  - Tạo thư mục `.agents/roles/` và 3 file định danh: `frontend-engineer.md`, `backend-engineer.md`, và `qa-tester.md`.
+  - Cập nhật tài liệu `docs/AI_AGENT_GUIDE.md` (Mục 8) hướng dẫn người dùng cách gọi đích danh các nhân cách chuyên biệt này.
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã tạo nền móng vững chắc cho hệ thống Multi-Agent (Nhiều AI làm chung). Tương lai dự án có thể dễ dàng phân công task riêng biệt cho Front/Back/QA.
+
+---
+
 ### [07-10-2026 13:14] | Category: [TOOL]
 - **Prompt:** "xem có rules, md hay skill cho AI agent để QC QA cho PR chưa? hãy bổ sung và update lại tài liệu"
 - **Xử lý:**
