@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- update label to Cẩm nang AI (Agent IDEs) (`78fcd86`)
 - áp dụng popup xem chi tiết cho cả phần phản hồi của ai trong trace log (`2f6a230`)
 - sửa nhãn menu thành AI (Agent IDEs) (`dd4dda4`)
 - đổi tên nhãn cẩm nang tổng quát thành cẩm nang agent ides (`b709e43`)

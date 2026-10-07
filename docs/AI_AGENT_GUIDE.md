@@ -133,11 +133,13 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 
 Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn 6 "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
 
+- 📐 **`software-architect.md`**: Kiến trúc sư hệ thống (System Design), định hình luồng dữ liệu, vẽ sơ đồ và quyết định công nghệ trước khi code.
+- 🔐 **`security-auditor.md`**: Chuyên gia an ninh mạng, rà soát lỗ hổng OWASP, kiểm toán tính năng Két bảo mật (Zero-Trust) và mã hoá.
 - 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.
-- ⚙️ **`backend-engineer.md`**: Kiến trúc sư hệ thống, tối ưu FastAPI, luồng dữ liệu khắt khe.
+- ⚙️ **`backend-engineer.md`**: Kỹ sư Server, tối ưu FastAPI, luồng dữ liệu khắt khe.
 - 🛡️ **`qa-tester.md`**: Kẻ đập phá hệ thống. Chuyên soi rác, bắt lỗi PR (`pr-review`) và test UAT.
 - 🗄️ **`database-architect.md`**: Bậc thầy PostgreSQL, viết migration (Alembic) an toàn, tối ưu Query.
-- 🐳 **`devops-engineer.md`**: Kỹ sư hạ tầng, nắm trùm Docker, CI/CD, Makefile và bảo mật Zero-Trust.
+- 🐳 **`devops-engineer.md`**: Kỹ sư hạ tầng, nắm trùm Docker, CI/CD, Makefile và bảo mật Server.
 - 🧠 **`ai-rag-engineer.md`**: Chuyên gia LLM, làm việc với Vector Database (pgvector) và Prompt Engineering.
 
 **Cách sử dụng (Gợi ý Prompts):**
