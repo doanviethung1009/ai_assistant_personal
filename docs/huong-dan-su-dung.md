@@ -209,7 +209,7 @@ thống có bộ chạy định kỳ.
 
 ## Sao lưu và chuyển máy
 
-Tab **Dữ liệu** cho tải về hai định dạng:
+Trang **Dữ liệu** có bốn tab: **Xuất dữ liệu**, **Nhập dữ liệu**, **Đồng bộ & Cấu hình**, **Vùng nguy hiểm**. Ở tab **Xuất dữ liệu** bạn tải về hai định dạng:
 
 | Định dạng | Dùng để |
 |---|---|
@@ -360,7 +360,7 @@ thành dấu gạch ngang để tag không bị phân mảnh thành nhiều bi�
 ## Tính năng Dữ liệu Nâng cao (Quest Data, Chrome History, Backups)
 
 ### 1. Đồng bộ Dữ liệu từ JIRA & Google Sheets
-Tại trang **Dữ liệu**, bạn có thể tải lên file Export (`.xlsx`, `.csv`) từ JIRA hoặc dán trực tiếp đường link **Google Sheets** (Lưu ý: Share ở chế độ "Bất kỳ ai có link đều xem được"). 
+Ở tab **Đồng bộ & Cấu hình** của trang **Dữ liệu**, bạn có thể tải lên file Export (`.xlsx`, `.csv`) từ JIRA hoặc dán trực tiếp đường link **Google Sheets** (Lưu ý: Share ở chế độ "Bất kỳ ai có link đều xem được"). 
 Hệ thống sẽ tự động bóc tách cực kỳ thông minh theo các nguyên tắc:
 - **Tự tạo Dự án theo Company:** Hệ thống tự động đọc cột `Company` trong file để sinh ra các Dự án tương ứng, và gán một màu sắc ngẫu nhiên tuyệt đẹp cho mỗi dự án mới.
 - **Tự động gắn Tag toàn diện:** Mỗi task sẽ được gắn sẵn tag từ các nguồn: cột `Company`, cột `Projects`, cột `Labels`, VÀ toàn bộ các từ nằm trong `[ngoặc vuông]` của Tiêu đề (Summary).
@@ -368,13 +368,15 @@ Hệ thống sẽ tự động bóc tách cực kỳ thông minh theo các nguy�
 
 ### 2. Trích xuất Lịch sử Web (Chrome)
 Hệ thống có khả năng sao lưu lịch sử duyệt web của Google Chrome cục bộ trên máy tính (hỗ trợ Mac, Windows, Linux).
-- Vào trang **Dữ liệu** -> Bấm nút **Trích xuất Chrome History**.
+- Vào trang **Dữ liệu**, tab **Nhập dữ liệu** -> Bấm nút **Trích xuất Chrome History**.
 - Chuyển sang tab **Lịch sử duyệt web**: Tại đây, bạn có thể xem lại toàn bộ các link đã từng truy cập, kết hợp với bộ lọc thời gian (1 ngày, 3 ngày, 1 tháng...) và thanh tìm kiếm cực kỳ mượt mà. Tất cả dữ liệu đều được format hiển thị chuẩn múi giờ UTC+7.
 
 ### 3. Vùng Nguy Hiểm & Cơ chế Auto-Backup
-Nằm dưới cùng trang **Dữ liệu**, khu vực "Danger Zone" cho phép bạn:
+Nằm ở tab **Vùng nguy hiểm** của trang **Dữ liệu** ("Danger Zone"), cho phép bạn:
 - Xóa tùy chọn từng phần: Chỉ xóa Task, Dự án, Sổ tay, hoặc Lịch sử Chrome thay vì phải xóa toàn bộ.
 - **Auto-Backup thông minh:** Mọi thao tác xóa dữ liệu tại khu vực này đều kích hoạt hệ thống **Tự động chụp lại bản sao lưu (Backup)** trước khi thực thi. 
   - Bản sao lưu sẽ được lưu thành file JSON kèm timestamp tại thư mục `data/backups/`. 
   - Để tiết kiệm dung lượng, hệ thống luôn tự động dọn rác và **chỉ giữ lại duy nhất 1 bản backup gần nhất**.
 - Nếu bạn lỡ tay xóa nhầm, chỉ cần lấy file backup đó và tải lên ở khung **Khôi phục dữ liệu từ Backup (JSON)** (Màu cam) là mọi thứ sẽ phục hồi nguyên trạng 100%.
+
+> **Lưu ý khi dùng nguồn dữ liệu Core API (Postgres):** các phần Nhập JSON, Nhập file, Khôi phục, Jira, URL đồng bộ và Người dùng hiện tại chỉ chạy ở chế độ file/memory. Ở chế độ Core API trang sẽ hiện thông báo thay vì cho bấm rồi từ chối.
