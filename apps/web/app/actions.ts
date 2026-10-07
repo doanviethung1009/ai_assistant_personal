@@ -655,6 +655,8 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   }
 
   let expectReplaced: number | undefined;
+  let expectSha256: string | undefined;
+  let secret: string | undefined;
   if (!dryRun) {
     const raw = String(formData.get("expect_replaced") ?? "");
     // Chỉ nhận số nguyên không âm ở dạng chữ số thuần, không để "1e3" hay " 5" lọt qua.
@@ -662,6 +664,19 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
       return { ok: false, error: "Thiếu hoặc sai số bản ghi dự kiến bị ghi đè. Hãy bấm Kiểm tra trước." };
     }
     expectReplaced = Number(raw);
+
+    const sha = String(formData.get("expect_sha256") ?? "");
+    if (!/^[0-9a-f]{64}$/i.test(sha)) {
+      return { ok: false, error: "Thiếu mã băm file của lần Kiểm tra. Hãy bấm Kiểm tra trước." };
+    }
+    expectSha256 = sha.toLowerCase();
+
+    const rawSecret = formData.get("import_secret");
+    // ASCII in được: giá trị đi vào header HTTP, ký tự lạ làm fetch ném lỗi chứa giá trị.
+    if (typeof rawSecret !== "string" || !/^[\x20-\x7e]{1,256}$/.test(rawSecret)) {
+      return { ok: false, error: "Chưa nhập mật khẩu nhập dữ liệu (hoặc chứa ký tự không hợp lệ)." };
+    }
+    secret = rawSecret;
   }
 
   let text: string;
@@ -672,7 +687,7 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   }
 
   try {
-    const options = { dryRun, expectReplaced };
+    const options = { dryRun, expectReplaced, expectSha256, secret };
     const report =
       kind === "datafile"
         ? await api.importDataFile(text, options)
@@ -682,9 +697,19 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
     return { ok: true, report };
   } catch (error) {
     if (error instanceof CoreApiError) {
+      if (error.status === 403) {
+        // Thông điệp tự viết, không chuyển tiếp detail của core và không nhắc lại giá trị đã gõ.
+        return {
+          ok: false,
+          status: 403,
+          error:
+            "Mật khẩu nhập sai, hoặc core chưa cấu hình IMPORT_COMMIT_SECRET (đặt biến này trong .env của core rồi khởi động lại api).",
+        };
+      }
       return { ok: false, error: error.message, status: error.status };
     }
-    console.error("nhập vào Postgres thất bại", error);
+    // Chỉ log tên lỗi, không log cả object: tránh vô tình ghi header chứa mật khẩu.
+    console.error("nhập vào Postgres thất bại", error instanceof Error ? error.name : "unknown");
     return { ok: false, error: "Không gọi được core API. Kiểm tra service api." };
   }
 }

@@ -197,6 +197,13 @@ export interface ImportCallOptions {
   dryRun: boolean;
   /** Bắt buộc khi dryRun=false: tổng số bản ghi sẽ bị ghi đè, lấy từ lần Kiểm tra. */
   expectReplaced?: number;
+  /** Bắt buộc khi dryRun=false: `file_sha256` của báo cáo Kiểm tra (chứng minh cùng một file). */
+  expectSha256?: string;
+  /**
+   * Bắt buộc khi dryRun=false: mật khẩu IMPORT_COMMIT_SECRET. Chỉ đi qua header,
+   * KHÔNG đưa vào URL, log hay thông báo lỗi.
+   */
+  secret?: string;
 }
 
 /**
@@ -226,11 +233,21 @@ async function postImport(
       return Promise.reject(new CoreApiError("Thiếu số bản ghi dự kiến bị ghi đè (expect_replaced)", 400));
     }
     params.set("expect_replaced", String(options.expectReplaced));
+    if (!options.expectSha256 || !/^[0-9a-f]{64}$/i.test(options.expectSha256)) {
+      return Promise.reject(new CoreApiError("Thiếu mã băm file của lần Kiểm tra (expect_sha256)", 400));
+    }
+    if (!options.secret) {
+      return Promise.reject(new CoreApiError("Thiếu mật khẩu nhập", 400));
+    }
+    params.set("expect_sha256", options.expectSha256.toLowerCase());
   }
   const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  const headers: Record<string, string> = {};
+  if (!options.dryRun && options.secret) headers["X-Import-Secret"] = options.secret;
   return coreFetch<ImportReport>(`/api/v1/import/${endpoint}?${params.toString()}`, {
     method: "POST",
     body,
+    headers,
   });
 }
 

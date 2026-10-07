@@ -70,6 +70,9 @@ export function CoreImportPanel() {
   const [error, setError] = useState<string | null>(null);
   const [ackReplace, setAckReplace] = useState(false);
   const [ackOlder, setAckOlder] = useState(false);
+  // Mật khẩu IMPORT_COMMIT_SECRET gõ tay cho mỗi lần Nhập thật. Chỉ nằm trong state của
+  // component: không lưu localStorage, không đưa vào URL, và bị xoá sau mỗi lần thử nhập.
+  const [secret, setSecret] = useState("");
   const [pending, startTransition] = useTransition();
 
   function resetResult() {
@@ -79,6 +82,7 @@ export function CoreImportPanel() {
     setError(null);
     setAckReplace(false);
     setAckOlder(false);
+    setSecret("");
   }
 
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -94,7 +98,9 @@ export function CoreImportPanel() {
   }
 
   function messageFor(status: number | undefined, fallback: string): string {
-    if (status === 409) return "Đang có một lần nhập khác chạy. Đợi nó xong rồi Kiểm tra lại.";
+    if (status === 409) {
+      return "Đang có một lần nhập khác chạy, hoặc dữ liệu đang bị khoá quá lâu. Đợi một chút rồi Kiểm tra lại.";
+    }
     if (status === 413) return "File quá lớn so với giới hạn của core API (10 MB).";
     return fallback;
   }
@@ -110,11 +116,16 @@ export function CoreImportPanel() {
       // Số đã Kiểm tra, không phải số người dùng gõ: core sẽ đối chiếu với thực tế.
       if (!report || checkedKey !== key) return;
       form.set("expect_replaced", String(sum(report, "replaced")));
+      // Mã băm của file lúc Kiểm tra: core từ chối nếu file gửi lên khác file đã xem báo cáo.
+      form.set("expect_sha256", report.file_sha256);
+      form.set("import_secret", secret);
     }
 
     setError(null);
     startTransition(async () => {
       const result = await importToCoreAction(form);
+      // Xoá mật khẩu sau MỌI lần thử Nhập thật (đúng, sai hay lỗi): không để nó nằm lại trong state.
+      if (!dryRun) setSecret("");
       if (!result.ok || !result.report) {
         setError(messageFor(result.status, result.error ?? "Nhập thất bại"));
         return;
@@ -141,6 +152,8 @@ export function CoreImportPanel() {
       setAckOlder(false);
       if (next.issues.some((i) => i.code === "replace_count_mismatch")) {
         setError("Dữ liệu trong Postgres đã thay đổi sau lần Kiểm tra, hãy Kiểm tra lại.");
+      } else if (next.issues.some((i) => i.code === "file_changed_since_dry_run")) {
+        setError("File gửi lên khác với file đã Kiểm tra. Hãy Kiểm tra lại rồi mới Nhập thật.");
       } else {
         setError("Core từ chối nhập, không có gì được ghi. Xem các lỗi bên dưới rồi Kiểm tra lại.");
       }
@@ -156,6 +169,7 @@ export function CoreImportPanel() {
     !!report &&
     report.dry_run &&
     report.errors === 0 &&
+    secret.length > 0 &&
     (replaced === 0 || ackReplace) &&
     (older === 0 || ackOlder);
 
@@ -285,6 +299,25 @@ export function CoreImportPanel() {
                 Cần Kiểm tra lại: file hoặc loại file đã đổi so với lần Kiểm tra gần nhất.
               </p>
             ) : null}
+            <div>
+              <label htmlFor="core-import-secret" className={LABEL_CLASS}>
+                Mật khẩu nhập dữ liệu
+              </label>
+              <input
+                id="core-import-secret"
+                type="password"
+                autoComplete="off"
+                value={secret}
+                disabled={pending}
+                onChange={(e) => setSecret(e.target.value)}
+                className={INPUT_CLASS}
+              />
+              <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                Là giá trị <code>IMPORT_COMMIT_SECRET</code> trong <code>.env</code> của core (
+                <code>make env</code> sinh sẵn; <code>.env</code> có từ trước thì tự thêm biến này
+                rồi khởi động lại api). Chỉ cần khi Nhập thật, không cần khi Kiểm tra.
+              </p>
+            </div>
             <div>
               <button
                 type="button"
