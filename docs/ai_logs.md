@@ -734,3 +734,14 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - `docs/MULTI_AGENT_WORKFLOW.md`: thêm phần biến thể Claude Code (bảng đối chiếu role với subagent, quy trình 7 bước, prompt mẫu, khi nào không cần subagent).
   - `docs/huong-dan-su-dung.md`: thêm mục "Làm việc với AI agent để phát triển dự án". Cả hai tài liệu đã có trong `docs.ts` nên không cần đăng ký thêm.
 - **Phản hồi:** Đã bổ sung hai tài liệu, hiện trên tab Tài liệu.
+
+---
+
+### [07-10-2026 19:00] | Category: [TOOL]
+- **Prompt:** "bổ sung subagent security-auditor, spec mẫu thật, và tối ưu kiến trúc thư mục"
+- **Xử lý:**
+  - Dọn thư mục: chuyển 71 `patch_*`/`fix_*` vào `scripts/patches/archive/` (kèm README), chuyển `vault-crypto-check.ts` sang `scripts/checks/` và sửa tham chiếu trong `docs/VAULT.md`; giữ đường dẫn import tương đối vẫn đúng.
+  - Thêm `.claude/agents/security-auditor.md`, `docs/specs/EXAMPLE-note-archive.md` (bám model/route/action thật của Note) và đăng ký trong `docs.ts`.
+  - Viết lại cây thư mục trong `docs/PROJECT_STRUCTURE.md` (trước thiếu `.claude/`, `.codex/`, `infra/`, `specs/`); cập nhật bảng trong `CLAUDE.md`.
+  - Không chuyển file trong `docs/` vì AGENTS.md, rules, hook đang tham chiếu cứng `docs/<TÊN>.md`; file Excel trong `task/` để nguyên vì chưa rõ có dữ liệu Jira nội bộ.
+- **Phản hồi:** Thư mục gọn hơn, 6 subagent, có spec mẫu.

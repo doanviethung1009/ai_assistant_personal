@@ -8,14 +8,34 @@ Dưới đây là sơ đồ tổng quan của dự án. Mọi logic chính đề
 
 ```text
 ai_assistant_personal/
-├── .agents/           # 🤖 Cấu hình cho AI (Rules, Skills, Prompts)
+├── CLAUDE.md          # 🚪 Điểm vào của Claude Code (import AGENTS.md)
+├── AGENTS.md          # 📜 Luật chung cho mọi AI agent
+├── Makefile           # 🔧 Mọi thao tác vận hành (make = xem danh sách)
+├── docker-compose*.yml# 🐳 Stack dev / prod / LAN
+├── .agents/           # 🤖 Nguồn thật của AI config (dùng chung nhiều IDE)
+│   ├── rules/         #    Luật code, nạp theo file đang sửa
+│   ├── skills/        #    Quy trình đóng gói (commit, migration, QC...)
+│   └── roles/         #    9 vai "đóng vai" cho IDE không có subagent
+├── .claude/           # 🧠 Cấu hình riêng Claude Code
+│   ├── agents/        #    Subagent thật (architect, backend-dev, ... security-auditor)
+│   ├── hooks/         #    guard-bash.sh, no-patch-scripts.sh
+│   ├── settings.json  #    Quyền allow/ask/deny + hook
+│   ├── rules  ──►  ../.agents/rules     (symlink)
+│   └── skills ──►  ../.agents/skills    (symlink)
+├── .codex/            # Cấu hình cho OpenAI Codex
 ├── apps/              # 💻 Mã nguồn chính của hệ thống
-│   ├── core/          # ⚙️ Backend (Python / FastAPI / SQLAlchemy)
+│   ├── core/          # ⚙️ Backend (Python / FastAPI / SQLAlchemy / Alembic)
 │   └── web/           # 🎨 Frontend (Next.js / React / Tailwind)
-├── data/              # 🗄️ Nơi lưu trữ dữ liệu trích xuất (JSON files)
-├── docs/              # 📚 Tài liệu dự án (Markdown)
-├── infra/             # 🏗️ Cấu hình hạ tầng (Docker, Server)
-└── scripts/           # 🛠️ Script tiện ích & Các patch sửa lỗi tạm
+├── data/              # 🗄️ Dữ liệu chạy thật (JSON, gitignore, KHÔNG commit)
+├── docs/              # 📚 Tài liệu (Markdown), đăng ký ở apps/web/lib/docs.ts
+│   └── specs/         #    Spec của architect: _TEMPLATE.md và ví dụ EXAMPLE-*.md
+├── infra/             # 🏗️ Cấu hình hạ tầng (postgres, litellm, monitoring)
+├── scripts/           # 🛠️ Script vận hành
+│   ├── *.sh, *.js     #    Tiện ích đang dùng (release, bootstrap, add-ai-log...)
+│   ├── checks/        #    Script kiểm thử chạy được nhiều lần (vault-crypto-check.ts)
+│   ├── git-hooks/     #    Hook kiểm tra commit message
+│   └── patches/       #    Script một lần, CHỈ khi thật cần; lịch sử đã chạy ở archive/
+└── task/              # 📎 File Excel mẫu phiếu Jira (không liên quan tới code chạy)
 ```
 
 ### 🎨 Frontend (`apps/web/`)
@@ -49,7 +69,7 @@ API Server xử lý logic nghiệp vụ và tương tác Database.
 ### Các thư mục hỗ trợ khác
 - **`data/`**: Chứa các file `*.json` sinh ra từ quá trình cào dữ liệu (như `chrome-history.json`).
 - **`docs/`**: Toàn bộ tài liệu mô tả kiến trúc, hướng dẫn sử dụng và API.
-- **`scripts/`**: Chứa các bash script hỗ trợ (như `release.sh`) và đặc biệt là thư mục con `scripts/patches/` chứa các script sửa lỗi tạm thời (`patch_*.py`).
+- **`scripts/`**: Script vận hành (như `release.sh`). `scripts/checks/` là script kiểm thử dùng lại được. `scripts/patches/` chỉ dành cho script một lần *thật sự* cần thiết; 71 script `patch_*`/`fix_*` cũ đã chạy xong nằm ở `scripts/patches/archive/` (không chạy lại). Claude Code bị hook chặn tạo `patch_*`/`fix_*` mới, hãy dùng Edit trực tiếp.
 
 ## 🤖 Các file nào tự động nạp (load) khi Prompt AI?
 

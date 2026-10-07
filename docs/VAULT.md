@@ -72,4 +72,4 @@ sẽ điền sẵn các trường thường dùng. Tìm kiếm chỉ quét trư�
 | `apps/web/components/vault-client.tsx` | UI: đặt/mở khoá, thẻ mục, che/hiện, form |
 | `apps/web/components/vault-recovery.tsx` | Màn hiện mã khôi phục, form quên mật khẩu |
 | `apps/web/app/vault/page.tsx` | Trang `/vault` |
-| `scripts/patches/vault-crypto-check.ts` | Kiểm thử vòng đời mã hoá: `npx tsx …` |
+| `scripts/checks/vault-crypto-check.ts` | Kiểm thử vòng đời mã hoá: `npx tsx …` |
