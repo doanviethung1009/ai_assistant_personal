@@ -1,6 +1,6 @@
 # Spec: Chuyển dữ liệu chế độ file sang Postgres qua core API
 
-- Trạng thái: **DRAFT v2.1** (User đã loại Vault khỏi Postgres; chờ User duyệt pha)
+- Trạng thái: **CHỐT v2.1** (User duyệt cả bốn pha B1-B4 và mọi quyết định còn lại theo đề xuất của architect, Vault không vào Postgres; thứ tự B1 → B2 → B4, B3 song song được)
 - Tác giả: architect
 - Ngày: 2026-10-07 (v1), cập nhật v2 cùng ngày
 - Nhánh lúc viết: `feat/data-tab-cleanup`
