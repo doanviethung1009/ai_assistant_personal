@@ -44,6 +44,8 @@ make test    # pytest trên database <POSTGRES_DB>_test
 bash scripts/test-backend.sh -k ai_log -x   # truyền tham số cho pytest
 ```
 
+> **Hàng rào:** `conftest.py` từ chối chạy (`pytest.exit`) nếu tên database trong `TEST_DATABASE_URL` không kết thúc bằng `_test`, và script thoát nếu URL test trùng URL dev.
+>
 > **Cảnh báo:** test DB `TRUNCATE` các bảng nghiệp vụ sau mỗi test. `scripts/test-backend.sh` luôn dùng database `<POSTGRES_DB>_test` riêng để không đụng dữ liệu dev. Không tự đặt `TEST_DATABASE_URL` trỏ vào database thật.
 
 Không có Docker thì dựng một Postgres tạm, tạo database **UTF8**, rồi:
@@ -51,7 +53,7 @@ Không có Docker thì dựng một Postgres tạm, tạo database **UTF8**, r�
 ```bash
 cd apps/core
 uv sync
-TEST_DATABASE_URL=postgresql+asyncpg://user:pw@localhost:5432/mytest uv run pytest -q
+TEST_DATABASE_URL=postgresql+asyncpg://user:pw@localhost:5432/mine_test uv run pytest -q
 ```
 
 ## 5. Viết test mới
@@ -63,6 +65,8 @@ TEST_DATABASE_URL=postgresql+asyncpg://user:pw@localhost:5432/mytest uv run pyte
 
 ## 6. Giới hạn hiện tại
 
-- Chưa có `uv.lock` trong `apps/core`, nên CI và image đang resolve dependency mỗi lần. Nên chạy `make lock` rồi commit.
+- `apps/core/uv.lock` đã được commit và CI dùng `uv sync --locked`. Sửa `pyproject.toml` thì phải chạy `make lock` rồi commit lại, nếu không CI fail.
+- `scripts/test-backend.sh` suy tên DB test từ `DATABASE_URL` của container api, còn tạo DB thì dùng `POSTGRES_DB` của container postgres; hai giá trị khớp nhau vì compose dùng chung biến.
+- GitHub Actions đang ghim theo tag (`@v4`, `@v5`), chưa ghim theo SHA.
 - Chưa có test cho `get_agenda`, `get_stats`, Jira sync, phần web (chưa có Vitest hay Playwright), và `make smoke` chưa nằm trong CI vì cần cả stack.
 - Rate limit bị tắt trong test (`RATE_LIMIT_ENABLED=false`) vì test không có Redis.

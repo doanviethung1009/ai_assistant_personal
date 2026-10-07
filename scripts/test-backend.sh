@@ -32,5 +32,11 @@ INNER
 # thành `<tên>_test`, giữ nguyên user, mật khẩu, host.
 $DC exec -T api sh -s -- "$@" <<'INNER'
 export TEST_DATABASE_URL="$(printf '%s' "$DATABASE_URL" | sed -E 's#/([^/?]+)$#/\1_test#')"
+# Hàng rào: nếu sed không khớp (URL có query string...) thì URL test trùng URL dev,
+# và test sẽ TRUNCATE dữ liệu thật. Dừng ngay.
+if [ "$TEST_DATABASE_URL" = "$DATABASE_URL" ]; then
+  echo "DỪNG: không suy ra được database test từ DATABASE_URL." >&2
+  exit 2
+fi
 exec pytest -q "$@"
 INNER

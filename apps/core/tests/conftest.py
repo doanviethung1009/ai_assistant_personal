@@ -22,8 +22,28 @@ import pytest_asyncio
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL")
 
+
+def _require_test_database(url: str) -> None:
+    """Từ chối chạy nếu tên database không kết thúc bằng `_test`.
+
+    Test DB TRUNCATE các bảng nghiệp vụ. Đây là hàng rào cuối cùng chống việc
+    TEST_DATABASE_URL vô tình trỏ vào database dev/thật (URL có query string,
+    sed đổi tên không khớp, tự đặt tay sai...).
+    """
+    from sqlalchemy.engine import make_url
+
+    name = make_url(url).database or ""
+    if not name.endswith("_test"):
+        pytest.exit(
+            f"TEST_DATABASE_URL trỏ vào database '{name}'. Tên phải kết thúc bằng '_test' "
+            "để chắc chắn không phải database thật.",
+            returncode=2,
+        )
+
+
 # Phải đặt TRƯỚC khi import app.*: Settings đọc env ngay khi module nạp.
 if TEST_DATABASE_URL:
+    _require_test_database(TEST_DATABASE_URL)
     os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:5432/test")
 os.environ.setdefault("API_KEY", "test-api-key-0123456789")

@@ -48,3 +48,14 @@ async def test_list_filter_and_pagination(client: httpx.AsyncClient) -> None:
     only_web = (await client.get("/api/v1/ai-logs", params={"category": "web"})).json()
     assert only_web["total"] == 3
     assert {i["category"] for i in only_web["items"]} == {"web"}
+
+
+async def test_list_is_newest_first_and_offset_skips(client: httpx.AsyncClient) -> None:
+    for i in range(3):
+        await client.post("/api/v1/ai-logs", json=_payload("api", f"p{i}"))
+
+    first = (await client.get("/api/v1/ai-logs", params={"limit": 1})).json()["items"][0]
+    assert first["prompt"] == "p2"  # mới nhất trước
+
+    second = (await client.get("/api/v1/ai-logs", params={"limit": 1, "offset": 1})).json()
+    assert second["items"][0]["prompt"] == "p1"

@@ -57,3 +57,12 @@ def test_app_imports_and_exposes_ai_logs_routes() -> None:
     assert "/api/v1/ai-logs" in paths
     assert "/api/v1/tasks" in paths
     assert "/api/v1/notes" in paths
+
+
+def test_refuses_database_without_test_suffix() -> None:
+    """Hàng rào chống TRUNCATE nhầm database thật."""
+    from .conftest import _require_test_database
+
+    with pytest.raises(pytest.exit.Exception):
+        _require_test_database("postgresql+asyncpg://u:p@localhost:5432/builder_ai")
+    _require_test_database("postgresql+asyncpg://u:p@localhost:5432/builder_ai_test")

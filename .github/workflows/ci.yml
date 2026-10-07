@@ -55,8 +55,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-      - name: Cài dependency (kèm nhóm dev)
-        run: uv sync
+      - name: Cài dependency đúng theo uv.lock (kèm nhóm dev)
+        # --locked: lock lệch pyproject thì CI fail, không tự resolve lại. Sửa
+        # pyproject.toml thì chạy `make lock` rồi commit uv.lock.
+        run: uv sync --locked
       - name: Lint (cùng lệnh với `make lint`)
         run: uv run ruff check app migrations tests
       - name: Migration lên head
