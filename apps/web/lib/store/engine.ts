@@ -318,7 +318,6 @@ function makeNote(partial: Partial<StoredNote> & { title: string; content: strin
     created_at: created,
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
-    assignee: partial.assignee ?? null,
   };
 }
 
