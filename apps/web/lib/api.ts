@@ -193,7 +193,7 @@ export async function setCurrentUsersApi(names: string[]): Promise<void> {
 
 export function getAgenda(referenceDate?: string): Promise<Agenda> {
   if (IS_LOCAL) return local(() => engine.getAgenda());
-  const query = referenceDate ? `?reference_date=${referenceDate}` : "";
+  const query = referenceDate ? `?reference_date=${encodeURIComponent(referenceDate)}` : "";
   return coreFetch<Agenda>(`/api/v1/tasks/agenda${query}`);
 }
 
@@ -234,7 +234,7 @@ export function listTasks(options: ListTasksOptions = {}): Promise<Paged<Task>> 
 
 export function getTask(id: string): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.getTask(id));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}`);
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}`);
 }
 
 export function listProjects(includeArchived = false): Promise<Project[]> {
@@ -276,7 +276,7 @@ export function patchTask(
   input: Record<string, unknown>,
 ): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.patchTask(id, input));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -293,7 +293,7 @@ export function deleteTask(id: string, permanent = false): Promise<void> {
     );
   }
   const query = permanent ? "?permanent=true" : "";
-  return coreFetch<void>(`/api/v1/tasks/${id}${query}`, { method: "DELETE" });
+  return coreFetch<void>(`/api/v1/tasks/${pathId(id)}${query}`, { method: "DELETE" });
 }
 
 // ── Thùng rác ──────────────────────────────────────────────────────────
@@ -324,7 +324,7 @@ export function listTrash(limit = 100, offset = 0): Promise<TrashResponse> {
 
 export function restoreTask(id: string): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.restoreTask(id));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}/restore`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}/restore`, {
     method: "POST",
   });
 }
@@ -332,7 +332,7 @@ export function restoreTask(id: string): Promise<TaskDetail> {
 /** Xoá vĩnh viễn một task đang ở trong thùng rác. */
 export function purgeTask(id: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.purgeTask(id));
-  return coreFetch<void>(`/api/v1/tasks/${id}?permanent=true`, {
+  return coreFetch<void>(`/api/v1/tasks/${pathId(id)}?permanent=true`, {
     method: "DELETE",
   });
 }
@@ -367,7 +367,7 @@ export function logTime(
   note?: string | null,
 ): Promise<TaskDetail> {
   if (IS_LOCAL) return local(() => engine.logTime(id, minutes, note));
-  return coreFetch<TaskDetail>(`/api/v1/tasks/${id}/time`, {
+  return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}/time`, {
     method: "POST",
     body: JSON.stringify({ minutes, note: note ?? null }),
   });
@@ -385,7 +385,7 @@ export function patchProject(
   },
 ): Promise<Project> {
   if (IS_LOCAL) return local(() => engine.patchProject(id, input));
-  return coreFetch<Project>(`/api/v1/projects/${id}`, {
+  return coreFetch<Project>(`/api/v1/projects/${pathId(id)}`, {
     method: "PATCH",
     body: JSON.stringify(input),
   });
@@ -398,7 +398,7 @@ export function deleteProject(id: string): Promise<void> {
       return undefined as any;
     });
   }
-  return coreFetch<void>(`/api/v1/projects/${id}`, {
+  return coreFetch<void>(`/api/v1/projects/${pathId(id)}`, {
     method: "DELETE",
   });
 }
