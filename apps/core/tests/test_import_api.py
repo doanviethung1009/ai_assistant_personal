@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.session import SessionFactory, engine
+from tests.conftest import IMPORT_SECRET
 
 pytestmark = pytest.mark.db
 
@@ -17,6 +19,10 @@ FIXTURES = Path(__file__).parent / "fixtures"
 DATAFILE = (FIXTURES / "datafile_sample.json").read_bytes()
 AI_LOGS = (FIXTURES / "ai_logs_sample.json").read_bytes()
 JSON_HEADERS = {"Content-Type": "application/json"}
+DATAFILE_SHA = hashlib.sha256(DATAFILE).hexdigest()
+# Nhập thật cần: expect_replaced + expect_sha256 (từ dry-run) và mật khẩu nhập.
+COMMIT_PARAMS = {"dry_run": "false", "expect_replaced": "0", "expect_sha256": DATAFILE_SHA}
+COMMIT_HEADERS = {**JSON_HEADERS, "X-Import-Secret": IMPORT_SECRET}
 
 
 async def _count(table: str) -> int:
@@ -50,28 +56,117 @@ async def test_default_is_dry_run_and_writes_nothing(client: httpx.AsyncClient) 
     assert await _count("import_runs") == 0
 
 
-async def test_real_import_needs_expect_replaced(client: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize(
+    "params",
+    [
+        {"dry_run": "false"},
+        {"dry_run": "false", "expect_replaced": "0"},
+        {"dry_run": "false", "expect_sha256": DATAFILE_SHA},
+    ],
+)
+async def test_real_import_needs_expect_replaced_and_sha(
+    client: httpx.AsyncClient, params: dict[str, str]
+) -> None:
     resp = await client.post(
         "/api/v1/import/datafile",
-        params={"dry_run": "false"},
+        params=params,
         content=DATAFILE,
-        headers=JSON_HEADERS,
+        headers=COMMIT_HEADERS,
     )
     assert resp.status_code == 422
     assert await _count("tasks") == 0
 
 
+async def test_dry_run_report_sha_matches_body(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/v1/import/datafile", content=DATAFILE, headers=JSON_HEADERS)
+    assert resp.json()["file_sha256"] == DATAFILE_SHA
+
+
+async def test_commit_with_wrong_sha_is_refused(client: httpx.AsyncClient) -> None:
+    params = {**COMMIT_PARAMS, "expect_sha256": "0" * 64}
+    resp = await client.post(
+        "/api/v1/import/datafile", params=params, content=DATAFILE, headers=COMMIT_HEADERS
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["committed"] is False
+    assert "file_changed_since_dry_run" in {i["code"] for i in body["issues"]}
+    assert await _count("tasks") == 0
+
+
+async def test_commit_requires_secret(client: httpx.AsyncClient) -> None:
+    post = {"params": COMMIT_PARAMS, "content": DATAFILE}
+    missing = await client.post("/api/v1/import/datafile", headers=JSON_HEADERS, **post)
+    wrong = await client.post(
+        "/api/v1/import/datafile",
+        headers={**JSON_HEADERS, "X-Import-Secret": "sai-mat-khau-sai-mat-khau"},
+        **post,
+    )
+    non_ascii = await client.post(
+        "/api/v1/import/datafile",
+        headers={**JSON_HEADERS, "X-Import-Secret": "mật-khẩu".encode()},
+        **post,
+    )
+    assert (missing.status_code, wrong.status_code, non_ascii.status_code) == (403, 403, 403)
+    # Không echo bí mật đúng lẫn sai trong thông điệp.
+    for resp in (missing, wrong, non_ascii):
+        assert IMPORT_SECRET not in resp.text
+        assert "sai-mat-khau" not in resp.text
+    assert await _count("tasks") == 0
+
+    ok = await client.post("/api/v1/import/datafile", headers=COMMIT_HEADERS, **post)
+    assert ok.status_code == 200
+    assert ok.json()["committed"] is True
+
+
+async def test_commit_disabled_when_secret_not_configured(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "import_commit_secret", None)
+    resp = await client.post(
+        "/api/v1/import/datafile",
+        params=COMMIT_PARAMS,
+        content=DATAFILE,
+        headers=COMMIT_HEADERS,
+    )
+    assert resp.status_code == 403
+    assert "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
+    assert await _count("tasks") == 0
+
+
+async def test_dry_run_needs_no_secret(client: httpx.AsyncClient) -> None:
+    resp = await client.post(
+        "/api/v1/import/datafile",
+        params={"dry_run": "true"},
+        content=DATAFILE,
+        headers=JSON_HEADERS,
+    )
+    assert resp.status_code == 200
+
+
+async def test_deeply_nested_json_is_422(client: httpx.AsyncClient) -> None:
+    resp = await client.post(
+        "/api/v1/import/datafile", content=b"[" * 200_000, headers=JSON_HEADERS
+    )
+    assert resp.status_code == 422
+    deep_object = b'{"a":' * 100_000
+    resp2 = await client.post("/api/v1/import/datafile", content=deep_object, headers=JSON_HEADERS)
+    assert resp2.status_code == 422
+
+
 async def test_real_import_then_rerun_is_noop(client: httpx.AsyncClient) -> None:
-    params = {"dry_run": "false", "expect_replaced": "0"}
+    params = COMMIT_PARAMS
     first = await client.post(
-        "/api/v1/import/datafile", params=params, content=DATAFILE, headers=JSON_HEADERS
+        "/api/v1/import/datafile", params=params, content=DATAFILE, headers=COMMIT_HEADERS
     )
     assert first.status_code == 200
     assert first.json()["committed"] is True
     assert await _count("tasks") == 3
 
     again = await client.post(
-        "/api/v1/import/datafile", params=params, content=DATAFILE, headers=JSON_HEADERS
+        "/api/v1/import/datafile", params=params, content=DATAFILE, headers=COMMIT_HEADERS
     )
     body = again.json()
     assert body["committed"] is True
@@ -145,9 +240,13 @@ async def test_error_row_returns_200_with_report(client: httpx.AsyncClient) -> N
 async def test_ai_logs_import_then_list(client: httpx.AsyncClient) -> None:
     resp = await client.post(
         "/api/v1/import/ai-logs",
-        params={"dry_run": "false", "expect_replaced": "0"},
+        params={
+            "dry_run": "false",
+            "expect_replaced": "0",
+            "expect_sha256": hashlib.sha256(AI_LOGS).hexdigest(),
+        },
         content=AI_LOGS,
-        headers=JSON_HEADERS,
+        headers=COMMIT_HEADERS,
     )
     assert resp.status_code == 200
     assert resp.json()["committed"] is True

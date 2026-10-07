@@ -40,6 +40,10 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("id", sa.UUID(), nullable=False),
+        # CHECK tường minh: `sa.Enum(native_enum=False)` không tự tạo CHECK ở DB.
+        sa.CheckConstraint(
+            "kind IN ('datafile', 'ai_logs')", name=op.f("ck_import_runs_kind_valid")
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_import_runs")),
     )
     op.create_index("ix_import_runs_created_at", "import_runs", ["created_at"], unique=False)
@@ -84,6 +88,13 @@ def upgrade() -> None:
             ["import_runs.id"],
             name=op.f("fk_import_audit_import_id_import_runs"),
             ondelete="CASCADE",
+        ),
+        sa.CheckConstraint(
+            "entity IN ('project', 'task', 'task_event', 'note', 'ai_log')",
+            name=op.f("ck_import_audit_entity_valid"),
+        ),
+        sa.CheckConstraint(
+            "action IN ('created', 'replaced')", name=op.f("ck_import_audit_action_valid")
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_import_audit")),
     )

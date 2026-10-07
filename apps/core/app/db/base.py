@@ -25,10 +25,15 @@ class Base(DeclarativeBase):
 
 
 def enum_column(enum_cls: type, name: str) -> SAEnum:
-    """Cột enum lưu dạng VARCHAR + CHECK, không dùng native enum của Postgres.
+    """Cột enum lưu dạng VARCHAR, không dùng native enum của Postgres.
 
-    Lý do: thêm giá trị mới chỉ cần sửa CHECK constraint, không phải ALTER TYPE
-    với các ràng buộc về transaction mà nó kéo theo.
+    Lý do: thêm giá trị mới không phải ALTER TYPE với các ràng buộc về
+    transaction mà nó kéo theo.
+
+    LƯU Ý: helper này KHÔNG sinh CHECK constraint ở DB (SQLAlchemy 2.0 đặt
+    `create_constraint=False` mặc định); giá trị chỉ được kiểm ở tầng
+    SQLAlchemy/Pydantic. Bảng nào cần DB tự chặn giá trị lạ phải khai
+    `CheckConstraint` tường minh (xem models/import_audit.py).
 
     Helper này nằm ở đây thay vì trong một file model cụ thể, để mọi model
     dùng chung một cấu hình. Lệch cấu hình giữa các bảng sẽ làm Alembic

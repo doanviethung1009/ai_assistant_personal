@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     # chuỗi comma-separated bình thường (vd CORS_ORIGINS=a,b) mà sẽ crash
     # vì không parse được JSON. NoDecode tắt bước đó, để validator dưới xử lý.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
+    # Mật khẩu cho thao tác nhập dữ liệu THẬT (ghi đè hàng loạt). Web không có đăng
+    # nhập, nên API key một mình không đủ để cho phép ghi đè: người gửi phải biết
+    # thêm bí mật này (header X-Import-Secret). Để trống = tắt hẳn nhập thật; dry-run
+    # không cần. Tối thiểu 16 ký tự khi có đặt.
+    import_commit_secret: str | None = Field(default=None, min_length=16)
 
     # ── LLM gateway (chưa dùng ở Phase 1) ───────────────────────────
     litellm_base_url: str | None = None
@@ -61,6 +66,15 @@ class Settings(BaseSettings):
     def _parse_origins(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("import_commit_secret", mode="before")
+    @classmethod
+    def _blank_secret_is_unset(cls, value: object) -> object:
+        # compose hay truyền biến rỗng (`IMPORT_COMMIT_SECRET=`): coi là chưa cấu hình
+        # thay vì làm app không khởi động được vì vi phạm min_length.
+        if isinstance(value, str) and not value.strip():
+            return None
         return value
 
     @field_validator("database_url")

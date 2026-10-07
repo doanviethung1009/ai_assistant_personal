@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
@@ -62,6 +63,26 @@ def test_normalize_color() -> None:
     assert normalize_color(123) is None
     # hsl(0, 100%, 50%) là đỏ thuần
     assert normalize_color("hsl(0, 100%, 50%)") == "#ff0000"
+
+
+def test_normalize_color_is_not_redos_prone() -> None:
+    # Bản regex cũ backtrack bậc hai trên dãy dấu cách: 8000 dấu cách mất ~0,4s.
+    start = time.perf_counter()
+    assert normalize_color("hsl(1" + " " * 100_000) is None
+    assert normalize_color("hsl(1" + " " * 60) is None  # ngắn hơn giới hạn, vẫn phải nhanh
+    assert (time.perf_counter() - start) < 0.05
+
+
+def test_normalize_color_rejects_overlong_input() -> None:
+    long_but_valid_shape = "hsl(" + "1" * 200 + ", 50%, 50%)"
+    assert normalize_color(long_but_valid_shape) is None
+    assert normalize_color("#" + "a" * 70) is None
+
+
+def test_normalize_color_hsl_separators() -> None:
+    assert normalize_color("hsl(0 100% 50%)") == "#ff0000"
+    assert normalize_color("HSL(0,100%,50%)") == "#ff0000"
+    assert normalize_color("hsl(0deg, 100%, 50%)") == "#ff0000"
 
 
 def test_map_ai_log_category() -> None:

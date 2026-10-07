@@ -81,11 +81,14 @@ def _not_blank(value: str) -> str:
 
 class ImportProject(_Row):
     id: uuid.UUID
-    key: str
+    # Chặn độ dài sớm: key được chuẩn hoá bằng regex/unicodedata, đầu vào dài vô hạn
+    # chỉ tốn CPU mà không có key hợp lệ nào dài như vậy.
+    key: str = Field(max_length=100)
     name: str = Field(min_length=1, max_length=200)
     description: str | None = None
-    # Any vì file thật chứa `hsl(...)`; service chuẩn hoá về hex.
-    color: Any = None
+    # File thật chứa `hsl(...)`; service chuẩn hoá về hex. Giới hạn 64 ký tự khớp
+    # MAX_COLOR_LEN của normalize_color (phòng ReDoS).
+    color: str | None = Field(default=None, max_length=64)
     is_archived: bool = False
     created_at: datetime | None = None
     updated_at: datetime | None = None
@@ -229,6 +232,9 @@ class ImportReport(BaseModel):
     dry_run: bool
     committed: bool
     schema_version: int
+    # sha256 của body thô; gửi lại làm `expect_sha256` khi nhập thật để chứng minh
+    # file nhập là file đã kiểm tra.
+    file_sha256: str
     counts: dict[str, EntityCounts]
     errors: int
     warnings: int

@@ -12,15 +12,35 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import CHAR, DateTime, ForeignKey, Index, Integer, String, Text, func
+from sqlalchemy import (
+    CHAR,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, UUIDPrimaryKeyMixin, enum_column
 from app.models.enums import ImportAction, ImportEntity, ImportKind
+
+
+def _in_list(column: str, enum_cls: type[StrEnum]) -> str:
+    """Sinh `col IN ('a','b')` từ enum, để CHECK luôn khớp enum Python.
+
+    Giá trị lấy từ enum do code định nghĩa (không phải đầu vào người dùng).
+    """
+    values = ", ".join(f"'{member.value}'" for member in enum_cls)
+    return f"{column} IN ({values})"
 
 
 class ImportRun(UUIDPrimaryKeyMixin, Base):
@@ -38,7 +58,12 @@ class ImportRun(UUIDPrimaryKeyMixin, Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    __table_args__ = (Index("ix_import_runs_created_at", "created_at"),)
+    __table_args__ = (
+        Index("ix_import_runs_created_at", "created_at"),
+        # `enum_column` không tạo CHECK ở DB, nên khai tường minh: sổ cái dùng để
+        # hoàn tác, một giá trị lạ lọt vào sẽ làm script hoàn tác bỏ sót dòng.
+        CheckConstraint(_in_list("kind", ImportKind), name="kind_valid"),
+    )
 
 
 class ImportAudit(UUIDPrimaryKeyMixin, Base):
@@ -65,4 +90,6 @@ class ImportAudit(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         Index("ix_import_audit_import_id", "import_id"),
         Index("ix_import_audit_entity_entity_id", "entity", "entity_id"),
+        CheckConstraint(_in_list("entity", ImportEntity), name="entity_valid"),
+        CheckConstraint(_in_list("action", ImportAction), name="action_valid"),
     )

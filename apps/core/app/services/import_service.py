@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
+from urllib.parse import urlparse
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
@@ -83,6 +84,16 @@ MAX_EVENT_PAYLOAD_BYTES = 16 * 1024
 MAX_ISSUES = 500
 MAX_REPLACEMENTS = 5_000
 MAX_FIELDS_PER_REPLACEMENT = 30
+# Khoá lạ trong file do người gửi quyết định: chặn số lượng và độ dài khi báo cáo.
+MAX_IGNORED_NAMES = 50
+MAX_IGNORED_NAME_LEN = 64
+MAX_KEY_ORIGINAL_LEN = 40
+# Actor của event nhập từ file luôn có tiền tố `import:` để không giả danh `user`
+# hay `agent:*`; phần gốc cắt còn 90 ký tự cho vừa varchar(100).
+EVENT_ACTOR_PREFIX = "import:"
+MAX_EVENT_ACTOR_LEN = 90
+# Chờ khoá dòng tối đa bấy lâu; hết hạn thì 409 thay vì treo request.
+LOCK_TIMEOUT = "5s"
 MAX_TEXT = 200
 READ_BATCH = 1_000
 WRITE_BATCH = 500
@@ -171,10 +182,18 @@ def normalize_project_key(raw: str) -> str:
     return key
 
 
+# Phân tách giữa các thành phần là `\s*,\s*` HOẶC `\s+`, hai nhánh không bao giờ
+# khớp cùng một chuỗi con. Bản cũ `\s*[, ]\s*` cho phép một dãy dấu cách được chia
+# cho hai `\s*` theo nhiều cách và gây backtracking bậc hai (ReDoS) với đầu vào
+# không đáng tin.
 _HSL_RE = re.compile(
-    r"hsl\(\s*(-?\d+(?:\.\d+)?)(?:deg)?\s*[, ]\s*(\d+(?:\.\d+)?)%\s*[, ]\s*(\d+(?:\.\d+)?)%\s*\)",
+    r"hsl\(\s*(-?\d+(?:\.\d+)?)(?:deg)?(?:\s*,\s*|\s+)(\d+(?:\.\d+)?)%"
+    r"(?:\s*,\s*|\s+)(\d+(?:\.\d+)?)%\s*\)",
     re.IGNORECASE,
 )
+# Màu hợp lệ dài tối đa vài chục ký tự. Chặn độ dài TRƯỚC mọi regex để đầu vào
+# khổng lồ không bao giờ chạm tới bộ khớp mẫu.
+MAX_COLOR_LEN = 64
 _HEX6_RE = re.compile(r"#([0-9a-fA-F]{6})")
 _HEX3_RE = re.compile(r"#([0-9a-fA-F]{3})")
 
@@ -185,7 +204,7 @@ def normalize_color(value: Any) -> str | None:
     Web cũ lưu `hsl(253, 70%, 65%)`; backend chỉ nhận hex. Dạng không nhận ra
     (tên màu, rgb()...) thành None thay vì làm hỏng cả project.
     """
-    if not isinstance(value, str):
+    if not isinstance(value, str) or len(value) > MAX_COLOR_LEN:
         return None
     s = value.strip()
     if _HEX6_RE.fullmatch(s):
@@ -272,6 +291,12 @@ class _Parsed:
     # Key project lấy từ object `project` nhúng, chỉ dùng làm đường dự phòng.
     project_key: str | None = None
     events: list[dict[str, Any]] = field(default_factory=list)
+    # Field mà giá trị trong `values` là GIÁ TRỊ DỰ PHÒNG do bước chuẩn hoá tự
+    # tạo (file không nói gì, hoặc không dùng được): chỉ dùng khi INSERT. Khi
+    # replace, các field này bị loại khỏi diff lẫn SET, nếu không một file thiếu
+    # `archived_at` sẽ âm thầm bỏ lưu trữ ghi chú, file thiếu `completed_at` sẽ
+    # xoá ngày hoàn thành thật trong DB.
+    fallback: set[str] = field(default_factory=set)
 
 
 @dataclass
@@ -302,7 +327,7 @@ class _Spec:
     fields: tuple[str, ...]
     soft_delete: bool
     natural_of: Callable[[dict[str, Any]], Hashable | None]
-    fetch_natural: Callable[[AsyncSession, list[Any]], Awaitable[dict[Any, dict[str, Any]]]] | None
+    fetch_natural: Callable[..., Awaitable[dict[Any, dict[str, Any]]]] | None
     dup_code: str
     label_max: int = 80
 
@@ -359,6 +384,19 @@ class _Ctx:
     def warn(self, entity: str, code: str, message: str, **kw: Any) -> None:
         self.issue("warning", entity, code, message, **kw)
 
+    def note_ignored(self, entity: str, names: Iterable[Any]) -> None:
+        """Ghi tên field bị bỏ, có chặn kích thước.
+
+        Khoá lạ do file quyết định, nên không có giới hạn thì một file 10 MB toàn
+        khoá khác nhau sẽ phình báo cáo (và bộ nhớ). Giữ tối đa 50 tên mỗi entity,
+        mỗi tên cắt 64 ký tự.
+        """
+        bucket = self.ignored.setdefault(entity, set())
+        for name in names:
+            if len(bucket) >= MAX_IGNORED_NAMES:
+                break
+            bucket.add(str(name)[:MAX_IGNORED_NAME_LEN])
+
     def counts_of(self, entity: str) -> EntityCounts:
         return self.counts[_COUNT_KEYS[entity]]
 
@@ -394,7 +432,7 @@ def _validate[M: BaseModel](
     known = set(model.model_fields) - {"project"}
     extra = set(raw) - known
     if extra:
-        ctx.ignored.setdefault(entity, set()).update(extra)
+        ctx.note_ignored(entity, extra)
     try:
         return model.model_validate(raw)
     except PydanticValidationError as exc:
@@ -419,6 +457,49 @@ def _aware(value: datetime | None, naive_flag: list[bool]) -> datetime | None:
         naive_flag[0] = True
         return value.replace(tzinfo=UTC)
     return value
+
+
+def _absent(raw: Mapping[str, Any], fields: Iterable[str]) -> set[str]:
+    """Field mà KHÔNG có khoá nào trong dòng của file.
+
+    Khoá vắng mặt nghĩa là "file không nói gì", khác với `null` tường minh ("file
+    nói là rỗng"). Chỉ trường hợp sau mới được phép ghi đè giá trị đang có trong DB.
+    """
+    return {name for name in fields if name not in raw}
+
+
+def _stamps(
+    ctx: _Ctx,
+    entity: str,
+    index: int,
+    id_: uuid.UUID,
+    created_raw: datetime | None,
+    updated_raw: datetime | None,
+    flag: list[bool],
+) -> tuple[datetime, datetime]:
+    """created_at/updated_at của dòng; thiếu created_at thì dùng giờ nhập và cảnh báo.
+
+    Giờ nhập là thứ file không hề nói, nên người dùng cần biết để không nhầm với
+    thời điểm tạo thật. Thiếu mỗi updated_at thì lấy created_at (không cảnh báo:
+    đó là quy tắc chuẩn của file ai-logs).
+    """
+    created = _aware(created_raw, flag)
+    if created is None:
+        created = ctx.now
+        ctx.warn(
+            entity,
+            "timestamps_defaulted",
+            "File thiếu created_at, dùng giờ nhập.",
+            index=index,
+            id_=id_,
+        )
+    updated = _aware(updated_raw, flag) or created
+    return created, updated
+
+
+def _is_http_url(value: str) -> bool:
+    parts = urlparse(value.strip())
+    return parts.scheme.lower() in ("http", "https") and bool(parts.netloc)
 
 
 def _nested_project_key(ctx: _Ctx, obj: dict[str, Any] | None) -> str | None:
@@ -447,7 +528,7 @@ def _parse_project(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None
         )
         return None
     if key != m.key:
-        ctx.key_changes.append(KeyChange(original=m.key, normalized=key))
+        ctx.key_changes.append(KeyChange(original=m.key[:MAX_KEY_ORIGINAL_LEN], normalized=key))
         ctx.warn(
             "project",
             "key_normalized",
@@ -455,9 +536,11 @@ def _parse_project(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None
             index=index,
             id_=m.id,
         )
+    fallback = _absent(raw, PROJECT_FIELDS)
     color = normalize_color(m.color)
     if m.color is not None and color != m.color:
         if color is None:
+            fallback.add("color")
             ctx.warn(
                 "project",
                 "color_dropped",
@@ -474,8 +557,7 @@ def _parse_project(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None
                 id_=m.id,
             )
     flag = [False]
-    created = _aware(m.created_at, flag) or ctx.now
-    updated = _aware(m.updated_at, flag) or created
+    created, updated = _stamps(ctx, "project", index, m.id, m.created_at, m.updated_at, flag)
     if flag[0]:
         ctx.warn(
             "project",
@@ -493,7 +575,7 @@ def _parse_project(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None
         "created_at": created,
         "updated_at": updated,
     }
-    return _Parsed(index, m.id, values, False, key)
+    return _Parsed(index, m.id, values, False, key, fallback=fallback)
 
 
 def _parse_events(
@@ -532,7 +614,9 @@ def _parse_events(
             {
                 "id": m.id,
                 "event_type": m.event_type,
-                "actor": m.actor or "user",
+                # Actor do file khai là dữ liệu không đáng tin: gắn tiền tố để không
+                # giả danh `user` hay `agent:*` trong audit trail.
+                "actor": EVENT_ACTOR_PREFIX + (m.actor or "user")[:MAX_EVENT_ACTOR_LEN],
                 "payload": m.payload,
                 "created_at": created,
             }
@@ -545,8 +629,7 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     if m is None:
         return None
     flag = [False]
-    created = _aware(m.created_at, flag) or ctx.now
-    updated = _aware(m.updated_at, flag) or created
+    created, updated = _stamps(ctx, "task", index, m.id, m.created_at, m.updated_at, flag)
     if m.deleted_at is not None:
         # Task ở thùng rác của file: bỏ cả task lẫn event, không đụng bản trong DB (D5).
         n_events = len(m.events)
@@ -560,10 +643,12 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         ctx.error("task", "invalid_tags", "Tối đa 20 tag mỗi task.", index=index, id_=m.id)
         return None
 
+    fallback = _absent(raw, TASK_FIELDS)
     due = _aware(m.due_at, flag)
     completed = _aware(m.completed_at, flag)
     estimate = m.estimate_minutes
     if estimate is not None and not (0 < estimate <= 43_200):
+        fallback.add("estimate_minutes")
         ctx.warn(
             "task",
             "estimate_dropped",
@@ -574,6 +659,7 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         estimate = None
     if m.status.value == "done" and completed is None:
         completed = updated
+        fallback.add("completed_at")
         ctx.warn(
             "task",
             "completed_at_backfilled",
@@ -586,6 +672,19 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
             "task",
             "naive_datetime",
             "Thời gian không có múi giờ, coi là UTC.",
+            index=index,
+            id_=m.id,
+        )
+    external_url = m.external_url
+    if external_url is not None and not _is_http_url(external_url):
+        # Chỉ http/https: chuỗi `javascript:` hay `data:` mà UI hiển thị thành link
+        # là vector XSS. Chỉ áp ở đường nhập; TaskCreate nằm ngoài phạm vi B1.
+        external_url = None
+        fallback.add("external_url")
+        ctx.warn(
+            "task",
+            "external_url_dropped",
+            "external_url không phải http/https, bỏ trống.",
             index=index,
             id_=m.id,
         )
@@ -605,12 +704,19 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         "tags": tags,
         "source": m.source,
         "external_id": m.external_id,
-        "external_url": m.external_url,
+        "external_url": external_url,
         "created_at": created,
         "updated_at": updated,
     }
     return _Parsed(
-        index, m.id, values, False, m.title[:80], _nested_project_key(ctx, m.project), events
+        index,
+        m.id,
+        values,
+        False,
+        m.title[:80],
+        _nested_project_key(ctx, m.project),
+        events,
+        fallback,
     )
 
 
@@ -627,8 +733,8 @@ def _parse_note(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         ctx.error("note", "invalid_tags", "Tối đa 20 tag mỗi note.", index=index, id_=m.id)
         return None
     flag = [False]
-    created = _aware(m.created_at, flag) or ctx.now
-    updated = _aware(m.updated_at, flag) or created
+    created, updated = _stamps(ctx, "note", index, m.id, m.created_at, m.updated_at, flag)
+    fallback = _absent(raw, NOTE_FIELDS)
     last_used = _aware(m.last_used_at, flag)
     archived = _aware(m.archived_at, flag)
     if flag[0]:
@@ -657,7 +763,15 @@ def _parse_note(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         "created_at": created,
         "updated_at": updated,
     }
-    return _Parsed(index, m.id, values, False, m.title[:80], _nested_project_key(ctx, m.project))
+    return _Parsed(
+        index,
+        m.id,
+        values,
+        False,
+        m.title[:80],
+        _nested_project_key(ctx, m.project),
+        fallback=fallback,
+    )
 
 
 def _parse_ai_log(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
@@ -684,17 +798,21 @@ def _parse_ai_log(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
             id_=m.id,
         )
     flag = [False]
-    created = _aware(m.created_at, flag) or ctx.now
-    updated = _aware(m.updated_at, flag) or created
+    created, updated = _stamps(ctx, "ai_log", index, m.id, m.created_at, m.updated_at, flag)
+    fallback = _absent(raw, AI_LOG_FIELDS)
+    has_handling = bool(m.handling and m.handling.strip())
+    if not has_handling:
+        # "(không ghi nhận)" là chữ do hệ thống bịa ra, không được đè handling thật.
+        fallback.add("handling")
     values = {
         "category": category,
         "prompt": m.prompt,
-        "handling": m.handling if m.handling and m.handling.strip() else NO_HANDLING,
+        "handling": m.handling if has_handling else NO_HANDLING,
         "response": m.response,
         "created_at": created,
         "updated_at": updated,
     }
-    return _Parsed(index, m.id, values, False, m.prompt[:80])
+    return _Parsed(index, m.id, values, False, m.prompt[:80], fallback=fallback)
 
 
 def _parse_rows(
@@ -723,23 +841,36 @@ def _chunks[T](items: Sequence[T], size: int) -> Iterable[Sequence[T]]:
 
 
 async def _fetch_by_ids(
-    session: AsyncSession, table: Table, ids: Sequence[uuid.UUID]
+    session: AsyncSession, table: Table, ids: Sequence[uuid.UUID], *, lock: bool = False
 ) -> dict[uuid.UUID, dict[str, Any]]:
-    """Đọc đủ cột (để diff và chụp `before`) theo lô, không N+1."""
+    """Đọc đủ cột (để diff và chụp `before`) theo lô, không N+1.
+
+    `lock=True` (nhập thật) dùng SELECT ... FOR UPDATE: giữ khoá dòng từ lúc lập
+    kế hoạch đến lúc ghi, để một request khác sửa task giữa chừng không bị ghi đè
+    bằng `before`/diff đã cũ (lost update). Dry-run không khoá để khỏi chặn người dùng.
+    """
     out: dict[uuid.UUID, dict[str, Any]] = {}
     for chunk in _chunks(list(ids), READ_BATCH):
-        result = await session.execute(select(table).where(table.c.id.in_(chunk)))
+        stmt = select(table).where(table.c.id.in_(chunk))
+        if lock:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         for row in result:
             data = dict(row._mapping)
             out[data["id"]] = data
     return out
 
 
-async def _natural_projects(session: AsyncSession, keys: list[Any]) -> dict[Any, dict[str, Any]]:
+async def _natural_projects(
+    session: AsyncSession, keys: list[Any], *, lock: bool = False
+) -> dict[Any, dict[str, Any]]:
     table = Project.__table__
     out: dict[Any, dict[str, Any]] = {}
     for chunk in _chunks(keys, READ_BATCH):
-        result = await session.execute(select(table).where(table.c.key.in_(chunk)))
+        stmt = select(table).where(table.c.key.in_(chunk))
+        if lock:
+            stmt = stmt.with_for_update()
+        result = await session.execute(stmt)
         for row in result:
             data = dict(row._mapping)
             out[data["key"]] = data
@@ -753,20 +884,23 @@ def _natural_sourced(table: Table) -> Callable[..., Awaitable[dict[Any, dict[str
     trong thùng rác không chiếm khoá tự nhiên.
     """
 
-    async def fetch(session: AsyncSession, nats: list[Any]) -> dict[Any, dict[str, Any]]:
+    async def fetch(
+        session: AsyncSession, nats: list[Any], *, lock: bool = False
+    ) -> dict[Any, dict[str, Any]]:
         by_source: dict[str, list[str]] = {}
         for source, external_id in nats:
             by_source.setdefault(source, []).append(external_id)
         out: dict[Any, dict[str, Any]] = {}
         for source, ext_ids in by_source.items():
             for chunk in _chunks(ext_ids, READ_BATCH):
-                result = await session.execute(
-                    select(table).where(
-                        table.c.source == source,
-                        table.c.external_id.in_(chunk),
-                        table.c.deleted_at.is_(None),
-                    )
+                stmt = select(table).where(
+                    table.c.source == source,
+                    table.c.external_id.in_(chunk),
+                    table.c.deleted_at.is_(None),
                 )
+                if lock:
+                    stmt = stmt.with_for_update()
+                result = await session.execute(stmt)
                 for row in result:
                     data = dict(row._mapping)
                     out[(source, data["external_id"])] = data
@@ -857,10 +991,13 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
                 broken.add(r.index)
             seen_nat.setdefault(nat, r.index)
 
-    by_id = await _fetch_by_ids(session, spec.table, [r.file_id for r in live])
+    lock = not ctx.dry_run
+    by_id = await _fetch_by_ids(session, spec.table, [r.file_id for r in live], lock=lock)
     nat_keys = [n for r in live if (n := spec.natural_of(r.values)) is not None]
     nat_rows = (
-        await spec.fetch_natural(session, nat_keys) if spec.fetch_natural and nat_keys else {}
+        await spec.fetch_natural(session, nat_keys, lock=lock)
+        if spec.fetch_natural and nat_keys
+        else {}
     )
 
     used_targets: set[uuid.UUID] = set()
@@ -919,7 +1056,15 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
         if nat is not None:
             plan.natural_to_db[nat] = target["id"]
 
-        changes = diff_fields(target, r.values, spec.fields)
+        # Field dự phòng chỉ bị loại khi DB đang có giá trị thật (khác NULL); nếu DB
+        # đang NULL thì áp giá trị dự phòng cũng vô hại và còn lấp được chỗ trống
+        # (vd task đổi sang done mà DB chưa có completed_at).
+        eff_fields = [
+            name
+            for name in spec.fields
+            if not (name in r.fallback and target.get(name) is not None)
+        ]
+        changes = diff_fields(target, r.values, eff_fields)
         if not changes:
             counts.unchanged += 1
             continue
@@ -942,7 +1087,7 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
         else:
             ctx.replacements_truncated = True
         # Đặt updated_at tường minh (D13). Giữ created_at của DB, không đưa vào SET.
-        set_values = {name: r.values[name] for name in spec.fields}
+        set_values = {name: r.values[name] for name in eff_fields}
         set_values["updated_at"] = r.values["updated_at"]
         # `changes` giữ lại để task ghi event `updated` mô tả đúng thay đổi.
         plan.updates.append(_Update(target["id"], r.file_id, set_values, changes))
@@ -1014,6 +1159,9 @@ async def _resolve_project_refs(
         else:
             resolved = key_to_db.get(r.project_key) if r.project_key else None
             if resolved is None and (pid is not None or r.project_key is not None):
+                # Null ở đây là do KHÔNG ánh xạ được, không phải file nói "không có
+                # project": khi replace không được tháo liên kết đang có trong DB.
+                r.fallback.add("project_id")
                 ctx.warn(
                     entity,
                     "project_unlinked",
@@ -1022,6 +1170,9 @@ async def _resolve_project_refs(
                     id_=r.file_id,
                 )
         r.values["project_id"] = resolved
+        if resolved is not None:
+            # Tìm được project thật (kể cả qua key nhúng) thì giá trị không còn là dự phòng.
+            r.fallback.discard("project_id")
 
 
 async def _plan_events(
@@ -1063,6 +1214,16 @@ async def _plan_events(
     for ev in file_events:
         if ev["id"] in existing:
             counts.unchanged += 1
+            if existing[ev["id"]] != ev["task_id"]:
+                # Không sửa, không chuyển event sang task khác (audit trail bất biến);
+                # chỉ báo để người dùng biết file và DB bất đồng về chủ của event.
+                ctx.warn(
+                    "task_event",
+                    "event_id_other_task",
+                    "id event đã tồn tại trong DB nhưng thuộc task khác, bỏ qua.",
+                    index=ev["__index__"],
+                    id_=ev["id"],
+                )
             continue
         counts.created += 1
         to_insert.append({k: v for k, v in ev.items() if k != "__index__"})
@@ -1107,12 +1268,17 @@ def _generated_event(
     }
 
 
-async def _fetch_event_ids(session: AsyncSession, ids: list[uuid.UUID]) -> set[uuid.UUID]:
+async def _fetch_event_ids(
+    session: AsyncSession, ids: list[uuid.UUID]
+) -> dict[uuid.UUID, uuid.UUID]:
+    """id event đã có -> task_id của nó (để phát hiện event trùng id nhưng thuộc task khác)."""
     table = TaskEvent.__table__
-    out: set[uuid.UUID] = set()
+    out: dict[uuid.UUID, uuid.UUID] = {}
     for chunk in _chunks(ids, READ_BATCH):
-        result = await session.execute(select(table.c.id).where(table.c.id.in_(chunk)))
-        out.update(row[0] for row in result)
+        result = await session.execute(
+            select(table.c.id, table.c.task_id).where(table.c.id.in_(chunk))
+        )
+        out.update((row[0], row[1]) for row in result)
     return out
 
 
@@ -1185,15 +1351,35 @@ async def _take_lock(session: AsyncSession) -> None:
     if not got:
         await session.rollback()
         raise ConflictError("Đang có một lần nhập khác chạy, hãy thử lại sau.")
+    # Sau khi có khoá nhập: giới hạn thời gian chờ khoá dòng (FOR UPDATE, UPDATE) để
+    # một transaction khác giữ dòng quá lâu thì request thất bại có kiểm soát (409)
+    # thay vì treo. `set_config(..., true)` = SET LOCAL, hết hiệu lực khi transaction kết thúc.
+    await session.execute(text("SELECT set_config('lock_timeout', :v, true)"), {"v": LOCK_TIMEOUT})
 
 
-def _report(ctx: _Ctx, *, schema_version: int, committed: bool) -> ImportReport:
+# SQLSTATE 55P03 = lock_not_available (hết lock_timeout).
+_LOCK_NOT_AVAILABLE = "55P03"
+
+
+def _raise_if_lock_timeout(exc: SQLAlchemyError) -> None:
+    """Đổi lỗi hết thời gian chờ khoá dòng của Postgres thành 409 dễ hiểu."""
+    orig = getattr(exc, "orig", None)
+    for candidate in (orig, getattr(orig, "__cause__", None)):
+        code = getattr(candidate, "sqlstate", None) or getattr(candidate, "pgcode", None)
+        if code == _LOCK_NOT_AVAILABLE:
+            raise ConflictError(
+                "Dữ liệu đang bị một thao tác khác khoá quá lâu, hãy thử lại sau."
+            ) from exc
+
+
+def _report(ctx: _Ctx, *, schema_version: int, committed: bool, file_sha256: str) -> ImportReport:
     issues, truncated = ctx.build_issues()
     return ImportReport(
         import_id=ctx.import_id,
         dry_run=ctx.dry_run,
         committed=committed,
         schema_version=schema_version,
+        file_sha256=file_sha256,
         counts=ctx.counts,
         errors=ctx.n_errors,
         warnings=ctx.n_warnings,
@@ -1213,6 +1399,7 @@ async def _finish(
     kind: ImportKind,
     schema_version: int,
     expect_replaced: int | None,
+    expect_sha256: str | None,
     file_sha256: str,
     actor: str,
     write: Callable[[], Awaitable[None]],
@@ -1220,11 +1407,23 @@ async def _finish(
     """Kiểm rào chắn, ghi, rồi COMMIT hoặc ROLLBACK.
 
     `write` chạy cả khi dry-run để Postgres kiểm CHECK/unique thật. Chỉ COMMIT
-    khi: không lỗi, không phải dry-run, và số bản ghi bị ghi đè đúng bằng số người
-    dùng đã thấy ở dry-run (`expect_replaced`).
+    khi: không lỗi, không phải dry-run, file đúng là file đã dry-run
+    (`expect_sha256`), và số bản ghi bị ghi đè đúng bằng số người dùng đã thấy
+    (`expect_replaced`). Con số một mình không chứng minh được "cùng file": hai file
+    khác nhau có thể cùng số lần ghi đè.
     """
     committed = False
     try:
+        if (
+            ctx.n_errors == 0
+            and not ctx.dry_run
+            and (expect_sha256 or "").lower() != file_sha256.lower()
+        ):
+            ctx.error(
+                "file",
+                "file_changed_since_dry_run",
+                "File gửi lên khác file đã kiểm tra (dry-run); hãy kiểm tra lại file này.",
+            )
         if ctx.n_errors == 0 and not ctx.dry_run and ctx.total_replaced() != expect_replaced:
             ctx.error(
                 "file",
@@ -1249,6 +1448,8 @@ async def _finish(
         else:
             await session.rollback()
     except SQLAlchemyError as exc:
+        await session.rollback()
+        _raise_if_lock_timeout(exc)
         # Chỉ lấy tên ràng buộc, không đưa thông điệp gốc (có thể chứa giá trị cột).
         constraint = getattr(getattr(exc, "orig", None), "constraint_name", None)
         ctx.error(
@@ -1258,7 +1459,9 @@ async def _finish(
         )
         await session.rollback()
         committed = False
-    report = _report(ctx, schema_version=schema_version, committed=committed)
+    report = _report(
+        ctx, schema_version=schema_version, committed=committed, file_sha256=file_sha256
+    )
     c = report.counts
     logger.info(
         "nhập dữ liệu xong",
@@ -1275,9 +1478,9 @@ async def _finish(
     return report
 
 
-def _require_expect(dry_run: bool, expect_replaced: int | None) -> None:
-    if not dry_run and expect_replaced is None:
-        raise ValidationError("Nhập thật bắt buộc truyền expect_replaced.")
+def _require_expect(dry_run: bool, expect_replaced: int | None, expect_sha256: str | None) -> None:
+    if not dry_run and (expect_replaced is None or not expect_sha256):
+        raise ValidationError("Nhập thật bắt buộc truyền expect_replaced và expect_sha256.")
 
 
 async def import_datafile(
@@ -1286,6 +1489,7 @@ async def import_datafile(
     *,
     dry_run: bool = True,
     expect_replaced: int | None = None,
+    expect_sha256: str | None = None,
     file_sha256: str,
     actor: str = "import:datafile",
 ) -> ImportReport:
@@ -1294,7 +1498,7 @@ async def import_datafile(
     Xem banner đầu module: hàm này GHI ĐÈ, không xoá. `dry_run` mặc định True để
     quên truyền tham số thì không ghi gì.
     """
-    _require_expect(dry_run, expect_replaced)
+    _require_expect(dry_run, expect_replaced, expect_sha256)
     n_events = sum(len(t.get("events") or []) for t in envelope.tasks if isinstance(t, dict))
     if n_events > MAX_EVENTS:
         raise ValidationError(f"Tối đa {MAX_EVENTS} event mỗi file.")
@@ -1302,10 +1506,10 @@ async def import_datafile(
     await _take_lock(session)
     ctx = _Ctx(dry_run=dry_run, schema_version=envelope.schema_version)
     if envelope.model_extra:
-        ctx.ignored.setdefault("file", set()).update(envelope.model_extra)
+        ctx.note_ignored("file", envelope.model_extra)
     if envelope.meta:
         # B1 chưa nhập meta (current_users thuộc B2).
-        ctx.ignored.setdefault("file", set()).add("meta")
+        ctx.note_ignored("file", ["meta"])
 
     projects = _parse_rows(ctx, "project", envelope.projects, _parse_project)
     tasks = _parse_rows(ctx, "task", envelope.tasks, _parse_task)
@@ -1322,8 +1526,9 @@ async def import_datafile(
             task_plan = await _plan_entity(ctx, session, TASK_SPEC, tasks)
             note_plan = await _plan_entity(ctx, session, NOTE_SPEC, notes)
             file_events, generated = await _plan_events(ctx, session, tasks, task_plan)
-        except SQLAlchemyError:
+        except SQLAlchemyError as exc:
             await session.rollback()
+            _raise_if_lock_timeout(exc)
             raise
 
     async def write() -> None:
@@ -1340,6 +1545,7 @@ async def import_datafile(
         kind=ImportKind.DATAFILE,
         schema_version=envelope.schema_version,
         expect_replaced=expect_replaced,
+        expect_sha256=expect_sha256,
         file_sha256=file_sha256,
         actor=actor,
         write=write,
@@ -1352,22 +1558,24 @@ async def import_ai_logs(
     *,
     dry_run: bool = True,
     expect_replaced: int | None = None,
+    expect_sha256: str | None = None,
     file_sha256: str,
     actor: str = "import:ai_logs",
 ) -> ImportReport:
     """Nhập `ai-logs.json` vào bảng `ai_logs` (cùng rào chắn như `import_datafile`)."""
-    _require_expect(dry_run, expect_replaced)
+    _require_expect(dry_run, expect_replaced, expect_sha256)
     await _take_lock(session)
     ctx = _Ctx(dry_run=dry_run, schema_version=envelope.schema_version)
     if envelope.model_extra:
-        ctx.ignored.setdefault("file", set()).update(envelope.model_extra)
+        ctx.note_ignored("file", envelope.model_extra)
     logs = _parse_rows(ctx, "ai_log", envelope.ai_logs, _parse_ai_log)
     plan = _Plan()
     if ctx.n_errors == 0:
         try:
             plan = await _plan_entity(ctx, session, AI_LOG_SPEC, logs)
-        except SQLAlchemyError:
+        except SQLAlchemyError as exc:
             await session.rollback()
+            _raise_if_lock_timeout(exc)
             raise
 
     async def write() -> None:
@@ -1379,6 +1587,7 @@ async def import_ai_logs(
         kind=ImportKind.AI_LOGS,
         schema_version=envelope.schema_version,
         expect_replaced=expect_replaced,
+        expect_sha256=expect_sha256,
         file_sha256=file_sha256,
         actor=actor,
         write=write,

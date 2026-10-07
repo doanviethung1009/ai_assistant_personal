@@ -49,6 +49,9 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:
 os.environ.setdefault("API_KEY", "test-api-key-0123456789")
 # Test không có Redis; rate limit fail-open nhưng chờ timeout 3s mỗi request.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# Mật khẩu nhập dữ liệu thật: test API nhập thật gửi đúng giá trị này.
+IMPORT_SECRET = "test-import-secret-0123456789"  # noqa: S105
+os.environ["IMPORT_COMMIT_SECRET"] = IMPORT_SECRET
 
 API_KEY = os.environ["API_KEY"]
 
