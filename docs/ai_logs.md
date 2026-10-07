@@ -737,6 +737,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 18:00] | Category: [TOOL]
+- **Prompt:** "review dự án, làm 1 file rõ ràng về cách thức multi agent trong dự án và cách sử dụng"
+- **Xử lý:**
+  - Đọc 5 subagent, 9 role, 10 skill, settings và hook; tạo `docs/MULTI_AGENT_SYSTEM.md` (bản đồ thành phần, ai làm gì, luồng Epic, prompt theo tình huống, hàng rào, model, giới hạn hiện tại, cách thêm subagent). Đăng ký slug `multi-agent-system` trong `apps/web/lib/docs.ts`.
+  - Phát hiện khoảng trống: chưa có subagent cho security/devops/rag, chưa có spec thật nào, hook regex có thể chặn nhầm.
+- **Phản hồi:** File mới hiện trên tab Tài liệu; mục 8 liệt kê các giới hạn.
+
+---
+
 ### [07-10-2026 19:00] | Category: [TOOL]
 - **Prompt:** "bổ sung subagent security-auditor, spec mẫu thật, và tối ưu kiến trúc thư mục"
 - **Xử lý:**

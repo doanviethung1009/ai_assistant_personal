@@ -285,6 +285,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
   },
   {
+    slug: "multi-agent-system",
+    title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
+    description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
+  },
+  {
     slug: "spec-example-note-archive",
     title: "Spec mẫu: Lưu trữ note",
     description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",
