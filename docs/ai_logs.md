@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:14] | Category: [TOOL]
+- **Prompt:** "xem có rules, md hay skill cho AI agent để QC QA cho PR chưa? hãy bổ sung và update lại tài liệu"
+- **Xử lý:**
+  - Nhận diện nhu cầu: Dự án đã chuyển sang mô hình Pull Request, nhưng chưa có kỹ năng (Skill) nào dạy AI cách làm Người kiểm duyệt (Reviewer).
+  - Khởi tạo thư mục và file `.agents/skills/pr-review/SKILL.md`.
+  - Thiết lập quy trình **AI PR Review & QA** khắt khe gồm 5 bước: Kiểm tra file rác, Bảo vệ kiến trúc (Chống truy vấn ngu ngốc/phá DB), Soi Convention, Tự động chạy lệnh Lint/Build test, và Ra Quyết Định (Approve/Reject).
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã bổ sung thành công Kỹ năng PR Reviewer. Từ giờ bạn có thể ném một nhánh code cho AI và bảo "Mày soi PR này cho tao", nó sẽ quét sạch mọi rác rưởi trước khi cho phép vào `main`.
+
+---
+
 ### [07-10-2026 13:12] | Category: [TOOL]
 - **Prompt:** "giờ về git khi có nhiều agent nhiều người cùng nhau làm thì làm sao để update và push git hiệu quả và cần review lại mới update vào main mới nhất cho toàn bộ dự án?"
 - **Xử lý:**

@@ -86,6 +86,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Dọn dẹp
 
+- chuyển đổi luồng push code sang mô hình pull request để hỗ trợ multi-agent (`77cec84`)
 - tối ưu file CLAUDE.md bằng cú pháp @import bản địa để giảm tải Token (`14a0053`)
 - cài đặt trigger tự động ép AI đọc cẩm nang nhập môn (`afdd015`)
 - fix macOS bash compatibility in changelog script and generate latest changelog (`9672eb0`)
