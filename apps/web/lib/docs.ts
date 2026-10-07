@@ -292,6 +292,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
   },
   {
+    slug: "spec-example-note-archive",
+    title: "Spec mẫu: Lưu trữ note",
+    description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "specs", "EXAMPLE-note-archive.md"),
+  },
+  {
     slug: "claude-cli-quickstart",
     title: "Claude CLI Quickstart (multi-agent)",
     description: "Chạy Claude Code với cấu hình multi-agent của repo: subagent, hook an toàn, quyền và quy trình commit/push.",

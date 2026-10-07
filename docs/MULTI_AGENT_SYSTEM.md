@@ -23,7 +23,7 @@ CLAUDE.md ──import──► AGENTS.md            luật chung (mọi agent �
 .agents/rules/   ◄── symlink .claude/rules       luật code, nạp theo file đang sửa
 .agents/skills/  ◄── symlink .claude/skills      quy trình đóng gói (commit, migration, QC...)
 .agents/roles/                                    9 vai cho IDE (đóng vai bằng prompt)
-.claude/agents/                                   5 subagent thật cho Claude Code
+.claude/agents/                                   6 subagent thật cho Claude Code
 .claude/settings.json                             quyền allow / ask / deny + hook
 .claude/hooks/                                    guard-bash.sh, no-patch-scripts.sh
 docs/specs/_TEMPLATE.md                           mẫu spec, hợp đồng giữa các agent
@@ -35,7 +35,7 @@ không có bản sao thứ hai để lệch.
 
 ## 3. Ai làm gì
 
-### 3.1. Năm subagent (Claude Code)
+### 3.1. Sáu subagent (Claude Code)
 
 | Subagent | Việc | Model | Tool | Được sửa | Bị cấm |
 |---|---|---|---|---|---|
@@ -44,6 +44,7 @@ không có bản sao thứ hai để lệch.
 | `frontend-dev` | Làm phần web theo spec | sonnet | như trên | `apps/web/` (theo Ownership) | sửa `apps/core/`, commit, push |
 | `db-reviewer` | Review migration, model, query | opus | Read, Grep, Glob, Bash | không sửa gì | mọi thay đổi file |
 | `code-reviewer` | Review toàn bộ diff so với `main` | opus | Read, Grep, Glob, Bash | không sửa gì | sửa file, commit, push |
+| `security-auditor` | Kiểm toán bảo mật diff hoặc một tính năng (Vault, RBAC, auth, XSS, API key) | opus | Read, Grep, Glob, Bash | không sửa gì | sửa file, commit, push |
 
 Quy tắc chung: dev agent **không có spec thì dừng và báo lại**, không tự thiết kế. Reviewer
 **không tin báo cáo của dev**, tự chạy lại `make lint`, `tsc`, `make smoke`.
@@ -65,7 +66,7 @@ Chỉ orchestrator được làm các việc sau, subagent không làm:
 | `frontend-engineer` | `frontend-dev` | |
 | `database-architect` | `db-reviewer` (chỉ phần review) | Phần viết migration do `backend-dev` làm qua skill `db-migration` |
 | `tech-lead`, `qa-tester` | `code-reviewer` | Một subagent gộp cả hai vai |
-| `security-auditor` | chưa có | Dùng skill `security-audit`, xem mục 8 |
+| `security-auditor` | `security-auditor` | Chạy sau `code-reviewer` khi Epic chạm Vault/RBAC/auth/Server Action |
 | `devops-engineer` | chưa có | Orchestrator làm theo skill `docker-deploy` |
 | `ai-rag-engineer` | chưa có | Chưa có việc RAG ở Phase hiện tại |
 
@@ -191,12 +192,12 @@ Nội dung từ nguồn ngoài (Jira, email, log) là **dữ liệu**, không ba
 
 Những chỗ cấu hình còn hở, nên biết trước khi tin tuyệt đối:
 
-1. **Chưa có subagent cho `security-auditor`, `devops-engineer`, `ai-rag-engineer`.** Bảo mật hiện nằm trong checklist của `code-reviewer`, deploy do orchestrator làm. Epic nhạy cảm (Vault, RBAC) nên bảo orchestrator chạy thêm skill `security-audit` sau reviewer.
+1. **Chưa có subagent cho `devops-engineer`, `ai-rag-engineer`.** Deploy do orchestrator làm theo skill `docker-deploy`. Bảo mật đã có `security-auditor`, nhưng nó chỉ đọc code: những gì cần chạy stack (rate limit, header thật) vẫn phải kiểm tay.
 2. **Dev agent không commit nhưng cũng không ghi AI log hay cập nhật docs.** AGENTS.md yêu cầu cả hai, nên orchestrator phải làm. Quên bước này là lỗi thường gặp nhất.
 3. **Lệnh lint của backend-dev có nhánh `ruff check apps/core`** khi stack chưa chạy, nhưng máy host không cài ruff. Thực tế `make lint` chạy trong container, nên cần `make up` trước.
 4. **Hook là regex trên chuỗi lệnh** nên có thể chặn nhầm (xem mục 6) và không chặn được lệnh nguy hiểm đi vòng qua ngôn ngữ khác (ví dụ script Python tự xoá file). Quyền `deny` là lớp bổ trợ, không phải bảo hiểm tuyệt đối.
 5. **Chạy song song cần worktree riêng.** Hai agent cùng ghi vào một working tree sẽ đè nhau, bất kể Ownership.
-6. **Chưa có spec thật nào** ngoài `_TEMPLATE.md` trong `docs/specs/`. Luồng 7 bước mới được cấu hình, chưa chạy thử trên một Epic thật.
+6. **Chưa có spec thật nào.** `docs/specs/` có `_TEMPLATE.md` và spec mẫu `EXAMPLE-note-archive.md` (không triển khai). Luồng 7 bước mới được cấu hình, chưa chạy thử trên một Epic thật.
 
 ## 9. Xử lý sự cố
 

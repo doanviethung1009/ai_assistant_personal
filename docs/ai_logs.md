@@ -743,3 +743,14 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Đọc 5 subagent, 9 role, 10 skill, settings và hook; tạo `docs/MULTI_AGENT_SYSTEM.md` (bản đồ thành phần, ai làm gì, luồng Epic, prompt theo tình huống, hàng rào, model, giới hạn hiện tại, cách thêm subagent). Đăng ký slug `multi-agent-system` trong `apps/web/lib/docs.ts`.
   - Phát hiện khoảng trống: chưa có subagent cho security/devops/rag, chưa có spec thật nào, hook regex có thể chặn nhầm.
 - **Phản hồi:** File mới hiện trên tab Tài liệu; mục 8 liệt kê các giới hạn.
+
+---
+
+### [07-10-2026 19:00] | Category: [TOOL]
+- **Prompt:** "bổ sung subagent security-auditor, spec mẫu thật, và tối ưu kiến trúc thư mục"
+- **Xử lý:**
+  - Dọn thư mục: chuyển 71 `patch_*`/`fix_*` vào `scripts/patches/archive/` (kèm README), chuyển `vault-crypto-check.ts` sang `scripts/checks/` và sửa tham chiếu trong `docs/VAULT.md`; giữ đường dẫn import tương đối vẫn đúng.
+  - Thêm `.claude/agents/security-auditor.md`, `docs/specs/EXAMPLE-note-archive.md` (bám model/route/action thật của Note) và đăng ký trong `docs.ts`.
+  - Viết lại cây thư mục trong `docs/PROJECT_STRUCTURE.md` (trước thiếu `.claude/`, `.codex/`, `infra/`, `specs/`); cập nhật bảng trong `CLAUDE.md`.
+  - Không chuyển file trong `docs/` vì AGENTS.md, rules, hook đang tham chiếu cứng `docs/<TÊN>.md`; file Excel trong `task/` để nguyên vì chưa rõ có dữ liệu Jira nội bộ.
+- **Phản hồi:** Thư mục gọn hơn, 6 subagent, có spec mẫu.

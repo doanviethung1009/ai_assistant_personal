@@ -2,7 +2,7 @@
 # ═══════════════════════════════════════════════════════════════════════
 #  PreToolUse hook cho Write: chặn việc tạo script patch_*.py / fix_*.py.
 #
-#  Lịch sử repo có ~70 file trong scripts/patches/ (patch_actions_import_final,
+#  Lịch sử repo có ~70 file (nay đã chuyển vào scripts/patches/archive/: patch_actions_import_final,
 #  final2, final3, final4...) - dấu hiệu agent sửa code gián tiếp bằng
 #  script Python thay vì Edit trực tiếp, rồi thử lại nhiều vòng. Cách đó
 #  khó review và để lại rác. Claude Code có Edit/Write nên không cần.
