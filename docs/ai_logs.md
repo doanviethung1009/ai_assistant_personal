@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 12:35] | Category: [TOOL]
+- **Prompt:** "Claude trong IDE (extension VS Code/JetBrains) chạy cùng engine với Claude Code CLI, nên thứ tự nạp giống nhau... còn đây là của claude ide"
+- **Xử lý:**
+  - Viết lại toàn bộ cấu trúc file `CLAUDE.md` để áp dụng cú pháp Native của Claude IDE/CLI.
+  - Sử dụng macro `@AGENTS.md` và `@docs/NEW_AGENT_ONBOARDING.md` để hệ thống tự động chèn (inject) luật ngay từ lúc khởi động session mà không tốn tool call.
+  - Áp dụng nguyên lý Lazy-loading (nạp khi cần): Chỉ dẫn Claude đọc các file tài liệu sâu (`project-review.md`, `TARGET_ARCHITECTURE.md`) chỉ khi nó thật sự cần thao tác với lĩnh vực đó, giúp tối ưu tối đa lượng Token khởi động.
+  - Ghi log và đẩy lên Git.
+- **Phản hồi:** Đã tối ưu Token cực độ cho Claude, chứng minh cấu trúc Skill của chúng ta giống hệt tư duy thiết kế của Anthropic.
+
+---
+
 ### [07-10-2026 12:19] | Category: [TOOL]
 - **Prompt:** "claude dùng ide terminal và chatgpt thì có codex thì đều không phải ide à... ủa còn chatgpt thì sao mà có bổ sung tất cả action trên vào md và tài liệu hay log mô tả chưa bạn ơi"
 - **Xử lý:**
