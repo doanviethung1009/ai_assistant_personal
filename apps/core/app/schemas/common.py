@@ -30,7 +30,9 @@ def normalize_tags(value: list[str] | None) -> list[str]:
     return list(seen)
 
 
-class Page(BaseModel, Generic[T]):
+# Giữ Generic[T] thay vì cú pháp PEP 695: đổi sẽ đổi tên schema trong OpenAPI và làm
+# lệch lib/generated/openapi.d.ts của web.
+class Page(BaseModel, Generic[T]):  # noqa: UP046
     """Envelope phân trang. Dùng offset vì dữ liệu cá nhân, không cần cursor."""
 
     items: list[T]
