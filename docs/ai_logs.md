@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 12:37] | Category: [TOOL]
+- **Prompt:** "xem tài liệu có bổ sung về cách sử dụng agent của mỗi hệ chưa?"
+- **Xử lý:**
+  - Nhận diện sự thiếu sót trong tài liệu: Mới chỉ có tài liệu về cấu trúc kỹ thuật (Bridge files) chứ chưa có Hướng dẫn thao tác thực tế (User Manual) cho lập trình viên.
+  - Bổ sung **Mục 7. Hướng dẫn Sử dụng Thực tế** vào file `docs/AI_AGENT_GUIDE.md`.
+  - Hướng dẫn chi tiết cách kích hoạt (Gõ lệnh gì, bấm phím tắt nào) đối với 4 hệ sinh thái: OpenAI Codex (`codex`), Claude CLI (`claude`), Cursor/Windsurf (`Cmd+I`), và GitHub Copilot (`@workspace`).
+  - Chạy Changelog, Commit và Push lên Git.
+- **Phản hồi:** Đã bổ sung Cẩm nang thao tác thực tế (How to use) cho toàn bộ nền tảng để người dùng (Human) dễ dàng vận hành.
+
+---
+
 ### [07-10-2026 12:35] | Category: [TOOL]
 - **Prompt:** "Claude trong IDE (extension VS Code/JetBrains) chạy cùng engine với Claude Code CLI, nên thứ tự nạp giống nhau... còn đây là của claude ide"
 - **Xử lý:**

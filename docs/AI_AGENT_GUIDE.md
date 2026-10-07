@@ -102,3 +102,25 @@ Dự án này được thiết kế để tương thích với **bất kỳ** n�
 3. **Claude Code CLI (Terminal):** Tự động nhận diện file `CLAUDE.md`. File này sẽ ép Claude đọc `AGENTS.md`.
 4. **GitHub Copilot Chat:** Đã thiết lập file `.github/copilot-instructions.md` để tiêm luật vào ngữ cảnh bên trong VS Code.
 5. **ChatGPT / Claude Web:** Với bản Web, hãng không cho phép quét ổ cứng. Bạn tạo Custom GPT / Claude Project và copy nội dung `AGENTS.md` dán vào phần System Instructions.
+
+---
+
+## 7. Hướng dẫn Sử dụng Thực tế (How to Use)
+
+Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) để kích hoạt sức mạnh của từng hệ sinh thái AI trong dự án này:
+
+### A. Hệ sinh thái OpenAI Codex (CLI / App)
+1. **Codex CLI:** Mở Terminal tại thư mục gốc, gõ lệnh `codex`. CLI sẽ tự động nạp `AGENTS.md` theo cơ chế native. Bạn có thể chat trực tiếp trên terminal để AI tự sửa code.
+2. **Codex IDE Extension:** Cài đặt extension trong VS Code, mở Chat (hoặc Inline Edit). Nó sẽ tự động fallback đọc `AGENTS.md`.
+
+### B. Hệ sinh thái Anthropic Claude (CLI / IDE)
+1. **Claude Code CLI:** Mở Terminal, gõ lệnh `claude`. Hệ thống sẽ đọc file `CLAUDE.md` và tự động `@import` các luật từ `AGENTS.md` nhờ cấu trúc Lazy-loading siêu tiết kiệm token.
+2. **Claude IDE (RooCode / Cline):** Mở extension trong VS Code, Claude sẽ tự quét và nạp `CLAUDE.md`.
+
+### C. Các Agentic IDE (Cursor, Windsurf, Antigravity)
+- **Cách dùng:** Mở thư mục dự án bằng IDE. Hệ thống sẽ tự động bắt tín hiệu từ `.cursorrules` (hoặc cấu hình workspace) và chuyển hướng đọc `AGENTS.md`.
+- **Thao tác:** Nhấn `Cmd + I` (Composer) hoặc `Cmd + L` (Chat), ném yêu cầu (vd: "Thêm API tạo Task mới"). AI sẽ tự động đọc Handoff State, code, viết docs và tự kiểm thử.
+
+### D. GitHub Copilot
+- **Cách dùng:** Mở VS Code, bật Copilot Chat.
+- **Thao tác:** Gõ `@workspace` kèm câu hỏi. Copilot sẽ tự động bị ép đọc luật từ `.github/copilot-instructions.md`. Mặc dù không tự trị (autonomous) mạnh như Cursor, Copilot vẫn sẽ code đúng chuẩn convention của dự án.
