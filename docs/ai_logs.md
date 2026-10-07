@@ -4,6 +4,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:23] | Category: [TOOL]
+- **Prompt:** "ủa sao nhấn vào các nội dung của ai thì nhẩy về trang tài liệu là sao? với chỉ có codex và claude thôi hở ?"
+- **Xử lý:**
+  - Bổ sung `docs?doc=ai-agent-guide` (Dành cho Cursor, Copilot, Antigravity) và `docs?doc=new-agent-onboarding` vào thanh `AI_NAV` tại `nav.ts` để hiển thị đủ 100% hệ sinh thái.
+  - Giải thích cơ chế dùng chung luồng đọc Markdown.
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã bổ sung đầy đủ các mục (Cẩm nang chung, Nhập môn).
+
+---
+
 ### [07-10-2026 13:21] | Category: [TOOL]
 - **Prompt:** "liên quan đến AI nên để 1 tab mới cho tường minh không? bổ sung thêm mô tả nếu thiếu nha"
 - **Xử lý:**

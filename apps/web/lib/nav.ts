@@ -57,6 +57,8 @@ export const SECONDARY_NAV: NavItem[] = [
 
 export const AI_NAV: NavItem[] = [
   { href: "/ai-logs", label: "Nhật ký AI (Trace)", icon: Sparkles },
+  { href: "/docs?doc=ai-agent-guide", label: "Cẩm nang AI (Cursor/Copilot)", icon: BookOpen },
+  { href: "/docs?doc=new-agent-onboarding", label: "Nhập môn AI", icon: Shield },
   { href: "/docs?doc=claude-operating-guide", label: "Claude Agent", icon: Bot },
   { href: "/docs?doc=codex-operating-guide", label: "Codex Agent", icon: BrainCircuit },
 ];

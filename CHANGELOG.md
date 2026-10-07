@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- tạo khu vực riêng biệt cho hệ sinh thái AI trên thanh điều hướng (`cfedaed`)
 - mở rộng hệ sinh thái multi-agent với 3 roles và 3 skills chuyên sâu mới (`08ef627`)
 - khởi tạo bộ hồ sơ nhân cách (roles) cho mô hình multi-agent (`a4cf46c`)
 - bổ sung kỹ năng pr-review để AI thực hiện QA/QC cho pull request (`dd972d6`)
