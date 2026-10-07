@@ -25,4 +25,13 @@
 2. **Triển khai AI/Vault:** Tích hợp `pgvector` cho tìm kiếm ngữ nghĩa (Notes) và Zero-Knowledge Encryption cho Vault.
 3. **Mở rộng RBAC:** Tích hợp logic phân quyền phức tạp theo chuẩn trong `.agents/skills/rbac-implementation/SKILL.md`.
 
-*--- Bản cập nhật cuối cùng: [2026-10-07] ---*
+## 5. Cập nhật 08-10-2026: multi-agent, CI, backend
+
+- **Multi-agent (Claude Code):** 6 subagent trong `.claude/agents/` (architect, backend-dev, frontend-dev, db-reviewer, code-reviewer, security-auditor), hook an toàn, quyền allow/ask/deny. Đọc `docs/MULTI_AGENT_SYSTEM.md`; ví dụ chạy thật ở `docs/MULTI_AGENT_TRIAL.md`.
+- **Backend đã sửa:** router `ai-logs` từng import module không tồn tại nên API không khởi động; thêm migration `ai_logs`, `tasks.assignee`, `notes.archived_at`. `TaskRead` nay trả `assignee`. `GET /tasks?assignee=` lọc thật.
+- **Test và CI:** `apps/core/tests/` (43 test, cần Postgres cho phần lớn), `make test` chạy trên DB riêng `<POSTGRES_DB>_test`, CI ở `.github/workflows/ci.yml`. Xem `docs/CI_AND_TESTING.md`.
+- **Tính năng Lưu trữ note** (nhánh thử `trial/multi-agent-note-archive`): chỉ hoạt động ở `DATA_SOURCE=api`; chế độ file JSON (mặc định của web) ẩn tính năng và trả 501. Spec: `docs/specs/note-archive.md`.
+- **`lib/generated/openapi.d.ts` đã được sinh lại từ `app.openapi()`.** Trước đó nó bị vá tay (thêm `assignee` vào Note và Project) nên che lỗi; đừng sửa tay file này, dùng `make gen-types`.
+- **Chưa làm / cần chú ý:** path injection qua `id` ở route task và project (route note đã có `pathId()`); `npm audit` còn 4 lỗ hổng high; web chưa có đăng nhập; chưa chạy `make smoke` và chưa xem giao diện Lưu trữ trên trình duyệt (máy dev không có Docker).
+
+*--- Bản cập nhật cuối cùng: [2026-10-08] ---*

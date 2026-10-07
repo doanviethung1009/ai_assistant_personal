@@ -776,3 +776,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - code-reviewer: thêm hàng rào chống TRUNCATE nhầm DB thật (conftest `pytest.exit` nếu tên DB không kết thúc `_test`; script thoát nếu URL test trùng URL dev), sinh và commit `apps/core/uv.lock`, CI dùng `uv sync --locked`, thêm test thứ tự/offset của ai-logs.
   - Xác minh bằng môi trường dựng đúng từ uv.lock: ruff, `alembic check`, 26 test đều pass. Không ghim action theo SHA và chưa gộp nguồn tên DB trong script (đã ghi vào docs).
 - **Phản hồi:** Nhánh sẵn sàng; chưa có kết quả CI thật trên GitHub.
+
+---
+
+### [08-10-2026 14:00] | Category: [TOOL]
+- **Prompt:** "hãy mô hình thử 1 function để test tất cả luồng của ai agent giúp tôi và bổ sung ví dụ đó vào tài liệu"
+- **Xử lý:**
+  - Chạy thật luồng 7 bước với tính năng "Lưu trữ note": architect (spec) → User duyệt → backend-dev → sinh lại openapi.d.ts → frontend-dev → db-reviewer, code-reviewer, security-auditor song song → orchestrator sửa phát hiện và viết tài liệu.
+  - Orchestrator suýt tự đánh dấu spec CHỐT, bị hệ thống chặn, dừng lại hỏi User rồi mới tiếp tục.
+  - Luồng bắt được: spec mẫu sai 14 chỗ, `TaskRead` thiếu `assignee` (che bởi type vá tay), path injection qua `id` ở Server Action, `page`/`offset` không trần, test `purge_expired` yếu.
+  - Lệch phạm vi cần User biết: orchestrator xoá 1 dòng `assignee` thừa ở `lib/store/engine.ts` và thêm `assignee` vào `TaskRead`, ngoài Ownership của spec.
+  - Tạo `docs/MULTI_AGENT_TRIAL.md`, đăng ký thêm spec thật vào docs.ts, cập nhật API_REFERENCE, HANDOFF, MULTI_AGENT_SYSTEM.
+- **Phản hồi:** 43 test pass, tsc xanh; chưa chạy make smoke/UI thật (không có Docker).
