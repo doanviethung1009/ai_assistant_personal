@@ -78,6 +78,10 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       API_KEY: ${API_KEY}
+      # Mật khẩu bắt buộc khi "Nhập thật" JSON vào Postgres (ghi đè dữ liệu). Rỗng thì core
+      # từ chối nhập thật (chỉ cho Kiểm tra). Web không có đăng nhập nên đây là lớp chặn
+      # duy nhất khi web mở ra LAN. Xem docs/specs/import-json-to-postgres.md (M2).
+      IMPORT_COMMIT_SECRET: ${IMPORT_COMMIT_SECRET:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
       # Giới hạn request/phút theo X-API-Key, đếm ở Redis. Xem core/rate_limit.py.
