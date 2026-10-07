@@ -812,3 +812,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Sửa `NEW_AGENT_ONBOARDING.md`: lỗi đánh số hai mục "3.", cập nhật danh sách 10 skill, thêm mục cho Claude Code. Sidebar AI: thêm "Multi-Agent", đổi "Ví dụ Thực chiến" trỏ sang bản chạy thật.
   - Nhánh chồng lên PR #9 vì cùng sửa `docs.ts`; xung đột `docs.ts` khi stash pop, lấy bản của PR #9 rồi áp lại đúng hai thay đổi.
 - **Phản hồi:** Đã kiểm trên web demo: các trang AI trả 200, `/ai/agent-prompts` trả 404 như dự kiến; tsc xanh.
+
+---
+
+### [08-10-2026 18:00] | Category: [WEB]
+- **Prompt:** "làm A trước rồi B sau" (A: tối ưu tab Dữ liệu; B: đường nhập JSON vào Postgres)
+- **Xử lý (A):**
+  - `app/data/page.tsx` 316 → 139 dòng, chia 4 tab qua `?tab=` (xuất, nhập, đồng bộ & cấu hình, vùng nguy hiểm), whitelist giá trị, aria-current.
+  - Tách component: `data-tabs.tsx` (kèm `LocalOnlyNotice`), `data-export-grid.tsx`, `data-source-card.tsx` (gỡ `any` ở `SOURCE_INFO`).
+  - Ở `DATA_SOURCE=api`, phần chỉ chạy được ở file/memory (nhập JSON, file, khôi phục, Jira, URL đồng bộ, người dùng hiện tại) hiện thông báo thay vì cho bấm rồi bị từ chối; Chrome và Vault luôn hiện vì dùng kho riêng.
+  - Gộp 6 lời gọi dữ liệu vào một `Promise.all` (trước đó 3 lời gọi tuần tự).
+  - Kiểm trên web đang chạy (không mở thêm server): 4 tab đúng nội dung, không lỗi console, tsc xanh. Chưa kiểm thông báo ở chế độ api vì không có core API chạy.
+- **Phản hồi:** Đã xong A; chưa push.
