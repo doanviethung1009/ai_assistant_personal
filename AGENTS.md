@@ -4,6 +4,9 @@
 > Nếu bạn đang đọc file này, bạn đang làm việc trên hệ thống **Builder AI Assistant** (một Monorepo gồm Next.js Frontend và FastAPI Backend). 
 > **Hãy đọc KỸ các nguyên tắc dưới đây trước khi sinh ra bất kỳ dòng code nào.** Đây là luật tối cao để bạn hòa nhập dự án một cách nhanh nhất, đúng role nhất.
 
+> 🔴 **[BƯỚC KHỞI ĐỘNG BẮT BUỘC - CRITICAL INITIALIZATION]** 🔴
+> Ngay khi bắt đầu một phiên làm việc mới, bạn **BẮT BUỘC** phải dùng tool đọc file `docs/NEW_AGENT_ONBOARDING.md` và làm theo đúng quy trình trong đó (Đọc Handoff State và Blueprint) trước khi trả lời User. KHÔNG ĐƯỢC đoán mò bối cảnh!
+
 ---
 
 ## 1. Vai trò của bạn (Your Persona & Role)

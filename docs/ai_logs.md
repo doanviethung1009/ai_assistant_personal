@@ -4,6 +4,27 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 12:10] | Category: [TOOL]
+- **Prompt:** "ở đâu quy định ai phải đọc file nào đầu tiên vậy ban? ... ok bạn"
+- **Xử lý:**
+  - Cập nhật file System Prompt gốc (`AGENTS.md`).
+  - Thêm khối lệnh **[BƯỚC KHỞI ĐỘNG BẮT BUỘC]** ngay trên cùng. Lệnh này đóng vai trò như một Trigger tự động, ép buộc bất kỳ AI Agent nào khi vừa được khởi tạo cũng phải đọc file `docs/NEW_AGENT_ONBOARDING.md` trước khi giao tiếp với User.
+  - Ghi log (Dual Logging) và tự động Commit & Push cập nhật lên Git.
+- **Phản hồi:** Đã vá lỗ hổng logic, hoàn thiện vòng lặp tự động hoá 100% cho AI Agent.
+
+---
+
+### [07-10-2026 12:03] | Category: [TOOL]
+- **Prompt:** "nếu có thay đổi về cách vận hành của ai agent hay update cho tôi nhé"
+- **Xử lý:**
+  - Nhận diện yêu cầu đồng bộ tài liệu và vận hành hệ thống.
+  - Cập nhật `docs/NEW_AGENT_ONBOARDING.md`: Thêm bước yêu cầu AI bắt buộc đọc `project-review.md` (Master Blueprint) vào quy trình hoạt động chuẩn (SOP).
+  - Áp dụng Rule 3.11: Chạy `make changelog`, sau đó Commit và Push toàn bộ tài liệu hệ thống, bảng đánh giá Platform và Cẩm nang AI lên nhánh `main`.
+  - Ghi log (Dual Logging).
+- **Phản hồi:** Thông báo đã cấu hình xong luồng vận hành mới cho AI và Push toàn bộ mã nguồn lên Git thành công.
+
+---
+
 ### [07-10-2026 12:02] | Category: [TOOL]
 - **Prompt:** "kiểu như backend dùng platform gì frontend .... nhiều core khác thì sao, và đề xuất thêm nhiều platform có thể thay thế được không ghi lại thành md giúp tôi..."
 - **Xử lý:**
