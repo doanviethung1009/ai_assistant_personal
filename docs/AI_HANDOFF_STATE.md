@@ -32,6 +32,7 @@
 - **Test và CI:** `apps/core/tests/` (43 test, cần Postgres cho phần lớn), `make test` chạy trên DB riêng `<POSTGRES_DB>_test`, CI ở `.github/workflows/ci.yml`. Xem `docs/CI_AND_TESTING.md`.
 - **Tính năng Lưu trữ note** (nhánh thử `trial/multi-agent-note-archive`): chỉ hoạt động ở `DATA_SOURCE=api`; chế độ file JSON (mặc định của web) ẩn tính năng và trả 501. Spec: `docs/specs/note-archive.md`.
 - **`lib/generated/openapi.d.ts` đã được sinh lại từ `app.openapi()`.** Trước đó nó bị vá tay (thêm `assignee` vào Note và Project) nên che lỗi; đừng sửa tay file này, dùng `make gen-types`.
-- **Chưa làm / cần chú ý:** path injection qua `id` ở route task và project (route note đã có `pathId()`); `npm audit` còn 4 lỗ hổng high; web chưa có đăng nhập; chưa chạy `make smoke` và chưa xem giao diện Lưu trữ trên trình duyệt (máy dev không có Docker).
+- **Bảo mật web:** mọi route trong `lib/api.ts` có `id` đều đi qua `pathId()` (chỉ nhận UUID) để chặn path injection qua Server Action; route mới có `id` phải dùng helper này.
+- **Chưa làm / cần chú ý:** `npm audit` còn 4 lỗ hổng high; web chưa có đăng nhập; chưa chạy `make smoke` và chưa xem giao diện Lưu trữ trên trình duyệt (máy dev không có Docker).
 
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*
