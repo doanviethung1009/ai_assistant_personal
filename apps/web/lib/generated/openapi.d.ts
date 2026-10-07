@@ -757,6 +757,8 @@ export interface components {
             committed: boolean;
             /** Schema Version */
             schema_version: number;
+            /** File Sha256 */
+            file_sha256: string;
             /** Counts */
             counts: {
                 [key: string]: components["schemas"]["EntityCounts"];
@@ -2653,8 +2655,13 @@ export interface operations {
                 dry_run?: boolean;
                 /** @description Bắt buộc khi dry_run=false: số bản ghi sẽ bị ghi đè, lấy từ báo cáo dry-run. Lệch số thực tế thì huỷ. */
                 expect_replaced?: number | null;
+                /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
+                expect_sha256?: string | null;
             };
-            header?: never;
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
@@ -2717,8 +2724,13 @@ export interface operations {
                 dry_run?: boolean;
                 /** @description Bắt buộc khi dry_run=false: số bản ghi sẽ bị ghi đè, lấy từ báo cáo dry-run. Lệch số thực tế thì huỷ. */
                 expect_replaced?: number | null;
+                /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
+                expect_sha256?: string | null;
             };
-            header?: never;
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
             path?: never;
             cookie?: never;
         };
