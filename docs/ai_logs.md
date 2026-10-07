@@ -4,6 +4,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:32] | Category: [TOOL]
+- **Prompt:** "vậy nên để IDE chứ nhỉ?"
+- **Xử lý:** Đổi tên hiển thị trên thanh điều hướng bên trái từ "Cẩm nang AI (Cursor/Copilot)" thành **"Cẩm nang Agent IDEs"** cho tính bao quát, phản ánh đúng mục tiêu hỗ trợ cho nhóm công cụ (Cursor, Windsurf, Antigravity, Copilot). Chạy `make changelog` và Git Push.
+- **Phản hồi:** Đã đổi tên thành "Cẩm nang Agent IDEs".
+
+---
+
 ### [07-10-2026 13:30] | Category: [TOOL]
 - **Prompt:** "chỗ ai trace log tab có thể để tôi xem detail nội dung của 1 promt không khi bấm view popup"
 - **Xử lý:**
