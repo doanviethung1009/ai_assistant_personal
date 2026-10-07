@@ -1,4 +1,4 @@
-// Kiểm thử vòng đời mã hoá Két. Chạy: npx tsx scripts/patches/vault-crypto-check.ts
+// Kiểm thử vòng đời mã hoá Két. Chạy: npx tsx scripts/checks/vault-crypto-check.ts
 import {
   createVault,
   encryptPayload,
