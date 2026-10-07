@@ -161,6 +161,20 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },
   {
+    slug: "new-agent-onboarding",
+    title: "Nhập môn AI Agent Mới",
+    description: "Cẩm nang quy định cách một AI mới lấy thông tin, tuân thủ Rules, và vòng lặp công việc.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "NEW_AGENT_ONBOARDING.md"),
+  },
+  {
+    slug: "project-review",
+    title: "Bản đồ Hệ thống (Master Blueprint)",
+    description: "Tài liệu nén (token-optimized) chứa toàn cảnh kiến trúc, chức năng, UI/UX để AI đọc nhanh.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "project-review.md"),
+  },
+  {
     slug: "comment-style",
     title: "Quy ước comment",
     description:
@@ -247,6 +261,14 @@ export const DOCS: DocEntry[] = [
       "Tư vấn và so sánh các phương pháp vận hành: Local, Docker Compose VPS, và Serverless Vercel.",
     category: "DevOps & Triển khai",
     file: path.join("docs", "DEPLOYMENT_STRATEGIES.md"),
+  },
+  {
+    slug: "platform-alternatives",
+    title: "Đánh giá Nền tảng (Platforms)",
+    description:
+      "Phân tích Core Platform hiện tại (NextJS, FastAPI, Docker) và đề xuất các phương án công nghệ thay thế (Go, K8s, Supabase).",
+    category: "Kiến trúc & Tích hợp",
+    file: path.join("docs", "PLATFORM_ALTERNATIVES.md"),
   }
 ];
 

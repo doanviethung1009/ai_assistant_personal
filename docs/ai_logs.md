@@ -4,6 +4,61 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 12:02] | Category: [TOOL]
+- **Prompt:** "kiểu như backend dùng platform gì frontend .... nhiều core khác thì sao, và đề xuất thêm nhiều platform có thể thay thế được không ghi lại thành md giúp tôi..."
+- **Xử lý:**
+  - Soạn thảo tài liệu phân tích kỹ thuật `docs/PLATFORM_ALTERNATIVES.md` (Đánh giá Nền tảng & Đề xuất Thay thế).
+  - Phân tích 4 lõi nền tảng chính: Frontend, Backend, Database, Deployment. Liệt kê các giải pháp đang sử dụng (Next.js, FastAPI, Postgres, Docker) và đề xuất các giải pháp thay thế ngang tầm (Golang, Svelte, Turso DB, Kubernetes, Podman).
+  - Đăng ký file hiển thị lên Web UI.
+  - Ghi log (Dual Logging).
+- **Phản hồi:** Đã tạo tài liệu tư vấn các Platform thay thế để mở rộng tầm nhìn về hệ sinh thái.
+
+---
+
+### [07-10-2026 11:57] | Category: [TOOL]
+- **Prompt:** "nhưng tôi muốn làm sao agent ai mới review project sẽ nắm được nhanh hơn và tiết kiệm được credits thì sao, và các mô tả chi tiết về kiến trúc..."
+- **Xử lý:**
+  - Viết lại toàn bộ file `docs/project-review.md` biến nó thành "Master System Blueprint" (Bản đồ Toàn cảnh Hệ thống).
+  - Áp dụng kỹ thuật nén nội dung (Token-Optimized), gom tất cả kiến thức về Database, UI/UX (Glassmorphism), Jira Sync, và Luật AI vào duy nhất một file 5KB. 
+  - Sửa `AI_HANDOFF_STATE.md` để tự động điều hướng AI đọc file Blueprint này, giúp AI hiểu toàn bộ dự án chỉ bằng 1 lần Request, tiết kiệm hàng chục nghìn Token cho User.
+  - Đăng ký file lên Web UI.
+- **Phản hồi:** Trình bày về giải pháp "Siêu nén Token" qua Master Blueprint.
+
+---
+
+### [07-10-2026 11:42] | Category: [TOOL]
+- **Prompt:** "bổ sung md về cách thức AI agent mới sẽ hoạt động lấy thông tin và tuân thủ gì trong dự án này?"
+- **Xử lý:**
+  - Soạn thảo tài liệu `docs/NEW_AGENT_ONBOARDING.md` (Cẩm nang Nhập môn AI). Đóng gói quy trình (SOP) chuẩn để bất kỳ AI nào mới vào cũng tự biết cách lấy Handoff State, tuân thủ Luật (Đặc biệt 4 luật tử huyệt), sử dụng Skills và vòng lặp công việc.
+  - Đăng ký file lên `apps/web/lib/docs.ts` để User có thể đọc trên UI.
+  - Ghi log (Dual Logging).
+- **Phản hồi:** Trình bày tóm tắt về nội dung Cẩm nang Nhập môn và biểu đồ vòng lặp hoạt động chuẩn của AI.
+
+---
+
+### [07-10-2026 11:39] | Category: [TOOL]
+- **Prompt:** "kiểm tra lại các skill và rules md xem có bị trùng hay gì không và cần tối ưu chỗ nào hay đề xuất... ok bạn"
+- **Xử lý:**
+  - Rà soát toàn bộ `.agents/rules/` và `.agents/skills/`.
+  - Phát hiện lỗi tham chiếu chéo ở `session-handoff.md` và dữ liệu rác/lỗi thời ở `status.md`.
+  - Khắc phục: Xoá bỏ file `status.md` cũ kỹ, thay thế bằng file chuẩn `docs/AI_HANDOFF_STATE.md`.
+  - Cập nhật vào file Handoff toàn bộ tiến độ thực tế (Local JSON, Glassmorphism, Jira Sync, Rule 3.10-3.11) để định hướng chuẩn cho các phiên AI sau này.
+  - Ghi log (Dual Logging).
+- **Phản hồi:** Thông báo đã dọn dẹp sạch sẽ hệ thống Rules, loại bỏ rủi ro AI bị Hallucination do đọc tài liệu cũ.
+
+---
+
+### [07-10-2026 11:30] | Category: [TOOL]
+- **Prompt:** "đúng rôi hay update và push lên git đi bổ sung rule về việc confirm commit và push lên git nha"
+- **Xử lý:**
+  - Bổ sung Rule 3.11 (Cập nhật mã nguồn) vào `AGENTS.md`: Ép buộc Agent phải hỏi ý kiến User trước khi commit/push và phải tuân thủ skill `git-commit` (Conventional Commits, sinh Changelog).
+  - Khởi chạy quá trình Push: Chạy `make changelog`, gom tất cả các file tài liệu và code mới tạo, thực hiện commit với tiêu đề `feat(docs): bổ sung tài liệu kiến trúc, triển khai, kỹ năng QC và cập nhật luật AI`.
+  - Push thành công lên branch `main`.
+  - Ghi log (Dual Logging).
+- **Phản hồi:** Thông báo đã hoàn thiện việc Push code lên Git và áp dụng luật Commit chặt chẽ.
+
+---
+
 ### [07-10-2026 11:29] | Category: [TOOL]
 - **Prompt:** "chưa thấy step để qc hệ thống nhỉ? à thêm ý là local cũng có thể chạy cho mục đích cá nhân thay vì phải dùng các hệ thống phức tạp"
 - **Xử lý:**

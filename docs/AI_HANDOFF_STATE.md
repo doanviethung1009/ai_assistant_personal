@@ -1,36 +1,28 @@
-# AI Handoff & Project State
+# Trạng thái Bàn giao Hệ thống (AI Handoff State)
 
-This file serves as the definitive context memory for AI assistants (Antigravity, Cursor, etc.).
-Whenever you start a new session or switch computers, prompt the AI to **"Đọc file docs/AI_HANDOFF_STATE.md để lấy context"**.
+> **LƯU Ý DÀNH CHO AI AGENT:** 
+> Đọc kỹ file này vào đầu mỗi phiên làm việc (Session) để nắm bắt bối cảnh hiện tại. Sau đó, **BẮT BUỘC đọc file `docs/project-review.md` (Master Blueprint)** để lấy toàn bộ kiến trúc và chức năng hệ thống chỉ trong 1 lần đọc (Giúp tiết kiệm Credit/Token thay vì đọc 20 file rải rác).
 
-## 1. Project Architecture
-- **Framework**: Next.js 15 (App Router), React 19, Tailwind CSS v4.
-- **Backend/Data**: Currently running in `DATA_SOURCE=file` mode (JSON local file in `data/builder-data.json`). Python/Postgres backend exists in `apps/core` but is mostly bypassed right now in favor of local file prototyping.
-- **State Management**: Next.js keeps the JSON store in memory (`apps/web/lib/store/engine.ts`). **WARNING**: Directly modifying `builder-data.json` while Next.js `npm run dev` is running will result in the state being overwritten by Next.js memory cache on the next UI action. Always restart the Next.js dev server if you manually modify the JSON file!
-- **Server Actions Limit**: `next.config.ts` has `serverActions.bodySizeLimit: "100mb"` to allow massive JSON backup uploads.
+## 1. Bối cảnh & Kiến trúc Hiện tại (Phase 1)
+- **Frontend (Web):** Next.js App Router, TailwindCSS. Đã áp dụng toàn diện thiết kế **Glassmorphism** (trong suốt, bóng đổ, gradient hiện đại).
+- **Backend/Data:** Hiện đang sử dụng **Local JSON** (`data/builder-data.json`) để lưu trữ dữ liệu. Kiến trúc này đáp ứng nhu cầu phát triển cực nhanh cho Phase 1 và sử dụng cá nhân hoàn hảo qua lệnh `npm run dev`.
+- **Hệ thống DevOps:** Đã chuẩn bị sẵn sàng cấu hình Docker cực chuẩn (Rootless, pgvector, Nextjs Standalone) nằm trong `docker-compose.yml`, dọn đường cho Phase 2.
 
-## 2. Advanced Data Sync (Jira & Google Sheets)
-- **Import/Sync**: Users can import `.xlsx`/`.csv` via file upload OR paste Google Sheets links directly (auto-converts to export format). 
-- **Parsing Logic (`actions-import.ts`)**:
-  - **Auto-Project Creation**: Parses the `Company` column from Excel. Automatically creates a Project and assigns a random hex color if it doesn't exist (case-insensitive deduplication).
-  - **Tag Extraction**: Automatically generates tags from: `Company` column, `Projects` column, `Labels` column, AND any text enclosed in `[brackets]` within the `Summary` field. All tags are strictly lowercased and deduplicated.
-  - **Task Deduplication**: Falls back to deduping by Title if JIRA `Issue Key` is missing. Otherwise uses strict `Issue Key` deduplication.
+## 2. Tính năng đã hoàn thiện & Xác nhận (QC-Passed)
+- **Đồng bộ Jira (Jira Sync):** Giao diện đã mượt mà, sử dụng `router.refresh()` ngầm, giữ State ổn định, có log thời gian đồng bộ cuối cùng.
+- **Quản trị Team:** Bộ lọc đa chiều trên URL Params (time, status), khắc phục thành công lỗi mất thành viên khi số lượng task = 0 (tự động khởi tạo count = 0 cho mọi assignees).
+- **Trang Tài liệu (Docs):** Hệ thống Markdown tự động render lên Web. Đã đăng ký đầy đủ tài liệu về Kiến trúc (Target, Docker, Deploy) và Kỹ năng AI (QC UAT).
 
-## 3. Core Entities (`engine.ts`)
-- **Task**: `assignee`, `tags`, `project_id`, `external_id`, `created_at`, `due_at`, `completed_at`. Separates Team vs Personal tasks based on assignee filtering.
-- **Project**: Auto-generated from Company, assigned dynamic `color`.
-- **sync_urls**: Managed via `UrlSyncManager`.
+## 3. Hệ thống Rules & Trí tuệ AI (Agentic Protocols)
+- Dự án áp dụng bộ luật vô cùng khắt khe tại `AGENTS.md` (từ 3.1 đến 3.11).
+- **Luật nổi bật:**
+  - `Rule 3.10`: Vòng đời phát triển phải qua 3 bước: Code -> Docs -> QC.
+  - `Rule 3.11`: CẤM tự ý Push Git nếu chưa được User Confirm. Khi Push phải có Changelog.
+  - `Rule 3.9`: Mọi thay đổi về hạ tầng (Docker/CI/CD) phải được viết comment trực tiếp và có tài liệu giải thích.
 
-## 4. How to resume work
-If the user asks to continue developing:
-1. Note the separation between Personal (`/tasks`) and Team (`/team`).
-2. If modifying filters, check `engine.ts` (`listTasks` filters `options.forCurrentUser`).
-3. If extending JIRA importing, strictly use/modify `apps/web/app/actions-import.ts`.
-4. Ensure timezone formatting (UTC+7) uses `formatDateTime` from `lib/format.ts`.
+## 4. Định hướng Tiếp theo (To-do / Phase 2)
+1. **Chuyển đổi Backend (Phase 2):** Khi User yêu cầu mở rộng, sẽ chuyển dịch từ Local JSON sang mô hình Backend độc lập (FastAPI + Postgres) theo đúng định hướng tại `docs/TARGET_ARCHITECTURE.md`.
+2. **Triển khai AI/Vault:** Tích hợp `pgvector` cho tìm kiếm ngữ nghĩa (Notes) và Zero-Knowledge Encryption cho Vault.
+3. **Mở rộng RBAC:** Tích hợp logic phân quyền phức tạp theo chuẩn trong `.agents/skills/rbac-implementation/SKILL.md`.
 
-## 5. System Tools & Integrations
-- **Tag Management**: The `/tags` page globally renames or deletes tags across all tasks and notes.
-- **Wipe Data (Danger Zone)**: Granular deletion (Tasks, Projects, Notes, Sync URLs, Chrome History, All).
-- **Auto-Backup Mechanism**: Before any wipe, `engine.ts` dumps current state and `chrome-history.json` into `data/backups/`. It automatically purges older backups to retain exactly **1 latest backup**.
-- **Restore JSON**: Users can upload a backup JSON file (`RestoreJsonManager`) to instantly overwrite the entire DB. 
-- **Chrome History Scraper**: Uses Node.js `child_process` and `sqlite3` to dump Chrome History DB into `data/chrome-history.json` (cross-platform). Rendered via `/history` with time-based filtering (1d, 3d, 1m, etc.) and search.
+*--- Bản cập nhật cuối cùng: [2026-10-07] ---*

@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- bổ sung tài liệu kiến trúc, triển khai, kỹ năng QC và cập nhật luật AI (`7c6ed6e`)
 - update UI to glassmorphism, fix team time filter, add jira sync enhancements (`5c45a9d`)
 - tự động tạo màu riêng biệt cho từng dự án dựa trên mã (`a46b509`)
 - tối ưu đồng bộ dự án Jira và gợi ý tên người dùng (`1f0e83c`)
