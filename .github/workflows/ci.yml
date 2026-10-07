@@ -1,0 +1,90 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  CI: chặn lỗi trước khi merge vào main.
+#
+#  Vì sao có file này: trước đây không có CI nào, nên một router import module
+#  không tồn tại (làm sập cả API) vẫn merge được. Hai job dưới đây chạy đúng
+#  những lệnh dev chạy tay (`make lint`, `make test`), nên kết quả CI và máy
+#  dev không lệch nhau.
+#
+#  Giải thích chi tiết: docs/CI_AND_TESTING.md
+# ═══════════════════════════════════════════════════════════════════════
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Huỷ lượt chạy cũ của cùng một nhánh khi có commit mới, đỡ tốn phút CI.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Quyền tối thiểu: CI chỉ cần đọc mã nguồn.
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend (ruff, alembic, pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/core
+    services:
+      # Cùng image với docker-compose.yml để môi trường giống thật.
+      # Không dùng SQLite: model dùng JSONB, ARRAY, GIN, partial index.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Database dùng riêng cho CI, bị xoá sạch giữa các test.
+      TEST_DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_test
+      DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_test
+      # Khoá giả chỉ dùng trong CI, đủ dài để qua validate min_length=16.
+      API_KEY: ci-only-api-key-0123456789
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Cài dependency (kèm nhóm dev)
+        run: uv sync
+      - name: Lint (cùng lệnh với `make lint`)
+        run: uv run ruff check app migrations tests
+      - name: Migration lên head
+        run: uv run alembic upgrade head
+      - name: Model và migration phải khớp nhau
+        # Fail nếu sửa model mà quên sinh migration (từng gặp với tasks.assignee).
+        run: uv run alembic check
+      - name: Test
+        run: uv run pytest -q
+
+  web:
+    name: Web (tsc, audit)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20 # khớp node:20-alpine trong apps/web/Dockerfile
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - name: Typecheck (cùng lệnh với `make lint`)
+        run: npx tsc --noEmit
+      - name: Audit dependency production
+        # Chưa chặn merge: hiện có lỗ hổng high chưa xử lý. Bỏ continue-on-error
+        # sau khi chạy `npm audit fix` xong để audit thành cổng thật.
+        continue-on-error: true
+        run: npm audit --omit=dev --audit-level=high

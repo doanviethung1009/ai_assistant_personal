@@ -132,6 +132,10 @@ backup: ## Dump database ra backups/
 smoke: ## Kiểm tra end-to-end qua API thật (tạo, sửa, xoá task)
 	@bash scripts/smoke-test.sh
 
+.PHONY: test
+test: ## pytest backend trên database riêng <POSTGRES_DB>_test (không đụng DB dev)
+	@bash scripts/test-backend.sh
+
 .PHONY: purge
 purge: ## Dọn task đã quá thời hạn giữ trong thùng rác
 	@curl -fsS -X POST -H "X-API-Key: $${API_KEY}" \
@@ -148,7 +152,7 @@ health: ## Gọi readiness probe
 
 .PHONY: lint
 lint: ## Ruff cho backend, tsc cho frontend
-	$(API) ruff check app migrations
+	$(API) ruff check app migrations tests
 	$(DC) exec -T web npx tsc --noEmit
 
 .PHONY: gen-types
@@ -158,8 +162,8 @@ gen-types: ## Sinh lại apps/web/lib/generated/openapi.d.ts từ /openapi.json 
 
 .PHONY: fmt
 fmt: ## Tự sửa lỗi format backend
-	$(API) ruff check --fix app migrations
-	$(API) ruff format app migrations
+	$(API) ruff check --fix app migrations tests
+	$(API) ruff format app migrations tests
 
 .PHONY: lock
 lock: ## Sinh lại uv.lock cho backend (chạy sau khi sửa pyproject.toml)
