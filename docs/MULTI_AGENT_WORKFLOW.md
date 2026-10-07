@@ -1,57 +1,48 @@
 # Kịch bản Demo: Làm việc với Multi-Agent (Nhiều AI Agent)
 
-Khi dự án lớn lên, việc nhồi nhét cho một AI (ví dụ: Claude 3.5 hoặc Gemini 1.5) làm từ A-Z (từ Database, Backend, sang Frontend) trong cùng một prompt thường dẫn đến rủi ro: AI bị "ảo giác" (hallucination), quên context, hoặc viết code phá vỡ kiến trúc cũ.
+Khi dự án lớn lên, việc nhồi nhét cho một AI làm từ A-Z (từ Thiết kế, Code, Test đến Merge) trong cùng một prompt thường dẫn đến rủi ro: AI bị "ảo giác" (hallucination), quên context, hoặc tự ý phá vỡ kiến trúc. Giải pháp tối ưu là **Multi-Agent Workflow** (Phân chia vai trò).
 
-Giải pháp tối ưu là **Multi-Agent Workflow** (Phân chia vai trò): Bạn (đóng vai trò là Product Manager / Orchestrator) sẽ chia task và giao cho từng AI Agent chuyên biệt.
-
-Dưới đây là Demo quy trình thực tế khi phát triển tính năng **"Giỏ Hàng" (Shopping Cart)**.
+Dưới đây là Vòng đời hoàn thiện một Epic (Ví dụ: Tính năng Giỏ hàng) với 5 bước phối hợp:
 
 ---
 
-## 🛠 Bước 1: Giao việc cho Backend Agent (Ví dụ: dùng Gemini 1.5 Pro)
-**Mục tiêu:** Thiết kế Schema Database và viết API. Agent này không được phép đụng vào Frontend.
-
-**👉 Prompt giao việc cho Backend Agent:**
-> "Bạn là Backend Expert. Hãy phát triển tính năng Giỏ hàng (Cart) cho hệ thống. 
-> 1. Dùng skill `add-entity` để tạo bảng CartItem trong database. 
-> 2. Viết các API CRUD tại route `/api/v1/cart`.
-> 3. Cấm tuyệt đối đụng vào thư mục `apps/web/`. Bắt buộc phải tuân thủ `backend-conventions`.
-> Khi xong, hãy dùng skill `git-commit` để lưu lại với message 'feat(core): add cart api'."
-
-**Kết quả thu được:**
-Backend Agent sẽ sinh ra các file `.py`, chạy migration (Alembic), tự cập nhật docs API và tự động chốt commit. Lúc này API `/api/v1/cart` đã sẵn sàng hoạt động ở `localhost:8000`.
+## 📐 Bước 1: Thiết kế Kiến trúc (Software Architect)
+**Mục tiêu:** Định hình luồng dữ liệu trước khi code.
+> *"Đóng vai `@.agents/roles/software-architect.md`. Hãy phân tích yêu cầu tính năng Giỏ hàng, vẽ sơ đồ Sequence Diagram, định nghĩa API Contract và chốt với tôi trước khi làm tiếp."*
 
 ---
 
-## 🎨 Bước 2: Giao việc cho Frontend Agent (Ví dụ: dùng Claude 3.5 Sonnet)
-**Mục tiêu:** Viết giao diện React (Next.js) và kết nối vào API vừa được Backend Agent tạo ra. Claude vốn rất mạnh về UI/UX.
-
-**👉 Prompt giao việc cho Frontend Agent:**
-> "Bạn là Frontend Expert. Một Backend Agent vừa hoàn thành API Giỏ hàng. 
-> 1. Hãy đọc file `docs/API_REFERENCE.md` để hiểu payload của endpoint `/api/v1/cart`.
-> 2. Thiết kế trang Giỏ hàng tại route `apps/web/app/cart/page.tsx`. Giao diện cần hiện đại, có hiệu ứng hover.
-> 3. Bắt buộc tuân thủ nguyên tắc Server Actions và Client Components trong `web-conventions`.
-> Cấm đụng vào thư mục `apps/core/`. Xong việc hãy commit với type 'feat(web)'."
-
-**Kết quả thu được:**
-Vì Frontend Agent chỉ đọc `API_REFERENCE.md` (do Backend Agent ghi lại ở Bước 1), nó sẽ hiểu ngay định dạng JSON trả về mà không cần phải đọc code Python. Nó tập trung 100% tài nguyên (context window) vào việc vẽ UI.
+## 🛠 Bước 2: Phát triển Tính năng (Backend/Frontend/DBA)
+**Mục tiêu:** Code trên các nhánh `feat/*` dựa trên bản thiết kế.
+> *"Đóng vai `@.agents/roles/database-architect.md`. Chạy skill db-migration để tạo bảng CartItem."*
+> 
+> *"Đóng vai `@.agents/roles/backend-engineer.md`. Viết API `/api/v1/cart` theo đúng Contract của Architect."*
+> 
+> *"Đóng vai `@.agents/roles/frontend-engineer.md`. Code UI trang Giỏ hàng kết nối với API Backend. Tuyệt đối không đụng vào `apps/core/`."*
 
 ---
 
-## 🕵️ Bước 3: Giao việc cho QA / Reviewer Agent (Ví dụ: OpenAI o1 hoặc Cursor)
-**Mục tiêu:** Rà soát lại code của cả 2 Agent trên xem có lỗi bảo mật hoặc kiến trúc không.
+## 🕵️ Bước 3: Kiểm thử & Bảo mật (QA Tester / Security Auditor)
+**Mục tiêu:** Soi rác, bắt lỗi và tấn công thử (Pentest) tính năng vừa code.
+> *"Đóng vai `@.agents/roles/qa-tester.md`. Hãy chạy skill `qc-uat` kiểm tra kỹ luồng thêm vào giỏ hàng xem có lỗi vặt không."*
+> 
+> *"Đóng vai `@.agents/roles/security-auditor.md`. Hãy rà soát xem API Giỏ hàng có nguy cơ SQL Injection hay lỗi phân quyền (RBAC) không."*
 
-**👉 Prompt giao việc cho QA Agent:**
-> "Bạn là Senior Code Reviewer. Tôi vừa nhờ 2 Agent khác code tính năng Giỏ hàng.
-> 1. Hãy xem lại toàn bộ các file đã thay đổi trong 2 commit gần nhất.
-> 2. Đọc file `AGENTS.md` và các rules trong `.agents/rules/` để biết chuẩn mực của hệ thống.
-> 3. Tìm xem có lỗi hổng bảo mật (ví dụ SQL Injection, lộ API Key) hay lỗi logic nào không. 
-> 4. Chạy lệnh `make smoke` để kiểm tra test. 
-> Nếu phát hiện lỗi, hãy tự vá (fix) và commit bổ sung."
+---
+
+## 👑 Bước 4: Duyệt Code & Gộp nhánh (Tech Lead)
+**Mục tiêu:** Người giữ cửa (Gatekeeper) quyết định đưa code lên Production. Tại sao cần role này? Vì Dev và QA thường tập trung vào tính năng (Micro), còn Tech Lead sẽ nhìn vào tính ổn định toàn cục (Macro).
+> *"Đóng vai `@.agents/roles/tech-lead.md`. Các Agent Dev và QA đã làm xong nhánh `feat/cart`. Hãy dùng skill `pr-review` để soát lại toàn bộ kiến trúc một lần cuối. Nếu đạt chuẩn, hãy Merge vào nhánh `main` và sinh Changelog."*
+
+---
+
+## 🐳 Bước 5: Triển khai (DevOps Engineer)
+**Mục tiêu:** Đóng gói và đưa sản phẩm ra ngoài.
+> *"Đóng vai `@.agents/roles/devops-engineer.md`. Chạy skill `docker-deploy` để build lại image của Web và Backend, đảm bảo mọi cấu hình an toàn."*
 
 ---
 
 ## 💡 Tổng kết sức mạnh của mô hình này:
-1. **Phân lập Context:** Backend Agent chỉ focus vào Python, Frontend Agent chỉ focus vào TSX. Không xảy ra tình trạng AI sinh nhầm cú pháp Python vào file TSX.
-2. **Giao tiếp qua Tài liệu:** Backend Agent ghi tài liệu vào `docs/`, Frontend Agent đọc từ `docs/` để làm UI. Giống hệt cách con người làm việc với nhau (API Contract).
-3. **Kiểm soát bằng Rule:** Dù là Agent nào, khi nó đụng vào `apps/core`, rule Backend sẽ tự kích hoạt. Đụng vào `apps/web`, rule Frontend tự kích hoạt (nhờ cơ chế fileMatchPattern).
+1. **Phân lập Context:** Mỗi Agent chỉ đọc và thao tác trên phần việc của nó (Frontend không đụng Backend, QA không tự tiện sửa Database).
+2. **Chéo kiểm tra (Cross-check):** Code do Dev-Agent viết sẽ bị bắt lỗi bởi QA-Agent và bị từ chối bởi TechLead-Agent nếu kém chất lượng.
+3. **Quản lý rủi ro:** Bạn không bao giờ sợ AI làm hỏng nhánh `main` vì đã có luồng kiểm soát (Tech Lead) và tài liệu rõ ràng.

@@ -133,6 +133,7 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 
 Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn 6 "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
 
+- 👑 **`tech-lead.md`**: Trưởng nhóm Kỹ thuật (Maintainer). Người giữ cửa cuối cùng, duyệt Pull Request, quyết định Merge vào `main` và sinh Changelog.
 - 📐 **`software-architect.md`**: Kiến trúc sư hệ thống (System Design), định hình luồng dữ liệu, vẽ sơ đồ và quyết định công nghệ trước khi code.
 - 🔐 **`security-auditor.md`**: Chuyên gia an ninh mạng, rà soát lỗ hổng OWASP, kiểm toán tính năng Két bảo mật (Zero-Trust) và mã hoá.
 - 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.

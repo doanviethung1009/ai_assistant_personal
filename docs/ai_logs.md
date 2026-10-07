@@ -4,6 +4,16 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 14:05] | Category: [TOOL]
+- **Prompt:** "bổ sung giải thích và bổ sung thêm flow của ai agent hoạt động với nhiều role, có cần thêm role quản trị để duyệt code hay commit không..."
+- **Xử lý:**
+  - Khởi tạo Role mới: `tech-lead.md` (Trưởng nhóm Kỹ thuật). Đóng vai trò là "Người giữ cửa" (Gatekeeper) cuối cùng để duyệt PR, chốt kiến trúc và tiến hành Merge (không trực tiếp code tính năng).
+  - Viết lại toàn bộ tài liệu `docs/MULTI_AGENT_WORKFLOW.md` để mô tả một luồng 5 bước hoàn chỉnh: (1) Architect thiết kế -> (2) Dev code -> (3) QA/Security kiểm thử -> (4) Tech Lead duyệt & Merge -> (5) DevOps triển khai.
+  - Cập nhật mục lục `AI_AGENT_GUIDE.md`. Chạy Changelog, Commit & Push.
+- **Phản hồi:** Vô cùng cần thiết! Đã bổ sung Tech Lead. Hệ thống giờ đây có cơ chế "Tam quyền phân lập" rất chặt chẽ giữa Dev - QA - Lead.
+
+---
+
 ### [07-10-2026 13:33] | Category: [TOOL]
 - **Prompt:** "ý tôi là xem chi tiết bạn trả lời trong trace log nữa"
 - **Xử lý:**
