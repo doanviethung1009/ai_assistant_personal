@@ -269,6 +269,20 @@ export const DOCS: DocEntry[] = [
       "Phân tích Core Platform hiện tại (NextJS, FastAPI, Docker) và đề xuất các phương án công nghệ thay thế (Go, K8s, Supabase).",
     category: "Kiến trúc & Tích hợp",
     file: path.join("docs", "PLATFORM_ALTERNATIVES.md"),
+  },
+  {
+    slug: "claude-operating-guide",
+    title: "Cẩm nang vận hành Claude (IDE/CLI)",
+    description: "Tài liệu chuyên sâu về cách Claude khám phá bối cảnh dự án, nạp luật và quản lý skills.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
+  },
+  {
+    slug: "codex-operating-guide",
+    title: "Cẩm nang vận hành OpenAI Codex",
+    description: "Tài liệu chuyên sâu về cơ chế hoạt động của Codex CLI/IDE và cách nạp hệ thống Agent.",
+    category: "Quy ước Code (AI Rules)",
+    file: path.join("docs", "CODEX_OPERATING_GUIDE.md"),
   }
 ];
 

@@ -112,10 +112,12 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 ### A. Hệ sinh thái OpenAI Codex (CLI / App)
 1. **Codex CLI:** Mở Terminal tại thư mục gốc, gõ lệnh `codex`. CLI sẽ tự động nạp `AGENTS.md` theo cơ chế native. Bạn có thể chat trực tiếp trên terminal để AI tự sửa code.
 2. **Codex IDE Extension:** Cài đặt extension trong VS Code, mở Chat (hoặc Inline Edit). Nó sẽ tự động fallback đọc `AGENTS.md`.
+*(Chi tiết vận hành chuyên sâu: Xem `docs/CODEX_OPERATING_GUIDE.md`)*
 
 ### B. Hệ sinh thái Anthropic Claude (CLI / IDE)
 1. **Claude Code CLI:** Mở Terminal, gõ lệnh `claude`. Hệ thống sẽ đọc file `CLAUDE.md` và tự động `@import` các luật từ `AGENTS.md` nhờ cấu trúc Lazy-loading siêu tiết kiệm token.
 2. **Claude IDE (RooCode / Cline):** Mở extension trong VS Code, Claude sẽ tự quét và nạp `CLAUDE.md`.
+*(Chi tiết vận hành chuyên sâu: Xem `docs/CLAUDE_OPERATING_GUIDE.md`)*
 
 ### C. Các Agentic IDE (Cursor, Windsurf, Antigravity)
 - **Cách dùng:** Mở thư mục dự án bằng IDE. Hệ thống sẽ tự động bắt tín hiệu từ `.cursorrules` (hoặc cấu hình workspace) và chuyển hướng đọc `AGENTS.md`.

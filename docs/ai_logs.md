@@ -4,6 +4,18 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:09] | Category: [TOOL]
+- **Prompt:** "trong folder share tôi có bổ sung md của claude và chatgpt operation hãy phân tích và bổ sung vào các file cần, md, log ... để phù hợp"
+- **Xử lý:**
+  - Định vị thư mục `share/` và phân tích 2 file tài liệu khổng lồ: `CLAUDE_OPERATING_GUIDE.md` và `CODEX_OPERATING_GUIDE.md`.
+  - Di chuyển 2 file này vào thư mục `docs/` để đồng nhất kho tri thức và xóa thư mục `share` trống.
+  - Cập nhật mảng cấu hình tại `apps/web/lib/docs.ts` để hiển thị 2 cẩm nang này lên Web UI cho người dùng đọc.
+  - Cập nhật `docs/AI_AGENT_GUIDE.md` (Mục 7) bổ sung đường dẫn chéo trỏ về 2 file tài liệu chuyên sâu này.
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã tích hợp thành công hai bản Deep Operating Guide (Cẩm nang vận hành chuyên sâu) của Codex và Claude vào hệ thống. Mọi thứ đã có sẵn trên Web UI.
+
+---
+
 ### [07-10-2026 12:37] | Category: [TOOL]
 - **Prompt:** "xem tài liệu có bổ sung về cách sử dụng agent của mỗi hệ chưa?"
 - **Xử lý:**
