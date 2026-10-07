@@ -31,13 +31,22 @@ export default async function DocsPage({
 
       {/* ── Chọn tài liệu ───────────────────────────────────────────── */}
       <nav aria-label="Chọn tài liệu" className="flex flex-col gap-8">
-        {Array.from(new Set(DOCS.map(doc => doc.category))).map(category => {
-          const categoryDocs = DOCS.filter(doc => doc.category === category);
+        {/* Mỗi nhóm là một <details>: chỉ nhóm chứa tài liệu đang xem được mở sẵn,
+            để trang không là bức tường hơn 40 thẻ. Không cần JS nên chạy ở Server Component. */}
+        {Array.from(new Set(DOCS.map((doc) => doc.category))).map((category) => {
+          const categoryDocs = DOCS.filter((doc) => doc.category === category);
+          const hasActive = categoryDocs.some((doc) => doc.slug === entry.slug);
           return (
-            <div key={category}>
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+            <details key={category} open={hasActive} className="group">
+              <summary className="mb-3 flex cursor-pointer select-none items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--color-ink-muted)] hover:text-[var(--color-ink)]">
+                <span className="transition-transform group-open:rotate-90" aria-hidden="true">
+                  ▸
+                </span>
                 {category}
-              </h2>
+                <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal">
+                  {categoryDocs.length}
+                </span>
+              </summary>
               <ul className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {categoryDocs.map((doc) => {
                   const isActive = doc.slug === entry.slug;
@@ -46,17 +55,17 @@ export default async function DocsPage({
                       <Link
                         href={`/docs?doc=${doc.slug}`}
                         aria-current={isActive ? "page" : undefined}
-                        className={`flex flex-col h-full rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
+                        className={`flex h-full flex-col rounded-lg border p-3 transition-all hover:-translate-y-0.5 hover:shadow-sm ${
                           isActive
                             ? "border-[var(--color-accent)] bg-[var(--color-accent)]/10 ring-1 ring-[var(--color-accent)]/20"
                             : "border-[var(--color-border)] bg-[var(--color-surface-raised)] hover:border-[var(--color-ink-muted)]/30"
                         }`}
                       >
                         <span className="block text-sm font-medium">{doc.title}</span>
-                        <span className="mt-1 block text-xs text-[var(--color-ink-muted)] leading-relaxed">
+                        <span className="mt-1 block text-xs leading-relaxed text-[var(--color-ink-muted)]">
                           {doc.description}
                         </span>
-                        <code className="mt-auto pt-3 block truncate text-[10px] text-[var(--color-ink-muted)] opacity-60">
+                        <code className="mt-auto block truncate pt-3 text-[10px] text-[var(--color-ink-muted)] opacity-60">
                           {doc.file.replace(/\\/g, "/")}
                         </code>
                       </Link>
@@ -64,7 +73,7 @@ export default async function DocsPage({
                   );
                 })}
               </ul>
-            </div>
+            </details>
           );
         })}
       </nav>

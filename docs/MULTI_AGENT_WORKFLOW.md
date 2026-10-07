@@ -1,5 +1,7 @@
 # Kịch bản Demo: Làm việc với Multi-Agent (Nhiều AI Agent)
 
+> **Bản chính hiện nay:** `MULTI_AGENT_SYSTEM.md` (cách hoạt động, cách dùng) và `MULTI_AGENT_TRIAL.md` (ví dụ chạy thật). File này giữ lại làm kịch bản demo kiểu "đóng vai" cho IDE không có subagent. Xem `INDEX.md` để biết nên đọc gì.
+
 Khi dự án lớn lên, việc nhồi nhét cho một AI làm từ A-Z (từ Thiết kế, Code, Test đến Merge) trong cùng một prompt thường dẫn đến rủi ro: AI bị "ảo giác" (hallucination), quên context, hoặc tự ý phá vỡ kiến trúc. Giải pháp tối ưu là **Multi-Agent Workflow** (Phân chia vai trò).
 
 Dưới đây là Vòng đời hoàn thiện một Epic (Ví dụ: Tính năng Giỏ hàng) với 5 bước phối hợp:

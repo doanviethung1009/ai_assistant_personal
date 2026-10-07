@@ -24,11 +24,18 @@ export interface DocEntry {
 
 export const DOCS: DocEntry[] = [
   {
+    slug: "index",
+    title: "Bản đồ tài liệu: đọc gì trước",
+    description: "Chọn đường đọc theo vai (người dùng, dev mới, dùng Claude Code, AI agent, vận hành) và biết tài liệu nào là bản chính.",
+    category: "1. Bắt đầu",
+    file: path.join("docs", "INDEX.md"),
+  },
+  {
     slug: "guide",
     title: "Hướng dẫn sử dụng",
     description:
       "Dành cho người dùng app: nhập task, làm việc hàng ngày, thùng rác, sao lưu, xử lý sự cố.",
-    category: "Tổng quan & Hướng dẫn",
+    category: "1. Bắt đầu",
     file: path.join("docs", "huong-dan-su-dung.md"),
   },
   {
@@ -36,165 +43,125 @@ export const DOCS: DocEntry[] = [
     title: "README",
     description:
       "Cách chạy, kiến trúc, mô hình dữ liệu, quyết định thiết kế và lý do.",
-    category: "Tổng quan & Hướng dẫn",
+    category: "1. Bắt đầu",
     file: "README.md",
   },
   {
     slug: "project-structure",
     title: "Cấu trúc dự án",
     description: "Giải thích các thư mục, file quan trọng và cách các rule được load tự động.",
-    category: "Tổng quan & Hướng dẫn",
+    category: "1. Bắt đầu",
     file: path.join("docs", "PROJECT_STRUCTURE.md"),
   },
   {
-    slug: "api-reference",
-    title: "Tài liệu API Backend",
-    description: "Danh sách và mô tả các endpoint (Tasks, Notes, Projects, v.v.) dành cho frontend và Agent.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "API_REFERENCE.md"),
+    slug: "pdlc",
+    title: "Quy trình Phát triển Sản phẩm (PDLC)",
+    description: "Vòng đời khép kín 6 bước từ lúc lên ý tưởng (Ideation) đến khi Go-Live cho hệ thống Multi-Agent.",
+    category: "1. Bắt đầu",
+    file: path.join("docs", "PRODUCT_DEVELOPMENT_LIFECYCLE.md"),
   },
   {
-    slug: "ai-logs",
-    title: "Quy tắc Nhật ký AI (Task Trace)",
-    description: "Cơ chế tự động lưu vết các quyết định, prompt và xử lý của Agent.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join(".agents", "rules", "ai-logger.md"),
+    slug: "claude-cli-quickstart",
+    title: "Claude CLI Quickstart (multi-agent)",
+    description: "Chạy Claude Code với cấu hình multi-agent của repo: subagent, hook an toàn, quyền và quy trình commit/push.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "CLAUDE_CLI_QUICKSTART.md"),
   },
   {
-    slug: "ai-real-world-example",
-    title: "Ví dụ Thực chiến: Multi-App & Vault",
-    description: "Case study mô tả quy trình 6 bước phối hợp 8 AI Agent để xây dựng hệ thống Két bảo mật và Portal thực tế.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "AI_REAL_WORLD_EXAMPLE.md"),
+    slug: "multi-agent-system",
+    title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
+    description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
   },
   {
-    slug: "ai-data-storage",
-    title: "Lưu trữ Dữ liệu AI",
-    description: "Kiến trúc lưu trữ 2 luồng: Trace Log (Markdown) và Entity (Database/JSON) dành cho AI.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "AI_DATA_STORAGE.md"),
+    slug: "multi-agent-trial",
+    title: "Ví dụ thực chiến: chạy trọn luồng multi-agent",
+    description: "Bản ghi một lần chạy thật 7 bước với tính năng Lưu trữ note: prompt, kết quả từng agent, lỗi bắt được, chỗ chưa trơn tru và checklist cho orchestrator.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "MULTI_AGENT_TRIAL.md"),
   },
   {
-    slug: "json-storage",
-    title: "Cơ chế Migration JSON (SCHEMA_VERSION)",
-    description: "Giải thích cách hệ thống nạp và bảo vệ file JSON cục bộ khi app được nâng cấp tính năng.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "JSON_STORAGE.md"),
-  },
-  {
-    slug: "vault",
-    title: "Két bảo mật (Vault)",
-    description: "Cách lưu thông tin nhạy cảm: mã hoá AES-256 ở browser, mật khẩu master, che/hiện, tự khoá, giới hạn.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "VAULT.md"),
-  },
-  {
-    slug: "project",
-    title: "Bối cảnh dự án",
-    description:
-      "Mục tiêu, ranh giới ngôn ngữ, nguyên tắc thiết kế, ràng buộc an toàn cho phần Ops.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join(".agents", "rules", "project.md"),
-  },
-  {
-    slug: "gitflow",
-    title: "Mô hình Git và go-live",
-    description:
-      "Đường đi của code từ main qua uat tới prod, quy trình hotfix, rollback và tách môi trường.",
-    category: "DevOps & Triển khai",
-    file: path.join("docs", "git-workflow.md"),
-  },
-  {
-    slug: "deploy",
-    title: "Runbook deploy",
-    description:
-      "Thứ tự lệnh cho từng tình huống: deploy lần đầu, update có migration, đổi .env, hotfix, rollback, troubleshooting.",
-    category: "DevOps & Triển khai",
-    file: path.join("docs", "deploy-runbook.md"),
-  },
-  {
-    slug: "ops",
-    title: "Bản đồ code",
-    description:
-      "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết.",
-    category: "DevOps & Triển khai",
-    file: path.join(".agents", "rules", "ops.md"),
-  },
-  {
-    slug: "status",
-    title: "Trạng thái bàn giao",
-    description:
-      "Phần nào đã verify, phần nào chưa, bug đã sửa, rủi ro còn lại.",
-    category: "DevOps & Triển khai",
-    file: path.join(".agents", "rules", "status.md"),
-  },
-  {
-    slug: "agents",
-    title: "AGENTS (System Prompt)",
-    description:
-      "Luật tối cao và bản đồ tư duy bắt buộc mọi AI Agent phải đọc trước khi làm việc.",
-    category: "Quy ước Code (AI Rules)",
-    file: "AGENTS.md",
+    slug: "new-agent-onboarding",
+    title: "Nhập môn AI Agent Mới",
+    description: "Cẩm nang quy định cách một AI mới lấy thông tin, tuân thủ Rules, và vòng lặp công việc.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "NEW_AGENT_ONBOARDING.md"),
   },
   {
     slug: "agent-prompts",
     title: "Thư viện Prompt mẫu",
     description:
       "Các mẫu câu lệnh giao tiếp với AI tối ưu nhất (Tạo chức năng, Debug, Refactor, Commit).",
-    category: "Quy ước Code (AI Rules)",
+    category: "2. Làm việc với AI Agent",
     file: path.join("docs", "AGENT_PROMPT_EXAMPLES.md"),
-  },
-  {
-    slug: "create-ai-customizations",
-    title: "Cách tạo Skills, Rules & Hooks",
-    description:
-      "Hướng dẫn chi tiết (step-by-step) cách tự tạo thêm Rule, Skill, Hook và cấu hình Plugin MCP cho dự án.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "CREATE_AI_CUSTOMIZATIONS.md"),
   },
   {
     slug: "multi-agent-workflow",
     title: "Demo: Multi-Agent Workflow",
     description:
       "Kịch bản thực tế cách chia việc (phân quyền) cho nhiều AI Agent phối hợp phát triển 1 tính năng lớn.",
-    category: "Quy ước Code (AI Rules)",
+    category: "2. Làm việc với AI Agent",
     file: path.join("docs", "MULTI_AGENT_WORKFLOW.md"),
+  },
+  {
+    slug: "ai-real-world-example",
+    title: "Ví dụ Thực chiến: Multi-App & Vault",
+    description: "Case study mô tả quy trình 6 bước phối hợp 8 AI Agent để xây dựng hệ thống Két bảo mật và Portal thực tế.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "AI_REAL_WORLD_EXAMPLE.md"),
   },
   {
     slug: "ai-agent-guide",
     title: "Hướng dẫn AI Agent",
     description: "Cách tổ chức và quản lý AI Agent, Multi-model, Rules, và Skills chuẩn.",
-    category: "Quy ước Code (AI Rules)",
+    category: "2. Làm việc với AI Agent",
     file: path.join("docs", "AI_AGENT_GUIDE.md"),
   },
   {
-    slug: "new-agent-onboarding",
-    title: "Nhập môn AI Agent Mới",
-    description: "Cẩm nang quy định cách một AI mới lấy thông tin, tuân thủ Rules, và vòng lặp công việc.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "NEW_AGENT_ONBOARDING.md"),
-  },
-  {
-    slug: "project-review",
-    title: "Bản đồ Hệ thống (Master Blueprint)",
-    description: "Tài liệu nén (token-optimized) chứa toàn cảnh kiến trúc, chức năng, UI/UX để AI đọc nhanh.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "project-review.md"),
-  },
-  {
-    slug: "comment-style",
-    title: "Quy ước comment",
+    slug: "create-ai-customizations",
+    title: "Cách tạo Skills, Rules & Hooks",
     description:
-      "Cách viết comment/docstring: banner section, cảnh báo an toàn, docstring giải thích WHY. Tự nạp khi sửa file code.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join(".agents", "rules", "comment-style.md"),
+      "Hướng dẫn chi tiết (step-by-step) cách tự tạo thêm Rule, Skill, Hook và cấu hình Plugin MCP cho dự án.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "CREATE_AI_CUSTOMIZATIONS.md"),
+  },
+  {
+    slug: "claude-operating-guide",
+    title: "Cẩm nang vận hành Claude (IDE/CLI)",
+    description: "Tài liệu chuyên sâu về cách Claude khám phá bối cảnh dự án, nạp luật và quản lý skills.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
+  },
+  {
+    slug: "codex-operating-guide",
+    title: "Cẩm nang vận hành OpenAI Codex",
+    description: "Tài liệu chuyên sâu về cơ chế hoạt động của Codex CLI/IDE và cách nạp hệ thống Agent.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "CODEX_OPERATING_GUIDE.md"),
+  },
+  {
+    slug: "agents",
+    title: "AGENTS (System Prompt)",
+    description:
+      "Luật tối cao và bản đồ tư duy bắt buộc mọi AI Agent phải đọc trước khi làm việc.",
+    category: "2. Làm việc với AI Agent",
+    file: "AGENTS.md",
+  },
+  {
+    slug: "project",
+    title: "Bối cảnh dự án",
+    description:
+      "Mục tiêu, ranh giới ngôn ngữ, nguyên tắc thiết kế, ràng buộc an toàn cho phần Ops.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "project.md"),
   },
   {
     slug: "backend-conventions",
     title: "Quy ước backend",
     description:
       "Route tĩnh/động, JSONB event, xoá mềm, partial unique index. Tự nạp khi sửa apps/core/.",
-    category: "Quy ước Code (AI Rules)",
+    category: "3. Quy ước Code & Rules",
     file: path.join(".agents", "rules", "backend-conventions.md"),
   },
   {
@@ -202,15 +169,30 @@ export const DOCS: DocEntry[] = [
     title: "Quy ước web",
     description:
       "API key không xuống browser, globalThis cho store, SCHEMA_VERSION. Tự nạp khi sửa apps/web/.",
-    category: "Quy ước Code (AI Rules)",
+    category: "3. Quy ước Code & Rules",
     file: path.join(".agents", "rules", "web-conventions.md"),
+  },
+  {
+    slug: "comment-style",
+    title: "Quy ước comment",
+    description:
+      "Cách viết comment/docstring: banner section, cảnh báo an toàn, docstring giải thích WHY. Tự nạp khi sửa file code.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "comment-style.md"),
+  },
+  {
+    slug: "ai-logs",
+    title: "Quy tắc Nhật ký AI (Task Trace)",
+    description: "Cơ chế tự động lưu vết các quyết định, prompt và xử lý của Agent.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "ai-logger.md"),
   },
   {
     slug: "skill-git-commit",
     title: "Skill: quy trình commit",
     description:
       "Conventional Commits, checklist trước khi commit, hook kiểm tra, changelog.",
-    category: "Kỹ năng AI (Skills)",
+    category: "4. Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "git-commit", "SKILL.md"),
   },
   {
@@ -218,7 +200,7 @@ export const DOCS: DocEntry[] = [
     title: "Skill: thêm entity mới",
     description:
       "Checklist 15 bước thêm model mới xuyên suốt backend và frontend.",
-    category: "Kỹ năng AI (Skills)",
+    category: "4. Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "add-entity", "SKILL.md"),
   },
   {
@@ -226,39 +208,128 @@ export const DOCS: DocEntry[] = [
     title: "Skill: QC & Nghiệm thu",
     description:
       "Quy trình kiểm thử chất lượng giao diện, logic và dữ liệu trước khi bàn giao.",
-    category: "Kỹ năng AI (Skills)",
+    category: "4. Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "qc-uat", "SKILL.md"),
   },
   {
-    slug: "jira-api-knowledge",
-    title: "Kiến thức & API Jira",
-    description:
-      "Lưu trữ các kiến thức và luồng API tích hợp Jira (Sync/Fetch), phục vụ mở rộng Agent Skills.",
-    category: "Kiến trúc & Tích hợp",
-    file: path.join("docs", "JIRA_API_KNOWLEDGE.md"),
-  },
-  {
-    slug: "architecture-patterns",
-    title: "Kiến trúc Hệ thống (Patterns)",
-    description:
-      "Tư vấn và phân tích kiến trúc Monolith, Microservices, Micro-frontends, và cơ chế đồng bộ Real-time.",
-    category: "Kiến trúc & Tích hợp",
-    file: path.join("docs", "ARCHITECTURE_PATTERNS.md"),
+    slug: "project-review",
+    title: "Bản đồ Hệ thống (Master Blueprint)",
+    description: "Tài liệu nén (token-optimized) chứa toàn cảnh kiến trúc, chức năng, UI/UX để AI đọc nhanh.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "project-review.md"),
   },
   {
     slug: "target-architecture",
     title: "Đề xuất Kiến trúc Mục tiêu",
     description:
       "Bản thiết kế kiến trúc chuẩn bị cho giai đoạn hoàn thiện Task, Notes (pgvector) và Vault (Zero-Knowledge).",
-    category: "Kiến trúc & Tích hợp",
+    category: "5. Kiến trúc & Dữ liệu",
     file: path.join("docs", "TARGET_ARCHITECTURE.md"),
+  },
+  {
+    slug: "architecture-patterns",
+    title: "Kiến trúc Hệ thống (Patterns)",
+    description:
+      "Tư vấn và phân tích kiến trúc Monolith, Microservices, Micro-frontends, và cơ chế đồng bộ Real-time.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "ARCHITECTURE_PATTERNS.md"),
+  },
+  {
+    slug: "platform-alternatives",
+    title: "Đánh giá Nền tảng (Platforms)",
+    description:
+      "Phân tích Core Platform hiện tại (NextJS, FastAPI, Docker) và đề xuất các phương án công nghệ thay thế (Go, K8s, Supabase).",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "PLATFORM_ALTERNATIVES.md"),
+  },
+  {
+    slug: "ai-data-storage",
+    title: "Lưu trữ Dữ liệu AI",
+    description: "Kiến trúc lưu trữ 2 luồng: Trace Log (Markdown) và Entity (Database/JSON) dành cho AI.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "AI_DATA_STORAGE.md"),
+  },
+  {
+    slug: "json-storage",
+    title: "Cơ chế Migration JSON (SCHEMA_VERSION)",
+    description: "Giải thích cách hệ thống nạp và bảo vệ file JSON cục bộ khi app được nâng cấp tính năng.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "JSON_STORAGE.md"),
+  },
+  {
+    slug: "vault",
+    title: "Két bảo mật (Vault)",
+    description: "Cách lưu thông tin nhạy cảm: mã hoá AES-256 ở browser, mật khẩu master, che/hiện, tự khoá, giới hạn.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "VAULT.md"),
+  },
+  {
+    slug: "api-reference",
+    title: "Tài liệu API Backend",
+    description: "Danh sách và mô tả các endpoint (Tasks, Notes, Projects, v.v.) dành cho frontend và Agent.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "API_REFERENCE.md"),
+  },
+  {
+    slug: "jira-api-knowledge",
+    title: "Kiến thức & API Jira",
+    description:
+      "Lưu trữ các kiến thức và luồng API tích hợp Jira (Sync/Fetch), phục vụ mở rộng Agent Skills.",
+    category: "5. Kiến trúc & Dữ liệu",
+    file: path.join("docs", "JIRA_API_KNOWLEDGE.md"),
+  },
+  {
+    slug: "spec-note-archive",
+    title: "Spec thật: Lưu trữ note",
+    description: "Spec do architect viết sau khi đối chiếu code thật (CHỐT), kèm phụ lục chỉ ra 14 chỗ sai của bản mẫu viết tay.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "note-archive.md"),
+  },
+  {
+    slug: "spec-example-note-archive",
+    title: "Spec mẫu: Lưu trữ note",
+    description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "EXAMPLE-note-archive.md"),
+  },
+  {
+    slug: "gitflow",
+    title: "Mô hình Git và go-live",
+    description:
+      "Đường đi của code từ main qua uat tới prod, quy trình hotfix, rollback và tách môi trường.",
+    category: "7. DevOps & Triển khai",
+    file: path.join("docs", "git-workflow.md"),
+  },
+  {
+    slug: "deploy",
+    title: "Runbook deploy",
+    description:
+      "Thứ tự lệnh cho từng tình huống: deploy lần đầu, update có migration, đổi .env, hotfix, rollback, troubleshooting.",
+    category: "7. DevOps & Triển khai",
+    file: path.join("docs", "deploy-runbook.md"),
+  },
+  {
+    slug: "ops",
+    title: "Bản đồ code",
+    description:
+      "Vị trí từng thành phần, bảng lệnh Makefile, và nơi tìm quy ước chi tiết.",
+    category: "7. DevOps & Triển khai",
+    file: path.join(".agents", "rules", "ops.md"),
+  },
+  {
+    slug: "status",
+    title: "Trạng thái bàn giao",
+    description:
+      "Phần nào đã verify, phần nào chưa, bug đã sửa, rủi ro còn lại.",
+    category: "7. DevOps & Triển khai",
+    file: path.join(".agents", "rules", "status.md"),
   },
   {
     slug: "docker-architecture",
     title: "Kiến trúc Docker & Deploy",
     description:
       "Giải mã định nghĩa các file Docker (Rootless, Standalone, pgvector) và cách điều khiển hạ tầng.",
-    category: "DevOps & Triển khai",
+    category: "7. DevOps & Triển khai",
     file: path.join("docs", "DOCKER_ARCHITECTURE.md"),
   },
   {
@@ -266,80 +337,16 @@ export const DOCS: DocEntry[] = [
     title: "Chiến lược Triển khai (Deploy)",
     description:
       "Tư vấn và so sánh các phương pháp vận hành: Local, Docker Compose VPS, và Serverless Vercel.",
-    category: "DevOps & Triển khai",
+    category: "7. DevOps & Triển khai",
     file: path.join("docs", "DEPLOYMENT_STRATEGIES.md"),
-  },
-  {
-    slug: "platform-alternatives",
-    title: "Đánh giá Nền tảng (Platforms)",
-    description:
-      "Phân tích Core Platform hiện tại (NextJS, FastAPI, Docker) và đề xuất các phương án công nghệ thay thế (Go, K8s, Supabase).",
-    category: "Kiến trúc & Tích hợp",
-    file: path.join("docs", "PLATFORM_ALTERNATIVES.md"),
-  },
-  {
-    slug: "claude-operating-guide",
-    title: "Cẩm nang vận hành Claude (IDE/CLI)",
-    description: "Tài liệu chuyên sâu về cách Claude khám phá bối cảnh dự án, nạp luật và quản lý skills.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
   },
   {
     slug: "ci-and-testing",
     title: "CI và kiểm thử backend",
     description: "CI kiểm gì trước khi merge, cách chạy pytest trên database riêng, hai nhóm test và giới hạn hiện tại.",
-    category: "DevOps & Triển khai",
+    category: "7. DevOps & Triển khai",
     file: path.join("docs", "CI_AND_TESTING.md"),
   },
-  {
-    slug: "multi-agent-system",
-    title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
-    description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
-  },
-  {
-    slug: "multi-agent-trial",
-    title: "Ví dụ thực chiến: chạy trọn luồng multi-agent",
-    description: "Bản ghi một lần chạy thật 7 bước với tính năng Lưu trữ note: prompt, kết quả từng agent, lỗi bắt được, chỗ chưa trơn tru và checklist cho orchestrator.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "MULTI_AGENT_TRIAL.md"),
-  },
-  {
-    slug: "spec-note-archive",
-    title: "Spec thật: Lưu trữ note",
-    description: "Spec do architect viết sau khi đối chiếu code thật (CHỐT), kèm phụ lục chỉ ra 14 chỗ sai của bản mẫu viết tay.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "specs", "note-archive.md"),
-  },
-  {
-    slug: "spec-example-note-archive",
-    title: "Spec mẫu: Lưu trữ note",
-    description: "Một spec hoàn chỉnh do architect viết (schema, API, web, Ownership, nghiệm thu) để làm mẫu cho Epic thật. Không triển khai.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "specs", "EXAMPLE-note-archive.md"),
-  },
-  {
-    slug: "claude-cli-quickstart",
-    title: "Claude CLI Quickstart (multi-agent)",
-    description: "Chạy Claude Code với cấu hình multi-agent của repo: subagent, hook an toàn, quyền và quy trình commit/push.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "CLAUDE_CLI_QUICKSTART.md"),
-  },
-  {
-    slug: "codex-operating-guide",
-    title: "Cẩm nang vận hành OpenAI Codex",
-    description: "Tài liệu chuyên sâu về cơ chế hoạt động của Codex CLI/IDE và cách nạp hệ thống Agent.",
-    category: "Quy ước Code (AI Rules)",
-    file: path.join("docs", "CODEX_OPERATING_GUIDE.md"),
-  },
-  {
-    slug: "pdlc",
-    title: "Quy trình Phát triển Sản phẩm (PDLC)",
-    description: "Vòng đời khép kín 6 bước từ lúc lên ý tưởng (Ideation) đến khi Go-Live cho hệ thống Multi-Agent.",
-    category: "Tổng quan & Hướng dẫn",
-    file: path.join("docs", "PRODUCT_DEVELOPMENT_LIFECYCLE.md"),
-  }
 ];
 
 /** Thư mục gốc chứa tài liệu. Mặc định là gốc repo, tính từ apps/web. */
