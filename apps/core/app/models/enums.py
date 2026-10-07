@@ -118,3 +118,25 @@ class AiLogCategory(StrEnum):
     WEB = "web"
     TOOL = "tool"
     OTHER = "other"
+
+
+class ImportKind(StrEnum):
+    """Loại file nguồn của một lần nhập (xem models/import_audit.py)."""
+
+    DATAFILE = "datafile"
+    AI_LOGS = "ai_logs"
+
+
+class ImportEntity(StrEnum):
+    """Thực thể bị một lần nhập chạm tới, dùng cho import_audit."""
+
+    PROJECT = "project"
+    TASK = "task"
+    TASK_EVENT = "task_event"
+    NOTE = "note"
+    AI_LOG = "ai_log"
+
+
+class ImportAction(StrEnum):
+    CREATED = "created"
+    REPLACED = "replaced"

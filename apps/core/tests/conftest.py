@@ -51,6 +51,13 @@ os.environ.setdefault("API_KEY", "test-api-key-0123456789")
 os.environ["RATE_LIMIT_ENABLED"] = "false"
 
 API_KEY = os.environ["API_KEY"]
+
+# Danh sách bảng cố định: thêm bảng mới thì phải thêm vào đây, nếu không dữ liệu
+# của test này rò sang test sau. import_audit/import_runs là sổ cái của chức năng nhập.
+_TRUNCATE_SQL = (
+    "TRUNCATE ai_logs, task_events, tasks, notes, projects, import_audit, import_runs "
+    "RESTART IDENTITY CASCADE"
+)
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -84,9 +91,7 @@ async def session(migrated_db: None) -> AsyncIterator[object]:
     async with SessionFactory() as s:
         yield s
         await s.rollback()
-        await s.execute(
-            text("TRUNCATE ai_logs, task_events, tasks, notes, projects RESTART IDENTITY CASCADE")
-        )
+        await s.execute(text(_TRUNCATE_SQL))
         await s.commit()
 
 
@@ -106,7 +111,5 @@ async def client(migrated_db: None) -> AsyncIterator[object]:
         yield c
 
     async with SessionFactory() as s:
-        await s.execute(
-            text("TRUNCATE ai_logs, task_events, tasks, notes, projects RESTART IDENTITY CASCADE")
-        )
+        await s.execute(text(_TRUNCATE_SQL))
         await s.commit()
