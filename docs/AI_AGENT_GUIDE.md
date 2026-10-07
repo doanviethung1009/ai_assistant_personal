@@ -92,3 +92,12 @@ Dự án sinh ra rất nhiều file script tạm (`patch_*.py`, `fix_*.py`) tron
 - Dữ liệu tĩnh, data cào về nằm ở `data/`.
 
 *Lưu ý: Nếu một file patch/fix thực sự cần dùng liên tục nhiều lần, hãy cấu trúc nó thành một CLI command bên trong `apps/core/` thay vì để nó trôi nổi ở ngoài.*
+
+## 6. Tương thích Đa nền tảng (Universal Compatibility)
+
+Dự án này được thiết kế để tương thích với **bất kỳ** nền tảng AI nào. Để đảm bảo các AI khác không bị "lạc lối" và bắt buộc phải đọc `AGENTS.md`, chúng ta đã thiết lập sẵn các file cầu nối (Bridges):
+
+1. **Cursor IDE & Windsurf:** Đã có sẵn file `.cursorrules`. Khi Editor mở dự án, nó đọc file này và tự chuyển hướng sang đọc `AGENTS.md`.
+2. **Claude Code CLI (Terminal):** Công cụ dòng lệnh của Anthropic sẽ tự động nhận diện file `CLAUDE.md`. File này sẽ ép Claude đọc System Prompt gốc.
+3. **GitHub Copilot Chat (ChatGPT Core):** Đã thiết lập sẵn file `.github/copilot-instructions.md` để tiêm luật vào ngữ cảnh của Copilot bên trong VS Code.
+4. **ChatGPT / Claude Web:** Với bản Web, hãng không cho phép quét ổ cứng. Bạn bắt buộc phải tạo Custom GPT / Claude Project và copy nội dung `AGENTS.md` dán vào phần System Instructions.

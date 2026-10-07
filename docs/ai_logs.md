@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 12:19] | Category: [TOOL]
+- **Prompt:** "claude dùng ide terminal và chatgpt thì có codex thì đều không phải ide à... ủa còn chatgpt thì sao mà có bổ sung tất cả action trên vào md và tài liệu hay log mô tả chưa bạn ơi"
+- **Xử lý:**
+  - Thiết lập cơ chế tương thích toàn cầu (Universal Compatibility) cho dự án.
+  - Tạo file `.cursorrules` (Cho Cursor / Windsurf), `CLAUDE.md` (Cho Claude Code CLI), và `.github/copilot-instructions.md` (Cho GitHub Copilot).
+  - Khắc phục lỗi lưu log Markdown ở lượt chat trước: Bổ sung mục "6. Tương thích Đa nền tảng" vào file `docs/AI_AGENT_GUIDE.md` và ghi chú lịch sử vào `docs/ai_logs.md`.
+  - Chạy `make changelog`, Commit và Push lên Git.
+- **Phản hồi:** Đã vá xong thiếu sót ghi log, giải thích cơ chế của ChatGPT và hoàn tất quá trình tích hợp Bridge Files.
+
+---
+
 ### [07-10-2026 12:10] | Category: [TOOL]
 - **Prompt:** "ở đâu quy định ai phải đọc file nào đầu tiên vậy ban? ... ok bạn"
 - **Xử lý:**

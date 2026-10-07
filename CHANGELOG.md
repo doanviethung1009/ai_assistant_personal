@@ -8,6 +8,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Thêm mới
 
+- thiết lập tương thích toàn cầu cho Cursor, Claude CLI và Copilot (`f3d4361`)
 - bổ sung tài liệu kiến trúc, triển khai, kỹ năng QC và cập nhật luật AI (`7c6ed6e`)
 - update UI to glassmorphism, fix team time filter, add jira sync enhancements (`5c45a9d`)
 - tự động tạo màu riêng biệt cho từng dự án dựa trên mã (`a46b509`)
