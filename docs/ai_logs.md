@@ -4,6 +4,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 
 ---
 
+### [07-10-2026 13:19] | Category: [TOOL]
+- **Prompt:** "ủa đủ agent function cho 1 system chưa, dựa theo target architechture và các mô hình tương lai để đề xuất thêm agent skill và agent function ở role đi"
+- **Xử lý:**
+  - Căn cứ vào `TARGET_ARCHITECTURE.md` (P2: Postgres, E2EE Vault, DevOps, pgvector RAG), nhận thấy hệ thống cần mở rộng nhân sự AI.
+  - Bổ sung 3 Nhân cách (Roles) mới: `database-architect.md` (DBA), `devops-engineer.md` (SecOps), và `ai-rag-engineer.md` (Chuyên gia Vector DB & Prompting).
+  - Bổ sung 3 Kỹ năng (Skills) tương ứng: `db-migration` (Quản lý schema an toàn), `docker-deploy` (Triển khai & Kiểm định Docker), và `e2ee-vault` (Thiết lập mã hoá đầu cuối).
+  - Cập nhật mục lục Roles trong `AI_AGENT_GUIDE.md`. Chạy Changelog, Commit và Push lên Git.
+- **Phản hồi:** Hệ thống đã được nâng cấp lên mức độ "Chuyên môn hoá cực sâu", sẵn sàng cho các Phase tiếp theo của dự án (Mã hoá Vault, Tích hợp AI Vector).
+
+---
+
 ### [07-10-2026 13:17] | Category: [TOOL]
 - **Prompt:** "bổ sung tài liệu hết chưa bạn, review lại quy trình vận hành agent và quy trình code, quy trình phát triển sản phẩm và bổ sung tài liệu"
 - **Xử lý:**

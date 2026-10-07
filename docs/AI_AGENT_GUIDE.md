@@ -131,12 +131,15 @@ Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) đ�
 
 ## 8. Quản lý Nhân cách (Agent Roles / Personas)
 
-Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn các "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
+Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn 6 "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
 
-- 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, cực kỳ am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.
-- ⚙️ **`backend-engineer.md`**: Kiến trúc sư hệ thống, tối ưu FastAPI, bảo mật Database, kiểm soát luồng dữ liệu khắt khe.
-- 🛡️ **`qa-tester.md`**: Kẻ đập phá hệ thống. Chuyên soi rác, bắt lỗi PR (`pr-review`) và đấm bay những đoạn code kém an toàn.
+- 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.
+- ⚙️ **`backend-engineer.md`**: Kiến trúc sư hệ thống, tối ưu FastAPI, luồng dữ liệu khắt khe.
+- 🛡️ **`qa-tester.md`**: Kẻ đập phá hệ thống. Chuyên soi rác, bắt lỗi PR (`pr-review`) và test UAT.
+- 🗄️ **`database-architect.md`**: Bậc thầy PostgreSQL, viết migration (Alembic) an toàn, tối ưu Query.
+- 🐳 **`devops-engineer.md`**: Kỹ sư hạ tầng, nắm trùm Docker, CI/CD, Makefile và bảo mật Zero-Trust.
+- 🧠 **`ai-rag-engineer.md`**: Chuyên gia LLM, làm việc với Vector Database (pgvector) và Prompt Engineering.
 
 **Cách sử dụng:**
 Khi giao việc, thay vì dùng Agent mặc định (Fullstack Architect từ `AGENTS.md`), bạn có thể gọi đích danh một nhân cách:
-> *"Hãy đóng vai `@.agents/roles/qa-tester.md` và chạy skill pr-review cho cái nhánh tôi vừa push!"*
+> *"Hãy đóng vai `@.agents/roles/database-architect.md` và chạy skill db-migration để tạo bảng Vault!"*

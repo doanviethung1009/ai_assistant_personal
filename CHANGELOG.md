@@ -53,6 +53,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- hợp nhất toàn bộ quy trình phát triển sản phẩm (pdlc) 6 bước cho mô hình multi-agent (`1e1215c`)
 - tích hợp tài liệu vận hành chuyên sâu của Claude và Codex vào kho tri thức (`a0d9972`)
 - bổ sung cẩm nang hướng dẫn sử dụng thực tế (how-to-use) cho từng hệ sinh thái AI (`7f821c8`)
 - cập nhật hướng dẫn tương thích đa nền tảng và vá log (`871f3e8`)
