@@ -1,225 +1,249 @@
-# Spec: Nhập dữ liệu JSON vào Postgres qua core API
+# Spec: Chuyển dữ liệu chế độ file sang Postgres qua core API
 
-- Trạng thái: DRAFT (chờ User chốt các quyết định D1-D14 ở mục 7)
+- Trạng thái: **DRAFT v2** (đã có quyết định của User cho D1-D14, chờ User duyệt thiết kế các pha mới B2-B4)
 - Tác giả: architect
-- Ngày: 2026-10-07
+- Ngày: 2026-10-07 (v1), cập nhật v2 cùng ngày
 - Nhánh lúc viết: `feat/data-tab-cleanup`
-- Alembic head lúc viết spec: `d4e9f2a6b8c5` (add notes.archived_at). Epic này **không thêm migration** (xem mục 2).
-- Đã đối chiếu với code thật và với chính `data/builder-data.json`, `data/ai-logs.json` (chỉ đọc). Những điểm giả định ban đầu lệch với code nằm ở **Phụ lục A**.
+- Alembic head lúc viết spec: `d4e9f2a6b8c5` (add notes.archived_at)
+- Đã đối chiếu với code thật và với `data/builder-data.json`, `data/ai-logs.json`, `data/chrome-history.json` (chỉ đọc). Điểm lệch giữa giả định ban đầu và code nằm ở **Phụ lục A**.
 
-## 1. Bối cảnh & phạm vi
+## 0. Tóm tắt thay đổi v1 → v2
 
-**Vấn đề.** Dữ liệu thật của User nằm ở `data/builder-data.json` (chế độ `DATA_SOURCE=file`). Muốn chuyển sang `DATA_SOURCE=api` (Postgres) thì phải đưa dữ liệu đó vào Postgres, nhưng hiện không có đường nào làm được đúng:
+| Quyết định | v1 đề xuất | v2 (User chốt) |
+|---|---|---|
+| D4 bản ghi đã tồn tại | `skip` mặc định, `update_if_newer` tuỳ chọn | **Replace**: ghi đè bằng nội dung file. Bỏ `skip` và `update_if_newer`. Giữ rào chắn: dry-run mặc định, báo cáo diff từng bản ghi, không xoá hàng loạt, ghi event/audit cho mỗi bản ghi bị ghi đè. |
+| D10 thứ ngoài thực thể | Ngoài phạm vi | **Làm cả**, chia thành 4 pha B1-B4 giao và merge độc lập. |
+| D7 | Chuẩn hoá key, đổi màu hsl → hex | Giữ nguyên, có cảnh báo trong báo cáo. |
+| D1-D3, D5, D6, D8, D9, D11-D14 | — | Duyệt theo đề xuất v1. D3 được làm rõ cho replace ở 2.2. |
+| Migration B1 | Không có | **Có**: bảng `import_runs` và `import_audit` để ghi lại giá trị trước khi ghi đè (hệ quả của replace, xem D15). |
 
-- `actions-import.ts` (khôi phục JSON, upload Excel Jira) chặn cứng ở chế độ api.
-- `importDataAction` → `transfer.importJson` **có** nhánh api (POST từng bản ghi), nhưng với file thật nó hỏng ngay ở project đầu tiên và kể cả khi chạy được thì làm mất dữ liệu, nhân đôi khi chạy lại, và vướng rate limit. Chi tiết ở Phụ lục A, mục 2.
+## 1. Các pha
 
-**Mục tiêu.** Một endpoint nhập hàng loạt ở core API: nhận nguyên file JSON export của web, kiểm tra kỹ, có chế độ dry-run trả báo cáo, ghi trong **một transaction**, **idempotent** (chạy lại không nhân đôi), **không bao giờ xoá** dữ liệu đang có.
+| Pha | Nội dung | Migration | Phụ thuộc | Thay đổi bảo mật, cần `security-auditor` |
+|---|---|---|---|---|
+| **B1** | Nhập thực thể: projects, tasks, task_events, notes (file `builder-data.json`), ai_logs (file `ai-logs.json`). Replace có audit. | `import_runs`, `import_audit` | Không | **Có**: endpoint ghi hàng loạt có phá huỷ, Server Action mới |
+| **B2** | Cài đặt người dùng: `current_users`, `sync_urls`, danh sách assignee ở chế độ api; nhập `meta.current_users` từ file. | `app_settings` | B1 (dùng lại service nhập, mở rộng phần `meta`) | **Có**: `sync_urls` là URL do người dùng nhập mà server sẽ fetch (SSRF) |
+| **B3** | Vault (chỉ ciphertext) và lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `vault.json`, `chrome-history.json`. | `vault_blobs`, `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có, bắt buộc**: Vault E2EE (zero-knowledge phải giữ), lịch sử duyệt web là dữ liệu cá nhân nhạy cảm, lỗ hổng shell injection có sẵn |
+| **B4** | Jira sync chạy ở backend: lưu cấu hình kết nối (token mã hoá phía server), endpoint upsert hàng loạt cho integration, chạy sync theo yêu cầu; URL/Excel sync ở chế độ api dùng lại endpoint upsert. | `integration_connections` | B1 (chuẩn hoá key project), B2 (`current_users` cho JQL mặc định, `sync_urls`) | **Có, bắt buộc**: lưu token Jira ở server, outbound HTTP, dữ liệu ngoài không đáng tin |
+
+**Thứ tự đề xuất:** B1 → B2 → B4. B3 làm song song với B2 hoặc B4 được, vì không chạm cùng file.
+
+**Migration phải tuyến tính.** Mỗi pha tạo revision với `down_revision` là head **lúc pha đó merge**. Nếu hai pha làm song song, pha merge sau phải sửa lại `down_revision` trước khi merge. Orchestrator kiểm `alembic heads` ra đúng một head sau mỗi lần merge.
+
+**Chế độ `DATA_SOURCE=file` sau mọi pha:** hành vi giữ nguyên. Mọi tính năng mới nằm sau `!IS_LOCAL` trong `lib/api.ts`; nhánh local vẫn gọi engine như cũ. Riêng B3 có một thay đổi cố ý: Vault không còn "độc lập với DATA_SOURCE" (D-B3a).
+
+Phần B1 dưới đây là thiết kế chi tiết. B2-B4 ở mục 9-11 viết gọn hơn, đủ để User duyệt hướng; mỗi pha sẽ được viết chi tiết thêm trước khi giao nếu User yêu cầu.
+
+---
+
+# PHA B1: Nhập thực thể (chi tiết)
+
+## 2. Bối cảnh & phạm vi B1
+
+**Vấn đề.** Dữ liệu thật nằm ở `data/builder-data.json`. Hiện không có đường nào đưa nó vào Postgres đúng cách: `actions-import.ts` chặn ở chế độ api; nhánh api của `transfer.importJson` (POST từng bản ghi) hỏng ngay với file thật, làm mất field, nhân đôi khi chạy lại và vướng rate limit (Phụ lục A, mục 2).
 
 ```mermaid
 sequenceDiagram
     actor U as User
     participant C as CoreImportPanel (client)
     participant SA as Server Action
-    participant API as lib/api.ts (server-only)
     participant Core as FastAPI /api/v1/import
     participant DB as Postgres
 
-    U->>C: chọn builder-data.json, bấm "Kiểm tra"
+    U->>C: chọn file, bấm "Kiểm tra"
     C->>SA: importToCoreAction(file, dry_run=1)
-    SA->>API: importDataFile(text, {dryRun:true})
-    API->>Core: POST /import/datafile?dry_run=true (X-API-Key)
-    Core->>DB: BEGIN, advisory lock, validate + plan + INSERT + flush
-    Core->>DB: ROLLBACK (dry-run)
-    Core-->>C: ImportReport (committed=false)
-    U->>C: xem báo cáo, bấm "Nhập thật" (chỉ bật khi 0 lỗi)
-    C->>SA: importToCoreAction(file, dry_run=0)
-    SA->>Core: POST /import/datafile?dry_run=false
-    Core->>DB: BEGIN, lock, như trên, COMMIT
-    Core-->>C: ImportReport (committed=true)
+    SA->>Core: POST /import/datafile?dry_run=true (X-API-Key, qua lib/api.ts)
+    Core->>DB: BEGIN, advisory lock, validate, lập kế hoạch, INSERT/UPDATE, flush
+    Core->>DB: ROLLBACK
+    Core-->>C: ImportReport (sẽ tạo N, sẽ GHI ĐÈ M kèm diff, K bản cũ hơn DB)
+    U->>C: đọc diff, tích xác nhận, bấm "Nhập thật"
+    C->>SA: importToCoreAction(file, dry_run=0, expect_replaced=M)
+    SA->>Core: POST /import/datafile?dry_run=false&expect_replaced=M
+    Core->>DB: BEGIN, lock, như trên; số ghi đè thực tế khác M thì ROLLBACK
+    Core->>DB: ghi import_runs + import_audit + task_events, COMMIT
+    Core-->>C: ImportReport (committed=true, import_id)
 ```
 
-**In-scope**
-- Backend: schema Pydantic cho file nhập, service nhập (chuẩn hoá, ánh xạ id, chống trùng, dry-run, transaction, khoá tuần tự), hai endpoint `POST /api/v1/import/datafile` và `POST /api/v1/import/ai-logs`, test pytest (unit + DB + API + một test tuỳ chọn chạy trên file thật ở chế độ chỉ đọc).
-- Thực thể: `projects`, `tasks`, `task_events` (từ `tasks[].events`), `notes`, `ai_logs` (từ file riêng `data/ai-logs.json`).
-- Web ở chế độ `DATA_SOURCE=api`: panel "Chuyển dữ liệu JSON vào Postgres" trên trang `/data` có bước Kiểm tra → Nhập thật; ẩn/thay bằng thông báo những thành phần chỉ chạy ở chế độ file.
+**In-scope B1**
+- Backend: schema Pydantic cho file nhập; service nhập (chuẩn hoá, ánh xạ id, khớp bản ghi, diff, replace, dry-run, transaction, khoá tuần tự); bảng audit; hai endpoint `POST /api/v1/import/datafile`, `POST /api/v1/import/ai-logs`; pytest.
+- Web ở `DATA_SOURCE=api`: panel "Chuyển dữ liệu JSON vào Postgres" ở `/data` (Kiểm tra → xem diff → xác nhận → Nhập thật); `LocalOnlyNotice` cho thành phần chỉ chạy ở chế độ file (cho tới khi B2-B4 thay thế chúng).
 
-**Out-of-scope**
-- Chế độ `replace` / xoá dữ liệu Postgres theo file. Không có, kể cả ẩn.
-- Những thứ sống trong file nhưng không phải thực thể (xem D10): `meta.current_users`, `meta.minutes_logged_today/date`, `sync_urls`, cấu hình/đồng bộ Jira, Vault (`data/vault.json`, độc lập với `DATA_SOURCE`), lịch sử Chrome (`data/chrome-history.json`). Endpoint chỉ **báo** là đã bỏ qua.
-- Nhập CSV ở chế độ api (giữ nguyên đường cũ trong `transfer.ts`, hạn chế đã biết: rate limit 120 req/phút).
-- Đường ngược Postgres → file. Export ở chế độ api (`transfer.collect`) vẫn bỏ `events` như hiện tại.
-- Sửa lỗi `engine.snapshot()` không ghi `sync_urls` (Phụ lục A, mục 4) và việc Jira sync / Excel import chưa chạy ở chế độ api.
-- `scripts/smoke-test.sh` (cần Docker). Thay bằng pytest; bổ sung smoke ở lần sau.
+**Out-of-scope B1**
+- Xoá bản ghi DB không có trong file, hay bất kỳ chế độ xoá hàng loạt nào. Không có.
+- `meta.*`, `sync_urls` (B2), Vault, Chrome (B3), Jira (B4). B1 chỉ báo trong `ignored_fields`.
+- Nhập CSV ở chế độ api (giữ đường cũ, hạn chế đã biết: rate limit).
+- `scripts/smoke-test.sh` (cần Docker).
 
-## 2. Thay đổi dữ liệu
+## 3. Thay đổi dữ liệu B1
 
 | Bảng | Thay đổi | Index/Constraint | Ghi chú migration (downgrade?) |
 |---|---|---|---|
-| (không) | Không thêm bảng/cột | Dùng sẵn: PK `id` UUID; `projects.key` unique; partial unique `uq_tasks_source_external_id`, `uq_notes_source_external_id` (`WHERE deleted_at IS NULL`); các CHECK hiện có | **Không có migration.** `alembic heads` phải vẫn là `d4e9f2a6b8c5`. |
+| `import_runs` (mới) | `id uuid PK` (= `import_id`), `kind varchar(32)` (`datafile`/`ai_logs`), `file_sha256 char(64)`, `schema_version int`, `counts jsonb`, `actor varchar(100)`, `created_at timestamptz default now()` | CHECK `kind IN ('datafile','ai_logs')`; index `created_at` | Chỉ ghi khi `committed=true`. Dry-run không để lại dòng nào. |
+| `import_audit` (mới) | `id uuid PK`, `import_id uuid FK → import_runs ON DELETE CASCADE`, `entity varchar(32)`, `entity_id uuid`, `action varchar(16)`, `before jsonb NULL`, `changed_fields text[]`, `created_at timestamptz default now()` | CHECK `entity IN ('project','task','task_event','note','ai_log')`, CHECK `action IN ('created','replaced')`; index `(import_id)`, `(entity, entity_id)` | `before` = toàn bộ giá trị cột của bản ghi **trước khi ghi đè** (null khi `created`). Không FK tới bảng nghiệp vụ, để audit còn khi bản ghi bị xoá. |
+| `tasks`, `projects`, `notes`, `task_events`, `ai_logs` | Không đổi | Dùng sẵn PK, `projects.key` unique, partial unique `(source, external_id) WHERE deleted_at IS NULL`, các CHECK | — |
 
-**Rollback dữ liệu (thay cho downgrade).** Ở chế độ mặc định `on_conflict=skip`, lần nhập chỉ INSERT, không UPDATE/DELETE gì. Hai lớp rollback:
-1. Bắt buộc trước lần nhập thật đầu tiên: `pg_dump` database (hoặc `make backup` nếu có). Khôi phục bằng dump.
-2. Mỗi task được tạo có một `task_events` đánh dấu (D8) mang `import_id`; báo cáo trả `import_id`. Tài liệu kèm câu SQL xoá theo `import_id` cho task. Project/note được tạo đều có id trùng id trong file, nên có thể xoá theo danh sách id trong file nếu Postgres trước đó rỗng.
+- File mới `apps/core/migrations/versions/<rev>_add_import_audit.py`, `down_revision = "d4e9f2a6b8c5"`. Không có Docker nên viết tay theo mẫu `d4e9f2a6b8c5_add_notes_archived_at.py`, hoặc `alembic revision --autogenerate` trên DB `_test` rồi dọn lại tay.
+- Model mới `apps/core/app/models/import_audit.py` (`ImportRun`, `ImportAudit`), đăng ký trong `models/__init__.py`. Enum `kind/entity/action` dùng `enum_column()` (VARCHAR + CHECK) để `alembic check` không báo drift.
+- `downgrade`: drop hai bảng. Mất lịch sử nhập và khả năng hoàn tác theo `before`; dữ liệu nghiệp vụ không bị ảnh hưởng.
+- `conftest.py` phải thêm `import_audit, import_runs` vào câu `TRUNCATE` (backend-dev sửa).
 
-### 2.1. Ánh xạ thực thể (trả lời câu hỏi 1)
+**Rollback một lần nhập** (orchestrator ghi vào docs kèm SQL):
+1. Bắt buộc trước lần nhập thật đầu tiên: `pg_dump`.
+2. Hoàn tác theo `import_id` trong một transaction: với `action='replaced'` thì ghi lại cột từ `before`; với `action='created'` thì xoá bản ghi theo `entity_id` (task trước, rồi note, rồi project). Script hoàn tác **không** nằm trong phạm vi B1; B1 chỉ đảm bảo đủ dữ liệu để làm.
 
-Ký hiệu: **G** giữ nguyên, **C** chuẩn hoá (có cảnh báo), **B** bỏ (báo trong `ignored_fields`), **S** server tự đặt.
+### 3.1. Ánh xạ thực thể
 
-**Project** (`DataFile.projects[]` → `projects`)
+Ký hiệu: **G** giữ nguyên, **C** chuẩn hoá (có cảnh báo), **B** bỏ (báo trong `ignored_fields`).
 
-| Field JSON | Cột Postgres | Xử lý |
+**Project** (`projects[]` → `projects`)
+
+| Field JSON | Cột | Xử lý |
 |---|---|---|
-| `id` (UUID, `crypto.randomUUID()`) | `id` | G (D2) |
-| `key` | `key` varchar(20) unique, regex `^[A-Z][A-Z0-9_]{1,19}$` | C: bỏ dấu tiếng Việt (NFKD, `Đ/đ`→`D`), in hoa, ký tự ngoài `A-Z0-9` → `_`, gộp `_` liên tiếp, cắt `_` hai đầu, cắt 20 ký tự, nếu không bắt đầu bằng chữ thì thêm tiền tố `P_`, nếu < 2 ký tự thì lỗi. Ví dụ thật: `ONE NEXUS`→`ONE_NEXUS`, `SAO MỘC`→`SAO_MOC`, `KHÁC`→`KHAC`. Hai project trong file ra cùng key → **lỗi** (D7). |
-| `name` (≤200), `description` | `name`, `description` | G |
-| `color` | `color` varchar(7), hex | C: hex hợp lệ → hạ chữ thường; `hsl(h, s%, l%)` → đổi sang `#rrggbb` (`colorsys.hls_to_rgb`); dạng khác → `null` + cảnh báo. File thật: 14/14 project là `hsl(...)`. |
+| `id` (UUID v4) | `id` | G (D2) |
+| `key` | `key` varchar(20) unique, regex `^[A-Z][A-Z0-9_]{1,19}$` | C (D7): bỏ dấu (NFKD, `Đ/đ`→`D`), in hoa, ký tự ngoài `A-Z0-9` → `_`, gộp `_`, cắt `_` hai đầu, tối đa 20 ký tự, không bắt đầu bằng chữ thì thêm `P_`, dưới 2 ký tự thì lỗi. File thật: `ONE NEXUS`→`ONE_NEXUS`, `SAO MỘC`→`SAO_MOC`, `KHÁC`→`KHAC`. Hai project trong file ra cùng key → lỗi. |
+| `name`, `description` | cùng tên | G |
+| `color` | varchar(7) hex | C (D7): hex → chữ thường; `hsl(h, s%, l%)` → `#rrggbb`; dạng khác → `null`. File thật: 14/14 là hsl. |
 | `is_archived`, `created_at`, `updated_at` | cùng tên | G |
 
-**Task** (`DataFile.tasks[]` → `tasks`)
+**Task** (`tasks[]` → `tasks`)
 
 | Field JSON | Cột | Xử lý |
 |---|---|---|
 | `id` | `id` | G |
-| `title` (≤500), `description`, `assignee` (≤200), `status`, `priority` | cùng tên | G, validate như `TaskBase` (strip, enum) |
-| `project_id` | `project_id` | Ánh xạ qua bảng `project_id_map` (id trong file → id trong DB, xem 2.2). Không có trong map mà `project.key` có → khớp theo key đã chuẩn hoá. Vẫn không thấy → `null` + cảnh báo `project_unlinked`. |
-| `project` (object nhúng) | — | B (dẫn xuất) |
-| `due_at`, `completed_at` | timestamptz | G. Datetime không có múi giờ → coi là UTC + cảnh báo `naive_datetime`. |
-| `scheduled_for` | `date` | G |
-| `estimate_minutes` | CHECK `> 0`, schema `≤ 43200` | G; giá trị vi phạm → `null` + cảnh báo |
-| `spent_minutes` | CHECK `>= 0` | G (TaskCreate hiện không có field này, schema nhập có) |
-| `tags` | `varchar(64)[]` | `normalize_tags()` dùng chung; > 20 tag → lỗi (giữ đúng luật hiện có) |
-| `source`, `external_id` (≤255), `external_url` | cùng tên | G |
-| `created_at`, `updated_at` | cùng tên | G (ghi tường minh, không để `server_default`) |
-| `deleted_at` khác null | — | Bỏ qua cả task, đếm `skipped_trash` (D5) |
+| `title` (≤500), `description`, `assignee` (≤200), `status`, `priority` | cùng tên | G, validate như `TaskBase` |
+| `project_id` | `project_id` | Qua `project_id_map` (2.2); không có thì khớp `project.key` đã chuẩn hoá; vẫn không thấy → `null` + cảnh báo `project_unlinked` |
+| `project` (object nhúng), `is_overdue`, `days_until_purge` | — | B |
+| `due_at`, `completed_at` | timestamptz | G; datetime không có múi giờ → coi là UTC + cảnh báo |
+| `scheduled_for` | date | G |
+| `estimate_minutes` | CHECK `> 0`, ≤ 43200 | G; vi phạm → `null` + cảnh báo |
+| `spent_minutes` | CHECK `>= 0` | G |
+| `tags` | `varchar(64)[]` | `normalize_tags()`; > 20 tag → lỗi |
+| `source`, `external_id`, `external_url` | cùng tên | G |
+| `created_at`, `updated_at` | cùng tên | G, ghi tường minh (D13) |
+| `deleted_at` khác null | — | Bỏ qua cả task, `skipped_trash` (D5). **Không** xoá bản tương ứng trong DB. |
 | `events[]` | `task_events` | Xem dưới |
-| `is_overdue`, `days_until_purge` (nếu file xuất từ chế độ api) | — | B (field tính toán) |
-| `raw_payload` | `raw_payload` | **Không nhận** từ file, luôn `NULL` (D11). File thật không có field này. |
-| `status=done` mà `completed_at=null` | `completed_at` | Đặt bằng `updated_at` + cảnh báo `completed_at_backfilled` |
+| `raw_payload` | `raw_payload` | Không nhận từ file (D11). Khi replace: **giữ nguyên** giá trị `raw_payload` đang có trong DB, không ghi `NULL` đè lên. |
+| `status=done` mà `completed_at=null` | `completed_at` | = `updated_at` + cảnh báo |
 
-**TaskEvent** (`tasks[].events[]` → `task_events`): `id` G, `task_id` = id task đích (sau ánh xạ), `event_type` enum `TaskEventType` (sai → lỗi), `actor` ≤100 (mặc định `"user"`), `payload` dict hoặc null (qua `_jsonable`, JSON-serialize ≤ 16 KB, vượt → lỗi), `created_at` G. Event của task bị bỏ qua thì bỏ theo.
+**TaskEvent** (`tasks[].events[]`): `id` G; `task_id` = id task đích sau ánh xạ; `event_type` thuộc `TaskEventType` (sai → lỗi); `actor` ≤100; `payload` dict/null qua `_jsonable`, tối đa 16 KB; `created_at` G. Chỉ **chèn** event có id chưa tồn tại; event đã có thì không sửa, không xoá (task_events là audit trail).
 
-**Note** (`DataFile.notes[]` → `notes`): `id`, `title` (≤300), `kind`, `content` (≤20000), `description`, `context` (≤200), `tags`, `is_pinned`, `is_dangerous`, `use_count` (≥0), `last_used_at`, `source` (`NoteSource`), `external_id`, `archived_at` (thiếu → null), `created_at`, `updated_at`: G. `project_id`: ánh xạ như task. `deleted_at` khác null → `skipped_trash`. `days_until_purge`, `project`: B. `raw_payload`: không nhận.
+**Note** (`notes[]`): `id`, `title` ≤300, `kind`, `content` ≤20000, `description`, `context` ≤200, `tags`, `is_pinned`, `is_dangerous`, `use_count` ≥0, `last_used_at`, `source`, `external_id`, `archived_at` (thiếu → null), `created_at`, `updated_at`: G. `project_id` ánh xạ như task. `deleted_at` khác null → `skipped_trash`. `raw_payload` như task.
 
-**AiLog** (`data/ai-logs.json` → `ai_logs`, endpoint riêng)
+**AiLog** (`ai-logs.json` → `ai_logs`, endpoint riêng): `id` G; `category` C (D9): hạ chữ thường, `UI/UX`→`web`, giá trị lạ (`DOCS`...) → `other`; `prompt`, `response` G, không rỗng; `handling` thiếu → `"(không ghi nhận)"` (để `AiLogRead` không vỡ); `created_at` G; `updated_at` thiếu → `created_at`.
 
-| Field JSON | Cột | Xử lý |
-|---|---|---|
-| `id` | `id` | G |
-| `category` (file thật: `TOOL`, `WEB`, `APP`, `API`, `UI/UX`, `DOCS`) | enum `app/api/web/tool/other` | C: hạ chữ thường; `UI/UX` → `web`; giá trị khác → `other` + cảnh báo (D9) |
-| `prompt`, `response` | `Text` | G, phải khác rỗng |
-| `handling` (file thật **không có**) | `Text` NOT NULL, `AiLogRead` đòi `min_length=1` | C: thiếu/rỗng → chuỗi cố định `"(không ghi nhận)"`. Không được để `""`, nếu không `GET /ai-logs` sẽ vỡ khi validate response. |
-| `created_at` | `created_at` | G |
-| `updated_at` (file thật không có) | `updated_at` | = `created_at` |
+**Mất dữ liệu có chủ đích ở B1:** object `project` nhúng, field tính toán, bản ghi đang ở thùng rác của file. `meta.*` và `sync_urls` chuyển ở B2. Không có field nghiệp vụ nào của project/task/note bị mất.
 
-**Mất dữ liệu có chủ đích (cần User chấp nhận, D10):** `meta.*`, `sync_urls`, object `project` nhúng, field tính toán, task/note đang ở thùng rác của file. Không có field nghiệp vụ nào của task/note/project bị mất. Với file thật: `description` của task đều là chuỗi giữ chỗ `"[Nội dung Jira dạng khối (Atlassian Document Format)]"` hoặc null, nên không có gì thêm để mất.
+### 3.2. "Đã tồn tại" nghĩa là gì, và replace làm gì (D3 + D4)
 
-### 2.2. Id, quan hệ và khoá idempotent (trả lời câu hỏi 2, 3)
+**Bước 1: tìm bản ghi đích trong DB**, theo đúng thứ tự, dừng ở khoá đầu tiên khớp:
 
-Id trong file đều là UUID v4 (`engine.ts` dùng `crypto.randomUUID()`; file thật xác nhận). Quyết định đề xuất: **giữ nguyên id** (D2). Lợi ích: chạy lại khớp được theo id, giữ được quan hệ `project_id`/`task_id` mà không cần đoán, link cũ dạng `/tasks/<id>` vẫn đúng.
-
-Thứ tự khớp một bản ghi trong file với bản ghi đã có trong DB (D3):
-
-| Thực thể | Khoá 1 | Khoá 2 (khi khoá 1 không thấy) | Ghi chú |
+| Thực thể | Khoá 1 | Khoá 2 | Khi khớp bằng khoá 2 |
 |---|---|---|---|
-| Project | `id` | `key` đã chuẩn hoá | Khớp theo key với id khác → ghi vào `project_id_map[file_id] = db_id`, báo `matched_by=key`. Khớp theo id mà key khác → giữ key trong DB, cảnh báo. |
-| Task | `id` (kể cả bản trong thùng rác DB) | `(source, external_id)` với `external_id` khác null và `deleted_at IS NULL` | Trùng `(source, external_id)` giữa **hai task còn sống trong cùng file** → lỗi ở task thứ hai (sẽ vi phạm partial unique index). |
-| TaskEvent | `id` | — | Chỉ chèn khi task đích được tạo mới (hoặc được cập nhật ở chế độ `update_if_newer`). |
-| Note | `id` | `(source, external_id)` như task | Không dùng dấu vân tay `title+content` như `transfer.ts` (không cần vì đã giữ id). |
-| AiLog | `id` | — | |
+| Project | `id` | `key` đã chuẩn hoá | Ghi đè vào bản ghi DB (giữ **id của DB**); `project_id_map[file_id] = db_id` để task/note trỏ đúng. |
+| Task | `id` (kể cả bản đang ở thùng rác DB) | `(source, external_id)`, `external_id` khác null, bản DB `deleted_at IS NULL` | Ghi đè vào bản DB, giữ id DB; event của task trong file gắn vào id DB. |
+| Note | như Task | như Task | như Task |
+| TaskEvent, AiLog | `id` | — | — |
 
-Hệ quả: chạy lại cùng file lần hai → `created = 0` ở mọi thực thể, `skipped_existing = số bản ghi`. Đây là tiêu chí nghiệm thu.
+Báo cáo ghi rõ `matched_by: "id" | "natural_key"` cho từng bản ghi bị ghi đè.
 
-### 2.3. Xung đột, transaction, giới hạn (trả lời câu hỏi 4, 6)
+**Bước 2: quyết định**
 
-**Xung đột (D4).** Tham số `on_conflict`:
-- `skip` (mặc định): bản ghi đã có thì giữ nguyên DB, đếm `skipped_existing`.
-- `update_if_newer` (tuỳ chọn, cần User chốt có làm hay không): chỉ ghi đè khi `updated_at` trong file **mới hơn** DB; ghi `updated_at` tường minh bằng giá trị trong file (để `onupdate=func.now()` không đè); với task thì chèn thêm event còn thiếu theo id, không xoá event nào. Không bao giờ đổi `projects.key`, không bao giờ "hồi sinh" bản ghi đang ở thùng rác DB (đếm `skipped_trash_in_db`).
-- Không có chế độ nào xoá bản ghi DB không có trong file.
-
-**Lỗi so với cảnh báo.** Cảnh báo (`warning`) = đã tự chuẩn hoá theo đúng các luật liệt kê ở 2.1, vẫn ghi được. Lỗi (`error`) = mọi thứ còn lại (enum sai, title rỗng, quá độ dài, > 20 tag, key trùng sau chuẩn hoá, trùng `(source, external_id)` trong file, event_type sai, payload quá lớn...).
-
-**Transaction (D6): all-or-nothing.** Một request = một transaction. Có bất kỳ lỗi nào → không ghi gì, trả báo cáo với `committed=false`. Không có chế độ "nhập phần hợp lệ". Lý do: nhập dở một nửa rồi chạy lại khó suy luận; dry-run đã cho thấy lỗi trước.
-
-**Dry-run (câu hỏi 5).** `dry_run` mặc định **`true`** (phải gửi `dry_run=false` tường minh mới ghi). Dry-run chạy **đúng cùng đường code** với lần ghi thật: validate, lập kế hoạch, INSERT, `flush` (để bắt luôn CHECK/unique của Postgres), rồi `ROLLBACK`. Như vậy báo cáo dry-run khớp với kết quả thật.
-
-**Khoá tuần tự.** Đầu transaction gọi `SELECT pg_try_advisory_xact_lock(hashtext('builder:import'))`; không lấy được → 409 "Đang có một lần nhập khác chạy". Khoá tự nhả khi commit/rollback.
-
-**Batch.** Đọc trước các id/khoá đã có bằng `SELECT ... WHERE id = ANY(:ids)` theo lô 1000; INSERT bằng `insert(Model)` với danh sách dict theo lô 500 dòng (task ~22 cột × 500 < giới hạn 32767 tham số của asyncpg). Thứ tự: projects → tasks → task_events → notes.
-
-**Giới hạn (D12).**
-
-| Giới hạn | Giá trị đề xuất | Vượt thì |
+| Tình huống | Hành động | Đếm vào |
 |---|---|---|
-| Kích thước body (backend, theo `Content-Length`) | 10 MB | 413 |
-| Kích thước file (web, như `MAX_UPLOAD_BYTES` hiện có) | 8 MB | lỗi ở Server Action, không gọi core |
-| `projects` / `tasks` / `notes` mỗi request | 1 000 / 20 000 / 10 000 | 422 (validate envelope) |
-| Tổng `events` trong file | 200 000 | 422 |
-| `ai_logs` mỗi request | 20 000 | 422 |
-| `schema_version` | 1..4 (`SUPPORTED_DATAFILE_VERSION = 4`, khớp `SCHEMA_VERSION` web) | 422 |
-| Số mục `issues` trả về | 500, kèm `issues_truncated=true` | cắt bớt, đếm vẫn đúng |
+| Không khớp | INSERT, audit `created` | `created` |
+| Khớp, bản DB đang ở thùng rác (`deleted_at` khác null) | Không đụng, không hồi sinh | `skipped_trash_in_db` + cảnh báo |
+| Khớp, so sánh không có khác biệt | Không ghi gì, không event, không audit | `unchanged` |
+| Khớp, có khác biệt | UPDATE toàn bộ field nhập được bằng giá trị trong file; audit `replaced` với `before` + `changed_fields`; task thì thêm event | `replaced` (và `replaced_older` nếu file cũ hơn DB) |
+| Bản ghi trong file đang ở thùng rác | Bỏ qua, không xoá gì trong DB | `skipped_trash` |
 
-File thật hiện ~550 KB, 14 project, 498 task: nằm xa dưới mọi ngưỡng; một request là đủ, không bị rate limit (120 req/phút).
+**So sánh "có khác biệt"** thực hiện **sau** chuẩn hoá (key, màu, tag, datetime so theo thời điểm UTC), trên các field nhập được, **trừ** `updated_at`, `created_at` và `raw_payload`. Nhờ vậy chạy lại cùng file lần hai ra `created = 0`, `replaced = 0`, toàn bộ là `unchanged` (tiêu chí idempotent).
 
-## 3. API contract
+**Khi ghi đè:**
+- `updated_at` đặt bằng giá trị trong file (D13), ghi tường minh để `onupdate=func.now()` không đè. `created_at` giữ giá trị DB.
+- `projects.key` được đổi theo file nếu khác; trùng với project khác trong DB → lỗi.
+- Đổi `(source, external_id)` của task/note mà trùng với một bản ghi còn sống khác trong DB → lỗi (kiểm ở bước lập kế hoạch, `flush` bắt lần nữa).
+- **Task:** thêm một event `updated`, actor `import:datafile`, payload `{"import_id", "changes": {field: {"old", "new"}}}` (giá trị qua `_jsonable`, chuỗi cắt 200 ký tự). Task tạo mới vẫn có event `synced`, actor `import:datafile`, payload `{"import_id", "schema_version"}` (D8).
+- **Project, Note, AiLog** không có bảng event, nên dấu vết nằm ở `import_audit`.
 
-Prefix `/api/v1/import`, router mới gắn vào `api_router` nên **tự có** `require_api_key`. Tên module `app/api/v1/imports.py` (`import` là từ khoá Python).
+**Rủi ro chính của replace: file cũ ghi đè trạng thái mới hơn trong Postgres.** Ví dụ: sau khi chuyển sang chế độ api, task được cập nhật qua API (đổi status, log time), rồi User nhập lại một bản export cũ. Rào chắn:
+1. `dry_run` mặc định `true`.
+2. Báo cáo liệt kê **từng** bản ghi sẽ bị ghi đè với diff field-by-field, và đánh dấu `file_older_than_db = true` khi `updated_at` trong file < `updated_at` trong DB. Có tổng `replaced_older`.
+3. Commit phải gửi `expect_replaced=<số bản ghi sẽ bị ghi đè từ báo cáo dry-run>`. Nếu số thực tế lúc commit khác (DB đã thay đổi sau dry-run) → rollback, `committed=false`, lỗi `replace_count_mismatch`.
+4. UI chặn nút Nhập thật cho tới khi tích xác nhận (4.5); có `replaced_older > 0` thì phải tích thêm một xác nhận riêng.
+5. `import_audit.before` giữ giá trị cũ để hoàn tác.
+
+### 3.3. Transaction, dry-run, giới hạn
+
+- **All-or-nothing (D6).** Một request = một transaction; có lỗi nào → không ghi gì, `committed=false`.
+- **Dry-run** mặc định `true`, chạy đúng đường code của lần ghi thật (validate, lập kế hoạch, INSERT/UPDATE, `flush` để bắt CHECK/unique của Postgres), rồi `ROLLBACK`. Không ghi `import_runs`/`import_audit`.
+- **Khoá tuần tự:** `pg_try_advisory_xact_lock(hashtext('builder:import'))`; không lấy được → 409.
+- **Batch:** đọc bản ghi đã có bằng `WHERE id = ANY(:ids)` theo lô 1000 (đọc đủ cột để diff); INSERT theo lô 500 dòng. UPDATE từng dòng bằng ORM vì mỗi dòng đổi một tập field khác nhau; ở quy mô vài nghìn dòng điều này chấp nhận được. Thứ tự: projects → tasks → task_events → notes → audit.
+- **Giới hạn (D12):** body 10 MB (413); file ở web 8 MB; tối đa 1 000 project, 20 000 task, 10 000 note, 200 000 event, 20 000 ai_log (422); `schema_version` 1..4; `issues` tối đa 500; `replacements` tối đa 5 000 bản ghi, mỗi bản ghi tối đa 30 field, chuỗi cắt 200 ký tự (`replacements_truncated`). Trường hợp bị cắt thì các con số đếm vẫn đúng.
+
+## 4. API contract B1
+
+Router mới `app/api/v1/imports.py`, prefix `/import`, gắn vào `api_router` nên có sẵn `require_api_key`.
 
 | Method | Path | Request | Response | Lỗi |
 |---|---|---|---|---|
-| POST | `/import/datafile` | Query: `dry_run: bool = true`, `on_conflict: Literal["skip","update_if_newer"] = "skip"`. Body: `DataFileEnvelope` (JSON nguyên văn của file export web) | 200 `ImportReport` (cả khi có lỗi dòng; xem `committed`) | 401 thiếu/sai key; 409 đang có lần nhập khác; 413 body > 10 MB; 422 envelope sai (không phải object, thiếu `projects`/`tasks`, `schema_version` > 4, vượt số lượng, query sai) |
-| POST | `/import/ai-logs` | Query: `dry_run: bool = true`. Body: `AiLogsEnvelope` (nội dung `data/ai-logs.json`) | 200 `ImportReport` (chỉ có `counts.ai_logs`) | như trên |
+| POST | `/import/datafile` | Query: `dry_run: bool = true`, `expect_replaced: int \| None` (bắt buộc khi `dry_run=false`, ≥ 0). Body: `DataFileEnvelope` | 200 `ImportReport` | 401; 409 đang có lần nhập khác; 413 > 10 MB; 422 envelope sai, `schema_version` > 4, vượt số lượng, `dry_run=false` mà thiếu `expect_replaced` |
+| POST | `/import/ai-logs` | Query: như trên. Body: `AiLogsEnvelope` | 200 `ImportReport` | như trên |
 
-**Vì sao 200 cho lỗi dòng.** Lỗi dòng là kết quả nghiệp vụ cần hiển thị đầy đủ; `coreFetch` hiện chỉ đọc `detail` khi status không OK, nên trả 422 kèm báo cáo sẽ làm mất báo cáo. Lỗi HTTP chỉ dành cho lỗi ở mức request.
-
-**Vì sao các mảng là `list[dict]`.** Nếu khai `tasks: list[ImportTask]`, FastAPI sẽ 422 cả request ở dòng sai đầu tiên với định dạng lỗi chung. Envelope chỉ kiểm khung; service validate từng dòng bằng `ImportTask.model_validate(row)` và gom lỗi theo `entity/index/id`.
-
-Pydantic (file `app/schemas/imports.py`):
+Lỗi ở mức dòng (enum sai, trùng khoá, lệch `expect_replaced`...) trả **200** với `committed=false`, vì `coreFetch` chỉ đọc `detail` khi status không OK, trả lỗi HTTP sẽ làm mất báo cáo. Các mảng trong envelope khai `list[dict]`; service validate từng dòng để gom lỗi theo `entity/index/id`.
 
 ```python
 SUPPORTED_DATAFILE_VERSION = 4
 
 class DataFileEnvelope(BaseModel):
-    model_config = ConfigDict(extra="allow")   # field lạ ở cấp file → liệt kê trong ignored_fields["file"]
+    model_config = ConfigDict(extra="allow")   # khoá lạ ở cấp file → ignored_fields["file"]
     schema_version: int = Field(default=1, ge=1, le=SUPPORTED_DATAFILE_VERSION)
     exported_at: str | None = None
     projects: list[dict[str, Any]] = Field(max_length=1_000)
     tasks: list[dict[str, Any]] = Field(max_length=20_000)
-    notes: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)  # v2 không có notes
-    meta: dict[str, Any] | None = None   # đọc để báo cáo là đã bỏ qua, không ghi
+    notes: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
+    meta: dict[str, Any] | None = None          # B1: chỉ báo bỏ qua. B2: nhập current_users.
 
 class AiLogsEnvelope(BaseModel):
     schema_version: int = Field(default=1, ge=1, le=1)
     exported_at: str | None = None
     ai_logs: list[dict[str, Any]] = Field(max_length=20_000)
 
-# Schema từng dòng: extra="ignore", nhưng service tự so khoá thô với model_fields
-# để liệt kê field bị bỏ vào ignored_fields. KHÔNG có field raw_payload.
-class ImportProject(BaseModel): id: uuid.UUID; key: str; name: str; description; color; is_archived=False; created_at; updated_at
-class ImportTaskEvent(BaseModel): id: uuid.UUID; event_type: TaskEventType; actor="user"; payload: dict|None; created_at: datetime
-class ImportTask(BaseModel): id; title; description; assignee; status; priority; project_id; project: dict|None;
-                             due_at; scheduled_for; estimate_minutes; spent_minutes=0; completed_at; tags;
-                             source=TaskSource.MANUAL; external_id; external_url; created_at; updated_at;
-                             deleted_at=None; events: list[ImportTaskEvent] = []
-class ImportNote(BaseModel): ... như NoteRead trừ days_until_purge/project, thêm deleted_at, archived_at=None
-class ImportAiLog(BaseModel): id; category: str; prompt: str (min 1); response: str (min 1); handling: str|None; created_at; updated_at|None
+# Schema từng dòng: ImportProject, ImportTask, ImportTaskEvent, ImportNote, ImportAiLog
+# (field như bảng 3.1, extra="ignore"; service so khoá thô với model_fields để liệt kê
+# ignored_fields). KHÔNG có field raw_payload.
 
 class EntityCounts(BaseModel):
     received: int = 0
     created: int = 0
-    updated: int = 0
-    skipped_existing: int = 0
+    replaced: int = 0
+    replaced_older: int = 0         # trong số replaced, file cũ hơn DB
+    unchanged: int = 0
     skipped_trash: int = 0          # đang ở thùng rác trong file
     skipped_trash_in_db: int = 0    # khớp với bản ghi đang ở thùng rác DB
     invalid: int = 0
 
+class FieldChange(BaseModel):
+    field: str
+    old: Any                        # chuỗi cắt 200 ký tự
+    new: Any
+
+class Replacement(BaseModel):
+    entity: Literal["project", "task", "note", "ai_log"]
+    id: uuid.UUID                   # id trong DB
+    file_id: uuid.UUID              # id trong file (khác id khi matched_by=natural_key)
+    label: str                      # key project / title task, note / prompt ai_log, cắt 80 ký tự
+    matched_by: Literal["id", "natural_key"]
+    file_older_than_db: bool
+    changes: list[FieldChange]
+
 class ImportIssue(BaseModel):
     level: Literal["error", "warning"]
     entity: Literal["file", "project", "task", "task_event", "note", "ai_log"]
-    index: int | None              # vị trí trong mảng của file, 0-based
+    index: int | None
     id: str | None
-    code: str                      # vd invalid_enum, key_normalized, color_converted, duplicate_external_id
-    message: str                   # tiếng Việt; chỉ chứa id/khoá/title cắt 80 ký tự, không chép nội dung note
+    code: str     # invalid_enum, key_normalized, color_converted, duplicate_external_id,
+                  # natural_key_conflict, replace_count_mismatch, ...
+    message: str  # tiếng Việt; không chép nội dung note
 
 class KeyChange(BaseModel):
     original: str
@@ -228,186 +252,316 @@ class KeyChange(BaseModel):
 class ImportReport(BaseModel):
     import_id: uuid.UUID
     dry_run: bool
-    committed: bool                # true chỉ khi dry_run=false và 0 lỗi
-    on_conflict: Literal["skip", "update_if_newer"]
+    committed: bool
     schema_version: int
-    counts: dict[str, EntityCounts]          # khoá: projects, tasks, task_events, notes, ai_logs
+    counts: dict[str, EntityCounts]   # projects, tasks, task_events, notes, ai_logs
     errors: int
     warnings: int
     issues: list[ImportIssue]
     issues_truncated: bool
+    replacements: list[Replacement]
+    replacements_truncated: bool
     project_key_changes: list[KeyChange]
-    ignored_fields: dict[str, list[str]]     # entity → tên field đã bỏ, vd {"file": ["meta"], "task": ["project","is_overdue"]}
+    ignored_fields: dict[str, list[str]]
 ```
 
-Service `app/services/import_service.py`:
-- Hàm thuần (unit test được, không cần DB): `normalize_project_key(raw) -> str`, `normalize_color(raw) -> tuple[str | None, bool]`, `map_ai_log_category(raw) -> AiLogCategory`.
-- `async def import_datafile(session, envelope, *, dry_run, on_conflict, actor="import:datafile") -> ImportReport` và `async def import_ai_logs(session, envelope, *, dry_run) -> ImportReport`.
-- Dry-run: cuối hàm `await session.rollback()`; `get_session` commit sau đó là no-op. Ghi thật mà có lỗi: cũng `rollback()` và trả `committed=false`.
-- Log một dòng tổng kết (đếm, `import_id`, `dry_run`), **không** log nội dung bản ghi.
-- `DomainError` mới không cần; 409 dùng `ConflictError` có sẵn.
+Service `app/services/import_service.py`: hàm thuần `normalize_project_key`, `normalize_color`, `map_ai_log_category`, `diff_fields(db_row, file_row, fields) -> list[FieldChange]` (unit test được, không cần DB); `import_datafile(session, envelope, *, dry_run, expect_replaced, file_sha256, actor="import:datafile")`; `import_ai_logs(...)`. Endpoint tính `file_sha256` từ body thô. Log một dòng tổng kết (đếm, `import_id`), không log nội dung. Docstring có banner cảnh báo: endpoint GHI ĐÈ bản ghi đã tồn tại, KHÔNG xoá, không nhận `raw_payload`, payload và nội dung note là dữ liệu không đáng tin.
 
-Docstring/comment bắt buộc (theo `comment-style.md`): banner cảnh báo trong service rằng endpoint KHÔNG xoá/replace, `raw_payload` không nhận từ file, payload event và nội dung note là dữ liệu không đáng tin.
+## 5. Thay đổi Web B1
 
-## 4. Thay đổi Web
+- **`lib/api.ts`**: `importDataFile(text, { dryRun, expectReplaced? })`, `importAiLogsFile(text, { dryRun, expectReplaced? })` → `coreFetch` POST, body là nguyên văn file (bỏ BOM nếu có). Ở `IS_LOCAL` thì reject `CoreApiError(..., 501)`.
+- **`lib/types.ts`**: alias `ImportReport`, `Replacement`, `FieldChange`, `EntityCounts`, `ImportIssue` từ `lib/generated/openapi.d.ts`.
+- **`app/actions.ts`**: `importToCoreAction(formData)` nhận `file`, `kind` (`datafile`/`ai-logs`), `dry_run` (mặc định `"1"`), `expect_replaced`. Kiểm kích thước ≤ `MAX_UPLOAD_BYTES`, giá trị hợp lệ. Chỉ `revalidateAll()` khi `committed`.
+- **`lib/store/transfer.ts`**: ở chế độ api, `importJson` và `importAiLogsJson` ném lỗi "Dùng mục 'Chuyển dữ liệu JSON vào Postgres'". Nhánh file/memory và CSV giữ nguyên.
+- **`components/core-import-panel.tsx`** (mới, client):
+  - Chọn loại file → **Kiểm tra** → bảng đếm theo thực thể (nhận / tạo mới / **ghi đè** / không đổi / thùng rác / lỗi), danh sách đổi key project, issue (lỗi trước cảnh báo, tối đa 50 dòng, còn lại thu gọn).
+  - **Khi `replaced > 0`: khung cảnh báo đỏ, đặt trên mọi thứ khác**: "N bản ghi trong Postgres sẽ bị GHI ĐÈ bằng nội dung file." Bên dưới là danh sách bản ghi bị ghi đè (nhóm theo thực thể, gập/mở được, mỗi dòng có bảng `field | hiện tại | sau khi nhập`), bản ghi nào `file_older_than_db` thì có nhãn "File cũ hơn dữ liệu hiện tại".
+  - Khi `replaced_older > 0`: thêm dòng đậm "M bản ghi trong file CŨ HƠN dữ liệu đang có: nhập sẽ làm mất thay đổi gần đây (ví dụ trạng thái task đã cập nhật qua API)".
+  - Nút **Nhập thật** chỉ bật khi: lần Kiểm tra gần nhất là cùng file (`name + size + lastModified`), `errors === 0`, và nếu `replaced > 0` thì đã tích "Tôi đã xem danh sách và đồng ý ghi đè N bản ghi"; nếu `replaced_older > 0` thì tích thêm "Tôi chấp nhận ghi đè M bản ghi mới hơn bằng dữ liệu cũ". Gửi kèm `expect_replaced = report.counts.*.replaced` (tổng).
+  - Kết quả `replace_count_mismatch` → thông báo "Dữ liệu trong Postgres đã thay đổi sau lần Kiểm tra, hãy Kiểm tra lại".
+  - Sau khi nhập: hiện `import_id`, nhắc "Kiểm tra lại sẽ thấy 0 tạo mới, 0 ghi đè". Nhắc chạy `pg_dump` trước lần nhập đầu tiên.
+  - Render bằng text node, không `dangerouslySetInnerHTML`.
+- **`components/local-only-notice.tsx`** (mới): hộp thông báo một dòng, prop `feature`.
+- **`app/data/page.tsx`**, khi `!IS_LOCAL`: hiện `CoreImportPanel`; `DataImport` chỉ còn các loại CSV (prop mới `kinds` ở `components/data-import.tsx`); `RestoreJsonManager`, `FileUploadManager`, `JiraSyncManager`, `UrlSyncManager`, `CurrentUserManager` được thay bằng `LocalOnlyNotice` cho tới khi B2/B4 đưa bản api vào. Khi `IS_LOCAL`: không đổi gì, chỉ thêm các bước chuyển sang Postgres vào khối "Hướng dẫn đổi nguồn dữ liệu".
+- `components/data-tabs.tsx` chưa tồn tại (Phụ lục A, mục 1). Nếu nhánh khác tạo nó trước, frontend-dev áp dụng cùng thay đổi vào đó và báo orchestrator.
 
-**4.1. `lib/api.ts`**
-- `importDataFile(text: string, opts: { dryRun: boolean; onConflict: "skip" | "update_if_newer" }): Promise<ImportReport>` → `coreFetch` POST `/api/v1/import/datafile?dry_run=…&on_conflict=…`, body là **nguyên văn text của file** (bỏ BOM `﻿` ở đầu nếu có), không parse lại ở web.
-- `importAiLogsFile(text: string, opts: { dryRun: boolean }): Promise<ImportReport>`.
-- Ở `IS_LOCAL`: reject `new CoreApiError("Nhập vào Postgres chỉ dùng khi DATA_SOURCE=api", 501)`, không gọi engine.
+## 6. Ownership B1
 
-**4.2. `lib/types.ts`**: alias `ImportReport`, `ImportIssue`, `EntityCounts` từ `lib/generated/openapi.d.ts`. Không viết tay field.
+**backend-dev** (`apps/core/**`):
+- `app/models/import_audit.py` (mới), `app/models/__init__.py`
+- `app/models/enums.py` (thêm `ImportKind`, `ImportEntity`, `ImportAction`)
+- `migrations/versions/<rev>_add_import_audit.py` (mới)
+- `app/schemas/imports.py`, `app/services/import_service.py`, `app/api/v1/imports.py` (mới)
+- `app/api/v1/router.py` (một dòng)
+- `tests/conftest.py` (thêm hai bảng vào `TRUNCATE`)
+- `tests/test_import_unit.py`, `tests/test_import_service.py`, `tests/test_import_api.py` (mới)
+- `tests/fixtures/datafile_sample.json`, `tests/fixtures/ai_logs_sample.json` (mới, **dữ liệu tổng hợp**, không chép dữ liệu thật)
 
-**4.3. Server Action** (`app/actions.ts`): `importToCoreAction(formData)` nhận `file`, `kind` (`"datafile" | "ai-logs"`), `dry_run` (`"1"`/`"0"`, mặc định `"1"`), `on_conflict`. Kiểm `file instanceof File`, `size > 0`, `size <= MAX_UPLOAD_BYTES`, giá trị enum hợp lệ; gọi 4.1; `revalidateAll()` chỉ khi `report.committed`; trả `{ ok, report?, error? }` qua `toResult`. Không import `store/engine`.
+**orchestrator**: sinh lại `apps/web/lib/generated/openapi.d.ts` (`app.openapi()` + `npx openapi-typescript`, như `note-archive.md` mục 5); docs (`API_REFERENCE.md`, `AI_HANDOFF_STATE.md`, hướng dẫn chuyển đổi + SQL hoàn tác theo `import_id`, `ai_logs.md`, `lib/docs.ts`); sửa comment sai ở `lib/store/types.ts` (Phụ lục A, mục 3).
 
-**4.4. `lib/store/transfer.ts`** (chặn đường hỏng): ở chế độ api, `importJson` và `importAiLogsJson` ném lỗi rõ ràng "Dùng mục 'Chuyển dữ liệu JSON vào Postgres'" thay vì POST từng bản ghi. Không đổi nhánh file/memory, không đổi CSV.
+**frontend-dev** (`apps/web/**` trừ `lib/generated/**`): `lib/api.ts`, `lib/types.ts`, `app/actions.ts`, `lib/store/transfer.ts` (chỉ hai nhánh api), `app/data/page.tsx`, `components/data-import.tsx` (prop `kinds`), `components/core-import-panel.tsx`, `components/local-only-notice.tsx` (mới).
 
-**4.5. Component mới `components/core-import-panel.tsx`** (client)
-- Chọn loại (`builder-data.json` / `ai-logs.json`), chọn file, chọn cách xử lý trùng (`Bỏ qua bản đã có` mặc định; `Cập nhật nếu file mới hơn` chỉ hiện nếu User chốt D4 có làm).
-- Nút **Kiểm tra** (dry-run) → bảng đếm theo thực thể (nhận / sẽ tạo / sẽ cập nhật / đã có / thùng rác / lỗi), danh sách đổi key project, tối đa 50 issue đầu (lỗi trước cảnh báo), dòng "Đã bỏ qua: meta.current_users, …".
-- Nút **Nhập thật** chỉ bật khi lần Kiểm tra gần nhất là **cùng file** (so `name + size + lastModified`) và `errors === 0`; có `confirm()` nêu số bản ghi sẽ tạo. Đổi file hoặc đổi tuỳ chọn → phải Kiểm tra lại.
-- Sau khi nhập: hiện `import_id` và nhắc "chạy lại Kiểm tra sẽ thấy 0 bản ghi mới".
-- Nhắc trước khi nhập thật: "Nên chạy pg_dump trước lần nhập đầu tiên".
-- Render mọi chuỗi bằng text node, không `dangerouslySetInnerHTML`.
+**Không ai sửa:** `data/**`, `lib/store/engine.ts`, `json-file.ts`, `csv.ts`, `app/actions-import.ts`, `app/jira-actions.ts`, các `*-manager.tsx`, `scripts/smoke-test.sh`, model nghiệp vụ hiện có.
 
-**4.6. Component mới `components/local-only-notice.tsx`**: hộp thông báo một dòng "Chức năng này chỉ chạy khi DATA_SOURCE=file" (prop `feature: string`).
+Thứ tự: backend-dev → orchestrator sinh types → frontend-dev (song song được trong hai worktree; `tsc` web chỉ có nghĩa sau khi sinh types).
 
-**4.7. Trang `/data` (`app/data/page.tsx`)**, khi `!IS_LOCAL`:
-- Hiện `CoreImportPanel` ở đầu accordion "Nạp dữ liệu nâng cao" (hoặc thành section riêng ngay dưới card Nguồn dữ liệu, frontend-dev chọn nếu không trùng file khác).
-- `DataImport` vẫn hiện nhưng chỉ còn các loại CSV: thêm prop `kinds?: readonly KindValue[]` vào `components/data-import.tsx`, trang truyền danh sách CSV ở chế độ api. Nhánh file giữ nguyên toàn bộ.
-- Thay bằng `LocalOnlyNotice`: `RestoreJsonManager`, `FileUploadManager` (Excel Jira), `JiraSyncManager`, `UrlSyncManager`, `CurrentUserManager` (action của chúng hoặc chặn ở api, hoặc no-op).
-- Không đụng `VaultImportManager` (độc lập `DATA_SOURCE`), `ChromeHistoryManager`, `WipeDataManager` (ghi nhận rủi ro, mục 7).
-- Khi `IS_LOCAL`: trang **không đổi gì**, nhưng thêm một dòng hướng dẫn trong accordion "Hướng dẫn đổi nguồn dữ liệu": các bước chuyển sang Postgres (xem mục 6, kịch bản tay).
+## 7. Tiêu chí nghiệm thu B1 (không cần Docker)
 
-**Ghi chú:** `components/data-tabs.tsx` và `LocalOnlyNotice` **chưa tồn tại** trong repo (Phụ lục A, mục 1). Nếu một nhánh khác tạo `data-tabs.tsx` trước khi epic này bắt đầu, frontend-dev áp dụng cùng thay đổi vào tab "Nhập" ở đó thay cho `data/page.tsx`, và báo lại orchestrator.
+`TEST_DATABASE_URL=postgresql+asyncpg://<user>:<pass>@localhost:5432/<tên>_test`. Lệnh chạy trong `apps/core/`. Không có Postgres local thì test `db` bị skip, **không tính là pass**.
 
-## 5. Ownership (không agent nào sửa file của agent khác)
-
-**backend-dev** (chỉ `apps/core/**`):
-- `apps/core/app/schemas/imports.py` (mới)
-- `apps/core/app/services/import_service.py` (mới)
-- `apps/core/app/api/v1/imports.py` (mới)
-- `apps/core/app/api/v1/router.py` (thêm một dòng `include_router`)
-- `apps/core/tests/test_import_unit.py` (mới, không cần DB)
-- `apps/core/tests/test_import_service.py` (mới, `db`)
-- `apps/core/tests/test_import_api.py` (mới, `db`)
-- `apps/core/tests/fixtures/datafile_sample.json`, `apps/core/tests/fixtures/ai_logs_sample.json` (mới, **dữ liệu tổng hợp**, không chép dữ liệu thật của User)
-- Không sửa model, không thêm migration. Không sửa `task_service.py`/`note_service.py` (nếu cần dùng lại `_jsonable` thì import, không đổi chữ ký).
-
-**orchestrator** (sau khi nhánh backend xong):
-- Sinh lại `apps/web/lib/generated/openapi.d.ts` theo cách đã dùng ở `note-archive.md` mục 5 (`app.openapi()` không cần Postgres/Redis, rồi `npx openapi-typescript`).
-- Docs: `docs/API_REFERENCE.md` (hai endpoint mới), `docs/AI_HANDOFF_STATE.md`, `docs/ai_logs.md` + `scripts/add-ai-log.js`, `apps/web/lib/docs.ts` (đăng ký spec này), hướng dẫn chuyển đổi kèm SQL rollback theo `import_id`.
-
-**frontend-dev** (`apps/web/**` trừ `lib/generated/**`):
-- `apps/web/lib/api.ts`
-- `apps/web/lib/types.ts`
-- `apps/web/app/actions.ts`
-- `apps/web/lib/store/transfer.ts` (chỉ nhánh api của `importJson`, `importAiLogsJson`, mục 4.4)
-- `apps/web/app/data/page.tsx`
-- `apps/web/components/data-import.tsx` (chỉ thêm prop `kinds`)
-- `apps/web/components/core-import-panel.tsx` (mới)
-- `apps/web/components/local-only-notice.tsx` (mới)
-
-**Không ai sửa:** `data/**` (dữ liệu thật), `apps/web/lib/store/engine.ts`, `json-file.ts`, `csv.ts`, `apps/web/app/actions-import.ts`, `apps/web/app/jira-actions.ts`, các `*-manager.tsx`, `scripts/smoke-test.sh`, `apps/core/app/models/**`, `apps/core/migrations/**`.
-
-Thứ tự: backend-dev → orchestrator sinh types → frontend-dev. Có thể chạy song song trong hai worktree vì không trùng file, nhưng `tsc` của web chỉ có nghĩa sau khi `openapi.d.ts` đã sinh lại.
-
-## 6. Tiêu chí nghiệm thu (kiểm chứng được, không cần Docker)
-
-Biến dùng chung: `TEST_DATABASE_URL=postgresql+asyncpg://<user>:<pass>@localhost:5432/<tên>_test` (conftest từ chối DB không kết thúc bằng `_test`). Lệnh backend chạy trong `apps/core/`. Máy không có Postgres local thì mọi test `db` bị skip, **không tính là pass**.
-
-**Backend (backend-dev dán output vào báo cáo)**
-- [ ] `uv run ruff check app tests` → exit 0; `uv run ruff format --check app tests` → exit 0.
-- [ ] `uv run alembic heads` → đúng một head, vẫn là `d4e9f2a6b8c5`.
-- [ ] `DATABASE_URL=$TEST_DATABASE_URL API_KEY=test-api-key-0123456789 uv run alembic upgrade head && uv run alembic check` → "No new upgrade operations detected".
-- [ ] `uv run pytest -q tests/test_import_unit.py` (không cần DB) → pass. Bắt buộc có: `normalize_project_key` cho `ONE NEXUS`→`ONE_NEXUS`, `SAO MỘC`→`SAO_MOC`, `KHÁC`→`KHAC`, `đường`→`DUONG`, `1ABC`→`P_1ABC`, chuỗi chỉ có ký tự đặc biệt → lỗi; `normalize_color` cho `hsl(253, 70%, 65%)` ra hex 7 ký tự hợp lệ, `#2563EB`→`#2563eb`, `red`→`None`; `map_ai_log_category` cho `TOOL`, `UI/UX`, `DOCS`.
+**Backend**
+- [ ] `uv run ruff check app migrations tests` và `uv run ruff format --check app migrations tests` → exit 0.
+- [ ] `uv run alembic heads` → một head, là revision mới, `down_revision = "d4e9f2a6b8c5"`.
+- [ ] `export DATABASE_URL=$TEST_DATABASE_URL API_KEY=test-api-key-0123456789; uv run alembic upgrade head && uv run alembic downgrade -1 && uv run alembic upgrade head && uv run alembic check` → cả bốn exit 0, "No new upgrade operations detected".
+- [ ] `uv run pytest -q tests/test_import_unit.py` → pass: chuẩn hoá key (`ONE NEXUS`, `SAO MỘC`, `KHÁC`, `đường`→`DUONG`, `1ABC`→`P_1ABC`, chuỗi toàn ký tự đặc biệt → lỗi); `hsl(253, 70%, 65%)` → hex hợp lệ, `#2563EB` → `#2563eb`, `red` → `None`; category `TOOL`/`UI/UX`/`DOCS`; `diff_fields` bỏ qua `updated_at`, so datetime theo thời điểm UTC, so tag sau chuẩn hoá.
 - [ ] `TEST_DATABASE_URL=… uv run pytest -q` → toàn bộ pass, không test `db` nào bị skip. Bắt buộc có:
-  - Fixture tổng hợp nhập thành công: id giữ nguyên; `task.project_id` trỏ đúng project; `created_at`, `completed_at`, `assignee`, `source`, `external_id`, `spent_minutes` giữ nguyên; task `done` thiếu `completed_at` được backfill bằng `updated_at`; event được chèn với id và `created_at` gốc; mỗi task tạo mới có một event đánh dấu nhập mang `import_id` (theo D8).
-  - **Idempotent:** nhập lần hai cùng fixture → `created == 0` mọi thực thể; số dòng `tasks`, `projects`, `task_events`, `notes`, `ai_logs` không đổi.
-  - **Dry-run:** sau dry-run, đếm dòng mọi bảng không đổi; báo cáo dry-run và báo cáo lần ghi thật có cùng `counts`.
-  - **All-or-nothing:** fixture có một task enum sai ở cuối → `committed=false`, `errors ≥ 1`, không bảng nào có dòng mới.
-  - Khớp theo khoá tự nhiên: project cùng key khác id → không tạo project mới, task trong file trỏ về project đã có; task khác id nhưng cùng `(source, external_id)` với task còn sống → `skipped_existing`.
-  - Hai task còn sống trong file cùng `(jira, X-1)` → lỗi `duplicate_external_id`.
-  - Task/note có `deleted_at` trong file → `skipped_trash`, không có trong DB.
-  - Field `raw_payload` trong file bị bỏ: cột `raw_payload` của task tạo ra là `NULL`, `ignored_fields["task"]` chứa `raw_payload`.
-  - `ai_logs`: `handling` thiếu → `"(không ghi nhận)"`; sau đó `GET /api/v1/ai-logs` trả 200 (không vỡ validate response).
-  - Nếu làm `update_if_newer` (D4): file mới hơn → `updated`, giá trị `updated_at` bằng giá trị trong file; file cũ hơn → `skipped_existing`; bản ghi ở thùng rác DB → `skipped_trash_in_db`, `deleted_at` không đổi.
-  - API: thiếu `X-API-Key` → 401; `schema_version: 99` → 422; body không phải object → 422; `Content-Length` > 10 MB → 413; mặc định không truyền `dry_run` → `committed=false` và DB không đổi; hai request đồng thời → một trong hai 409 (test bằng cách giữ khoá advisory ở session khác).
-- [ ] **Thử trên file thật, chỉ đọc** (test tuỳ chọn, skip khi thiếu biến):
+  - Nhập fixture vào DB rỗng: id giữ nguyên, quan hệ project đúng, `created_at`/`completed_at`/`assignee`/`source`/`external_id`/`spent_minutes` giữ nguyên, task `done` thiếu `completed_at` được backfill, event chèn với id gốc, mỗi task mới có event `synced` mang `import_id`, `import_runs` có 1 dòng, `import_audit` có `created` cho từng bản ghi.
+  - **Idempotent:** nhập lại cùng fixture → mọi thực thể `created == 0`, `replaced == 0`; số dòng mọi bảng nghiệp vụ không đổi; không thêm event.
+  - **Replace:** sửa `status` và `title` của một task trong DB qua API, nhập lại fixture → task đó `replaced == 1`, `changes` có đúng `status` và `title`, giá trị cột trở về như file, `updated_at` bằng giá trị trong file, có event `updated` với `changes`, `import_audit.before` chứa giá trị trước khi ghi đè, `file_older_than_db == true`, `replaced_older == 1`.
+  - Replace giữ nguyên `raw_payload` đang có trong DB.
+  - Khớp theo khoá tự nhiên: project cùng key khác id → ghi đè vào project DB, không tạo mới, task trong file trỏ về id DB; task khác id nhưng cùng `(source, external_id)` còn sống → ghi đè vào task DB, `matched_by == "natural_key"`.
+  - Bản DB đang ở thùng rác → `skipped_trash_in_db`, `deleted_at` không đổi, không ghi đè. Bản trong file ở thùng rác → `skipped_trash`, bản DB tương ứng còn nguyên.
+  - Không xoá: DB có bản ghi không có trong file → vẫn còn sau khi nhập.
+  - **Dry-run:** đếm dòng mọi bảng (cả `import_runs`, `import_audit`, `task_events`) không đổi; `counts` và `replacements` của dry-run giống lần ghi thật.
+  - **`expect_replaced`:** dry-run báo `replaced=1`; sửa thêm một task trong DB; commit với `expect_replaced=1` → `committed=false`, lỗi `replace_count_mismatch`, DB không đổi. Commit thiếu `expect_replaced` → 422.
+  - **All-or-nothing:** một task enum sai ở cuối fixture → `committed=false`, không bảng nào đổi.
+  - Hai task còn sống trong file cùng `(jira, X-1)` → lỗi `duplicate_external_id`. Ghi đè làm `(source, external_id)` trùng với bản ghi còn sống khác → lỗi `natural_key_conflict`.
+  - `raw_payload` trong file bị bỏ và nằm trong `ignored_fields["task"]`.
+  - `ai_logs`: `handling` thiếu → `"(không ghi nhận)"`, sau đó `GET /api/v1/ai-logs` trả 200.
+  - API: thiếu key → 401; `schema_version: 99` → 422; body không phải object → 422; `Content-Length` > 10 MB → 413; không truyền `dry_run` → DB không đổi; giữ advisory lock ở session khác → 409.
+- [ ] **File thật, chỉ đọc** (skip khi thiếu biến):
   ```bash
   IMPORT_REAL_DATAFILE=/Users/hungdv-mac/Downloads/ai_assistant_personal/data/builder-data.json \
   IMPORT_REAL_AILOGS=/Users/hungdv-mac/Downloads/ai_assistant_personal/data/ai-logs.json \
   TEST_DATABASE_URL=… uv run pytest -q -s -k real_file
   ```
-  Test mở file bằng chế độ `"rb"`, tính sha256 và `mtime` trước và sau, **assert không đổi**. Không ghi bất cứ thứ gì cạnh file. Kỳ vọng (theo số liệu đo ngày 2026-10-07, file có thể đã thay đổi lúc chạy):
-  - Dry-run: `errors == 0`; `projects.received == 14`, `tasks.received == 498`, `notes.received == 0`, `task_events.received == 0`; `project_key_changes` có 3 mục (`ONE NEXUS`, `SAO MỘC`, `KHÁC`); 14 cảnh báo `color_converted`; `ignored_fields["file"]` chứa `meta`.
-  - Ghi thật vào DB `_test`: `projects.created == 14`, `tasks.created == 498`.
-  - Chạy lại: `created == 0`, `tasks.skipped_existing == 498`.
-  - ai-logs: `ai_logs.received == 61`, `errors == 0`, có cảnh báo cho `UI/UX` (→ web) và `DOCS` (→ other).
-  - Nếu dry-run báo `duplicate_external_id` hoặc lỗi khác trên file thật: **dừng, báo User**, không sửa file.
+  Mở file bằng `"rb"`, assert sha256 và `mtime` không đổi trước/sau. Kỳ vọng (số liệu ngày 2026-10-07): dry-run trên DB rỗng `errors == 0`, `projects.received == 14`, `tasks.received == 498`, `notes.received == 0`, 3 `project_key_changes`, 14 cảnh báo đổi màu, `replaced == 0`; ghi thật: `created` 14/498; chạy lại: `created == 0`, `replaced == 0`, `unchanged` 14/498; ai-logs: `received == 61`, `errors == 0`. Có lỗi trên file thật thì **dừng, báo User**, không sửa file.
 
-**Sinh types (orchestrator)**
-- [ ] `openapi.d.ts` có path `/api/v1/import/datafile`, `/api/v1/import/ai-logs` và schema `ImportReport`; `git diff --stat` chỉ chứa phần liên quan.
+**Types (orchestrator)**: `openapi.d.ts` có hai path mới và schema `ImportReport`, `Replacement`; `git diff --stat` chỉ chứa phần liên quan.
 
-**Web (frontend-dev)**
+**Web**
 - [ ] `cd apps/web && npx tsc --noEmit` → exit 0.
 - [ ] `git diff --name-only <base>...HEAD -- apps/web/lib/generated apps/web/lib/store/engine.ts apps/web/lib/store/json-file.ts apps/web/app/actions-import.ts` → rỗng.
-- [ ] `grep -n "store/engine" apps/web/components/core-import-panel.tsx apps/web/components/local-only-notice.tsx` → rỗng.
-- [ ] `grep -n "dangerouslySetInnerHTML" apps/web/components/core-import-panel.tsx` → rỗng.
-- [ ] `grep -n "CORE_API_KEY\|X-API-Key" apps/web/components/` → rỗng (key không xuống browser).
+- [ ] `grep -n "store/engine\|dangerouslySetInnerHTML" apps/web/components/core-import-panel.tsx apps/web/components/local-only-notice.tsx` → rỗng.
+- [ ] `grep -rn "CORE_API_KEY\|X-API-Key" apps/web/components/` → rỗng.
 
-**Ownership**
-- [ ] `git diff --name-only` của từng nhánh agent chỉ nằm trong danh sách mục 5; `git status data/` sạch.
+**Kịch bản tay (UAT)**
+1. `pg_dump`. `make use-db`. Mở `/data`: thành phần chỉ-file hiện `LocalOnlyNotice`.
+2. Kiểm tra `builder-data.json` → 14 project / 498 task tạo mới, 0 ghi đè, không có khung đỏ. Nhập thật.
+3. `/tasks`, `/stats`: "hoàn thành 7 ngày" phản ánh ngày đóng thật.
+4. Đổi trạng thái một task trên web (api). Kiểm tra lại cùng file → khung đỏ "1 bản ghi sẽ bị GHI ĐÈ", diff `status`, nhãn "File cũ hơn". Nút Nhập thật khoá cho tới khi tích đủ hai ô.
+5. Sau khi Kiểm tra, đổi thêm một task rồi bấm Nhập thật → thông báo "đã thay đổi sau lần Kiểm tra".
+6. Không có Docker: `curl -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" --data-binary @/Users/hungdv-mac/Downloads/ai_assistant_personal/data/builder-data.json "http://localhost:8000/api/v1/import/datafile?dry_run=true"` (curl chỉ đọc file).
 
-**Kịch bản tay (UAT, khi có môi trường chạy core thật)**
-1. Ở chế độ file, tải `/api/export?format=json` (hoặc dùng bản sao của `data/builder-data.json`; không sửa bản gốc). Tải thêm `?entity=ai_logs`.
-2. `pg_dump` database thật.
-3. `make use-db` → mở `/data`: card nguồn hiện Postgres; các manager chỉ-file hiện `LocalOnlyNotice`; ô "Thay toàn bộ" vẫn bị khoá.
-4. Panel "Chuyển dữ liệu JSON vào Postgres": chọn file → Kiểm tra → thấy 14 project / 498 task sẽ tạo, 3 key đổi; nút Nhập thật bật. Bấm Nhập thật → `committed`.
-5. `/tasks` có đủ task, lọc theo project (kể cả `SAO_MOC`) đúng; `/stats` "hoàn thành 7 ngày" phản ánh ngày đóng thật, không dồn hết vào hôm nay.
-6. Kiểm tra lại cùng file → 0 bản ghi mới. Đổi sang file khác mà chưa Kiểm tra → nút Nhập thật bị khoá.
-7. Không có Docker: tương đương bằng `curl -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" --data-binary @/Users/hungdv-mac/Downloads/ai_assistant_personal/data/builder-data.json "http://localhost:8000/api/v1/import/datafile?dry_run=true"` (curl chỉ đọc file).
+**Review**: `db-reviewer` (migration audit, batch, advisory lock), `code-reviewer`, **`security-auditor`** (endpoint ghi hàng loạt có ghi đè, Server Action mới, giới hạn kích thước).
 
-**Review**
-- [ ] `code-reviewer` duyệt toàn bộ diff; `security-auditor` duyệt (endpoint ghi hàng loạt, Server Action mới); `db-reviewer` xác nhận không cần migration và cách INSERT theo lô/advisory lock.
+## 8. Quyết định B1 (đã chốt) và rủi ro
 
-## 7. Rủi ro & quyết định cần User chốt
+| # | Quyết định | Trạng thái |
+|---|---|---|
+| D1 | Endpoint nhập hàng loạt ở core | Chốt |
+| D2 | Giữ id UUID trong file | Chốt |
+| D3 | Khớp theo `id`, sau đó khoá tự nhiên (bảng 3.2) | Chốt; làm rõ cho replace ở 3.2 |
+| D4 | Bản ghi đã tồn tại → **replace**; bản giống hệt → `unchanged`; không xoá | Chốt (User) |
+| D5 | Bỏ qua bản ghi ở thùng rác của file | Chốt |
+| D6 | All-or-nothing, `dry_run` mặc định `true` | Chốt |
+| D7 | Tự chuẩn hoá key, đổi hsl → hex, có cảnh báo | Chốt (User) |
+| D8 | Task tạo mới có event `synced`, actor `import:datafile` | Chốt; v2 thêm event `updated` cho task bị ghi đè |
+| D9 | ai_logs: endpoint riêng, `UI/UX`→`web`, lạ→`other`, `handling` thiếu → `"(không ghi nhận)"` | Chốt |
+| D11 | Không nhận `raw_payload` từ file; khi replace giữ `raw_payload` của DB | Chốt; phần giữ DB là bổ sung v2 |
+| D12 | Giới hạn như 3.3 | Chốt |
+| D13 | Giữ timestamp gốc | Chốt |
+| D14 | Bỏ qua field lạ, liệt kê trong báo cáo | Chốt |
+| D15 | Thêm bảng `import_runs` / `import_audit` (migration) để lưu `before` khi ghi đè | **Mới, cần User duyệt** (hệ quả của D4: không có nó thì ghi đè không hoàn tác được ngoài `pg_dump`) |
+| D16 | So sánh "có khác biệt" bỏ qua `updated_at`; khác mỗi `updated_at` → `unchanged`, không ghi | **Mới, cần User duyệt** |
+| D17 | Commit bắt buộc gửi `expect_replaced` khớp với số thực tế | **Mới, cần User duyệt** |
 
-| # | Câu hỏi | Đề xuất | Lý do |
+Rủi ro B1:
+- **File cũ ghi đè trạng thái mới hơn trong Postgres** (rủi ro lớn nhất của D4). Giảm thiểu: dry-run mặc định, diff từng bản ghi, cờ `file_older_than_db`, khung cảnh báo đỏ và hai ô xác nhận, `expect_replaced`, `import_audit.before`. Rủi ro còn lại: User tích xác nhận mà không đọc diff.
+- **Web không có đăng nhập.** Ai mở được `/data` (kể cả qua LAN khi `make lan-up`) đều có thể ghi đè dữ liệu bằng một file tự soạn. Replace làm rủi ro này nặng hơn v1. Giảm thiểu hiện có: chỉ bind localhost; dấu vết ở `import_audit`. Cần ghi vào `AI_HANDOFF_STATE.md` như một hạn chế đã biết.
+- **Lệch chuẩn hoá key giữa web và backend**: Jira sync ở chế độ file tạo key bằng `toUpperCase()` không bỏ dấu cách (`ONE NEXUS`), backend thành `ONE_NEXUS`. Nhập lại file sau khi tiếp tục dùng chế độ file vẫn khớp được (cùng hàm chuẩn hoá), nhưng hai nơi hiển thị key khác nhau. B4 sẽ dùng chung hàm chuẩn hoá ở backend.
+- `WipeDataManager` ở chế độ api thao tác trên engine RAM, không chạm Postgres; dễ gây hiểu nhầm. Ngoài phạm vi.
+- Lệch `openapi.d.ts` khi sinh ngoài container; không có smoke test.
+
+---
+
+# PHA B2: Cài đặt người dùng và sync_urls (gọn)
+
+## 9. B2
+
+**Mục tiêu.** Ở chế độ api, `getCurrentUsersApi()` và `getAssigneesApi()` trả `[]`, `getSyncUrlsApi()` trả `[]`, `setCurrentUsersApi()` là no-op. Hệ quả: trang `/team` không tách được task cá nhân/team, JQL mặc định của Jira sync không có người dùng. B2 đưa các cài đặt này vào Postgres.
+
+**Dữ liệu**
+
+| Bảng | Cột | Ghi chú |
+|---|---|---|
+| `app_settings` (mới) | `key varchar(64) PK`, `value jsonb NOT NULL`, `updated_at timestamptz` | Key-value cho cài đặt **không bí mật**. Key hợp lệ khai báo cứng trong code (`current_users`, `sync_urls`); key lạ bị từ chối. Không dùng bảng này cho token hay secret. Downgrade: drop bảng, mất cài đặt. |
+
+**API** (prefix `/api/v1`)
+
+| Method | Path | Request / Response | Ràng buộc |
 |---|---|---|---|
-| D1 | Sửa đường POST từng bản ghi ở web, hay làm endpoint nhập hàng loạt ở core? | Endpoint hàng loạt ở core | Một transaction, một request (không vướng rate limit 120/phút), giữ được field mà `TaskCreate` không cho đặt (`created_at`, `completed_at`, `spent_minutes`, events), validate bằng Pydantic ở một chỗ. |
-| D2 | Giữ id UUID trong file hay sinh mới? | Giữ | Id đã là UUID v4; giữ thì idempotent theo id và không phải dựng lại quan hệ. Rủi ro trùng id ngẫu nhiên giữa hai bản ghi khác nhau: không đáng kể. |
-| D3 | Khoá chống trùng | `id`, sau đó khoá tự nhiên (`projects.key` đã chuẩn hoá; `(source, external_id)` còn sống cho task/note) | Bắt được trường hợp bản ghi đã có trong Postgres từ đường khác với id khác. |
-| D4 | Bản ghi đã có: bỏ qua, ghi đè hay báo lỗi? | Mặc định `skip`. **Có làm `update_if_newer` không?** Đề xuất: có, nhưng chỉ bật khi chọn tường minh | Kịch bản thật: nhập xong vẫn dùng chế độ file vài ngày (Jira sync cập nhật task), rồi nhập lại. Với `skip`, thay đổi đó bị bỏ. Không làm thì giảm phạm vi và giảm rủi ro ghi đè từ file giả. |
-| D5 | Task/note đang ở thùng rác của file | Bỏ qua, đếm `skipped_trash` | Giống luật merge hiện có trong `transfer.ts`; nhập thùng rác vào rồi bị `purge_expired` dọn ngay cũng vô nghĩa. File thật: 0 bản ghi trong thùng rác. |
-| D6 | Giao dịch | All-or-nothing, `dry_run` mặc định `true` | Dễ suy luận, chạy lại an toàn; dry-run cho thấy lỗi trước. |
-| D7 | Key project không hợp lệ (`ONE NEXUS`, `SAO MỘC`, `KHÁC`) và màu `hsl(...)` | Tự chuẩn hoá + cảnh báo; hai key trùng sau chuẩn hoá → lỗi | Không được sửa file thật; nới regex backend thì phá giả định ở chỗ khác. Hệ quả: key hiển thị đổi (`SAO_MOC`), `name` giữ nguyên ("Sao Mộc"). |
-| D8 | Có ghi dấu "được nhập" vào `task_events`? | Có: event `synced`, actor `import:datafile`, payload `{import_id, schema_version}` | Audit trail (rule project.md) và dùng để rollback. Dùng giá trị enum sẵn có nên không cần migration. Phương án khác: thêm `TaskEventType.IMPORTED` (cần migration sửa CHECK), hoặc không ghi gì. |
-| D9 | `ai_logs` có trong phạm vi? Ánh xạ category và `handling` thiếu | Có, endpoint riêng; `UI/UX`→`web`, lạ→`other`; `handling` thiếu → `"(không ghi nhận)"` | Dữ liệu nằm ở file riêng với schema khác backend; nếu không chuẩn hoá thì 61/61 log bị từ chối. |
-| D10 | Thứ không phải thực thể (`meta.current_users`, `minutes_logged_today`, `sync_urls`, Jira sync, Vault, Chrome history) | Ngoài phạm vi; chỉ báo là đã bỏ qua | Postgres chưa có chỗ chứa. **Hệ quả cần User biết:** sau khi đổi sang `DATA_SOURCE=api`, danh sách "người dùng hiện tại" rỗng (`getCurrentUsersApi` trả `[]`), lọc task cá nhân/team và Jira sync/Excel import không chạy. Cần epic riêng "Settings + Jira sync ở chế độ api" trước khi bỏ hẳn chế độ file. |
-| D11 | Nhận `raw_payload` từ file? | Không, luôn `NULL` | Dữ liệu không đáng tin, export của web cũng không có field này. |
-| D12 | Giới hạn kích thước/số lượng | Như bảng ở 2.3 (body 10 MB, 20 000 task...) | Gấp nhiều lần dữ liệu hiện tại (550 KB, 498 task), vẫn chặn được payload bất thường. |
-| D13 | Giữ timestamp gốc (`created_at`, `updated_at`, `completed_at`) hay để server đặt `now()`? | Giữ | Để server đặt thì 450+ task `done` đều "hoàn thành hôm nay", làm sai `/stats` và agenda. |
-| D14 | Field lạ trong file: từ chối hay bỏ qua? | Bỏ qua + liệt kê trong `ignored_fields` | File cũ/mới hơn một chút vẫn nhập được; User vẫn thấy cái gì không được chuyển. |
+| GET / PUT | `/settings/current-users` | `{ "names": list[str] }` | ≤ 20 tên, mỗi tên strip, 1..200 ký tự, loại trùng |
+| GET / PUT | `/settings/sync-urls` | `{ "urls": list[str] }` | ≤ 50 URL, chỉ `https`, host thuộc allowlist (D-B2b) |
+| GET | `/tasks/assignees` | `list[str]` | `DISTINCT assignee` trên task còn sống; khai báo **trước** `/tasks/{task_id}` |
+| (mở rộng B1) | `/import/datafile` | `meta.current_users` → replace `current_users` nếu có trong file và khác giá trị DB; hiện trong `replacements` với `entity="setting"` | Thêm `"setting"` vào enum `ImportEntity` (migration nhỏ sửa CHECK, hoặc gộp vào migration B2) |
 
-Rủi ro kỹ thuật:
-- **Web không có đăng nhập.** Ai mở được `/data` (kể cả qua LAN khi `make lan-up`) đều gọi được Server Action nhập. Với `skip` thì không phá được dữ liệu có sẵn, chỉ thêm được bản ghi mới; với `update_if_newer` thì có thể ghi đè bằng file có `updated_at` giả. Đây là một lý do nữa để `update_if_newer` là tuỳ chọn (D4).
-- **Lệch chuẩn hoá key giữa web và backend.** Jira sync ở chế độ file tạo key bằng `toUpperCase().replace(/[^A-Z0-9]/g, '')` (bỏ dấu cách), còn file thật lại có key chứa dấu cách và dấu tiếng Việt, tức là có đường tạo project khác. Sau khi nhập, project `ONE_NEXUS` trong Postgres và một lần sync file-mode sinh ra `ONENEXUS` sẽ là hai project khác nhau. Chỉ ảnh hưởng nếu User tiếp tục dùng chế độ file sau khi nhập.
-- **`WipeDataManager` ở chế độ api** thao tác trên engine trong RAM, không chạm Postgres. Không thuộc epic này, nhưng UI có thể gây hiểu nhầm; nên xử lý ở epic sau.
-- **Lệch `openapi.d.ts`** khi sinh ngoài container: kiểm `git diff --stat`.
-- **Không có smoke test** cho tính năng này; dựa vào pytest DB/API và test file thật tuỳ chọn.
+**`meta.minutes_logged_today/date`: đề xuất không lưu (D-B2a).** Ở chế độ api, backend đã tự tính `minutes_logged_today` từ event `time_logged` trong ngày (`task_service.get_stats`). Con số trong file chỉ là bộ đếm của riêng hôm nay, không gắn với task nào; muốn nhập phải bịa ra một event không có task. Báo cáo nhập sẽ ghi "bỏ qua: backend tự tính từ nhật ký".
+
+**`sync_urls` trong file:** `engine.snapshot()` hiện không ghi `sync_urls` (Phụ lục A, mục 4), nên file thật không có. B2 sửa `snapshot()`/`restore()` để chế độ file lưu `sync_urls` (tăng `SCHEMA_VERSION` lên 5, kèm bước migrate backfill `[]`), rồi endpoint nhập đọc `sync_urls` nếu có. Thay đổi này **chạm chế độ file**: đây là sửa lỗi, không đổi hành vi cố ý.
+
+**Chạy URL sync ở chế độ api** (fetch Excel rồi nhập task) cần endpoint upsert của B4, nên B2 chỉ lưu danh sách URL. Nút "Đồng bộ" ở chế độ api vẫn là `LocalOnlyNotice` cho tới B4.
+
+**Web:** `lib/api.ts` (nhánh api cho 4 hàm trên), `CurrentUserManager`/`UrlSyncManager` hiện lại ở chế độ api (thay `LocalOnlyNotice`), `lib/store/engine.ts` + `json-file.ts` + `types.ts` (v5, `sync_urls`).
+
+**Bảo mật:** `syncFromUrlAction` hiện fetch URL bất kỳ do người dùng nhập từ phía server (SSRF, `redirect: 'follow'`). B2 thêm kiểm tra `https` + allowlist host ở cả lúc lưu (backend) và lúc fetch (web, kiểm lại URL cuối sau redirect). Cần `security-auditor`.
+
+**Ownership:** backend-dev: `models/app_setting.py`, migration `<rev>_add_app_settings.py`, `schemas/settings.py`, `services/settings_service.py`, `api/v1/settings.py`, `api/v1/tasks.py` (route `/assignees`), `router.py`, mở rộng `import_service.py`, test. frontend-dev: `lib/api.ts`, `lib/store/engine.ts`, `lib/store/json-file.ts`, `lib/store/types.ts`, `app/actions.ts` (allowlist), `app/data/page.tsx`, `components/current-user-manager.tsx`, `components/url-sync-manager.tsx`.
+
+**Nghiệm thu:** ruff, `alembic heads/check` một head; pytest: PUT/GET round-trip, từ chối > 20 tên, URL `http://`, host ngoài allowlist, key lạ; `/tasks/assignees` không trả assignee của task trong thùng rác và không bị nuốt bởi `/{task_id}`; nhập `builder-data.json` → `current_users == ["Đoàn Việt Hưng"]`, chạy lại → `unchanged`. Web: `tsc`; file v4 cũ nạp lên được và có `sync_urls: []`; UAT: `/team` ở chế độ api tách đúng task cá nhân.
+
+---
+
+# PHA B3: Vault (ciphertext) và lịch sử Chrome (gọn)
+
+## 10. B3
+
+### 10.1. Vault
+
+**Hiện trạng.** `lib/vault/store.ts` lưu blob đã mã hoá ở `data/vault.json`, **cố ý độc lập với `DATA_SOURCE`**. Mã hoá/giải mã ở trình duyệt (PBKDF2 600k vòng + AES-GCM, blob v1/v2 có `wraps.password`/`wraps.recovery`). Server chỉ thấy ciphertext. Chống ghi đè bằng `expectedUpdatedAt`.
+
+**Đề xuất.** Khi `DATA_SOURCE=api`, blob nằm ở Postgres; khi `file`/`memory` thì giữ nguyên như hiện tại (D-B3a).
+
+| Bảng | Cột | Ghi chú |
+|---|---|---|
+| `vault_blobs` (mới) | `id smallint PK CHECK (id = 1)` (một két duy nhất), `blob jsonb NOT NULL`, `blob_version smallint`, `updated_at timestamptz` (lấy từ blob) | Một dòng. |
+| `vault_blob_history` (mới) | `id uuid PK`, `blob jsonb`, `replaced_at timestamptz` | Giữ **5 bản trước** mỗi lần ghi đè, để lỡ ghi đè vẫn khôi phục được (D-B3b). |
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| GET | `/api/v1/vault` | 200 blob, hoặc 404 khi chưa có |
+| PUT | `/api/v1/vault` | Body `{ blob, expected_updated_at: str \| null }`; lệch → 409 (giữ đúng ngữ nghĩa `VaultConflictError`) |
+| DELETE | `/api/v1/vault` | Xoá két (bản cũ vẫn vào history) |
+| POST | `/api/v1/import/vault?dry_run=true` | Nhập nội dung `vault.json`. DB chưa có két → tạo. DB đã có két với `updated_at` khác → **replace** theo D4, nhưng dry-run báo rõ "Két hiện có sẽ bị thay; KHÔNG xem được nội dung để so sánh", và bản cũ vào `vault_blob_history`. |
+
+**Ràng buộc zero-knowledge (bắt buộc, security-auditor kiểm):**
+- Backend **không bao giờ** giải mã, không nhận mật khẩu hay recovery code, không có code import thư viện mã hoá cho Vault.
+- Chỉ kiểm hình dạng blob (port `isVaultBlob`: `v ∈ {1,2}`, các field base64, `kdf.iterations ≥ 100 000`) và kích thước ≤ 5 MB.
+- Không log blob, không đưa blob vào `import_audit.before` (chỉ ghi `updated_at` cũ/mới), không có trong export JSON chung của chế độ api.
+- Diff ở dry-run chỉ so `updated_at`, `v`, kích thước.
+- Web vẫn đi qua `lib/api.ts` (server-only) giống mọi route khác; trình duyệt nhận blob qua Server Action/route như hiện nay.
+
+### 10.2. Lịch sử Chrome
+
+**Hiện trạng.** `lib/chrome-history.ts` copy file SQLite `History` của Chrome trên **máy chạy web**, đọc bằng `sqlite3` CLI, ghi đè `data/chrome-history.json` (`{synced_at, source_path, items: [{url, title, visit_count, last_visit_time}]}`); `/history` đọc file đó trực tiếp. `last_visit_time` là giờ địa phương **không có múi giờ** (`'localtime'` trong SQL).
+
+**Đề xuất.** Việc đọc Chrome **vẫn ở web** (backend chạy trong container, không thấy hồ sơ Chrome của host). Ở chế độ api, web đẩy kết quả lên core thay vì ghi file.
+
+| Bảng | Cột | Index/Constraint |
+|---|---|---|
+| `browser_history` (mới) | `id uuid PK`, `profile varchar(200)` (tên thư mục profile, không lưu đường dẫn tuyệt đối), `url text`, `title text`, `visit_count int ≥ 0`, `last_visit_at timestamptz`, `synced_at timestamptz` | unique `(profile, url_hash)` với `url_hash = sha256(url)` (URL dài không index trực tiếp được); index `last_visit_at DESC` |
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| POST | `/api/v1/browser-history/batch` | `{ profile, items[] }`, ≤ 10 000 item mỗi lần, upsert theo `(profile, url_hash)`: lấy `visit_count` và `last_visit_at` lớn hơn |
+| GET | `/api/v1/browser-history?q=&profile=&limit=50&offset=` | `Page[...]`, phân trang server-side (rule 3.5) |
+| DELETE | `/api/v1/browser-history?profile=` | Xoá theo profile (thay cho xoá file) |
+| POST | `/api/v1/import/browser-history?dry_run=true` | Nhập `chrome-history.json`: đổi `last_visit_time` từ giờ `display_timezone` sang UTC; upsert như trên (với dữ liệu này "replace" nghĩa là lấy số lớn hơn, không bao giờ giảm) |
+
+**Bảo mật/riêng tư:**
+- Lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; URL có thể chứa token trong query string (link reset mật khẩu, OAuth `code=`). Đề xuất bỏ query string và fragment trước khi lưu (D-B3c).
+- **Lỗi có sẵn cần sửa trong B3:** `scrapeChromeHistory` ghép `customPath` (do client gửi qua `syncChromeHistoryAction`) vào chuỗi lệnh shell `exec(\`sqlite3 -json "${tmpHistoryPath}" ...\`)`. `customPath` chỉ đi vào `fs.copyFileSync`, nhưng `limit` được nội suy vào SQL/shell và không được kiểm tra kiểu ở Server Action. Chuyển sang `execFile` với mảng tham số và ép `limit` về số nguyên trong khoảng 1..10 000; `customPath` phải nằm dưới thư mục Chrome của user.
+- `security-auditor` bắt buộc cho cả 10.1 và 10.2.
+
+**Ownership B3:** backend-dev: models `vault.py`, `browser_history.py`, migration `<rev>_add_vault_and_browser_history.py`, schemas/services/routers tương ứng, mở rộng `import_service.py` (hoặc service nhập riêng), test. frontend-dev: `lib/vault/store.ts` (rẽ nhánh theo `DATA_SOURCE`), `lib/api.ts`, `lib/chrome-history.ts`, `app/actions-chrome.ts`, `app/history/page.tsx`, `components/vault-import-manager.tsx`, `components/chrome-history-manager.tsx`, `components/core-import-panel.tsx` (thêm loại file vault/chrome). **Không ai sửa** `lib/vault/crypto.ts` (thuật toán mã hoá không đổi).
+
+**Nghiệm thu B3:** pytest: PUT với `expected_updated_at` sai → 409; blob sai hình dạng/quá 5 MB → 422/413; ghi đè đẩy bản cũ vào history, giữ đúng 5 bản; `grep -rn "cryptography\|AESGCM\|pbkdf2" apps/core/app` không có kết quả liên quan vault; log của request vault không chứa `ciphertext`. Batch history upsert idempotent; giờ địa phương đổi đúng sang UTC; query string bị bỏ (nếu D-B3c chốt). Web: `tsc`; UAT: tạo két ở chế độ file → nhập lên api → mở khoá được bằng cùng mật khẩu và recovery code; `/history` phân trang 50/trang ở chế độ api.
+
+---
+
+# PHA B4: Jira sync ở backend (gọn)
+
+## 11. B4
+
+**Hiện trạng.**
+- `syncJiraAction` chạy trong web, chỉ chế độ file. Nó gọi `POST {baseUrl}/rest/api/3/search/jql` (tối đa 100 trang × 100 issue), ánh xạ issue → task, tự tạo project theo key, chỉ chạy được trên engine.
+- Cấu hình kết nối, **kể cả API token Jira**, nằm ở `localStorage` của trình duyệt dưới dạng chữ rõ (`jira-sync-manager.tsx`), và bị gửi kèm mỗi lần sync qua Server Action.
+- JQL mặc định dùng `currentUsers` của engine.
+
+**Đề xuất chia hai phần, merge độc lập:**
+
+**B4a: upsert hàng loạt cho integration + lưu kết nối**
+
+| Bảng | Cột | Ghi chú |
+|---|---|---|
+| `integration_connections` (mới) | `id uuid PK`, `kind varchar(32)` (`jira`), `name varchar(100)`, `base_url text` (chỉ `https`), `account_email varchar(200)`, `secret_ciphertext bytea`, `secret_last4 char(4)`, `config jsonb` (`jql`, `project_key`, `project_name`), `last_sync_at timestamptz`, `created_at`, `updated_at` | unique `(kind, name)` |
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| GET | `/api/v1/integrations` | Danh sách kết nối. **Không bao giờ trả token**, chỉ `has_secret` và `secret_last4`. |
+| POST / PATCH / DELETE | `/api/v1/integrations[/{id}]` | Token chỉ ghi (write-only); PATCH không gửi token thì giữ token cũ. |
+| POST | `/api/v1/tasks/upsert-batch` | `{ source, items: TaskUpsert[] ≤ 1 000 }`, upsert theo `(source, external_id)` còn sống; tạo project theo key qua **cùng hàm `normalize_project_key` của B1**; event `synced` (actor `integration:<name>`) khi tạo, `updated` kèm diff khi đổi; `raw_payload` lưu nhưng đánh dấu không đáng tin. Dùng chung cho Jira, URL sync và Excel import ở chế độ api. |
+
+**Mã hoá token:** token phải giải mã được ở server (để gọi Jira), nên đây **không phải** zero-knowledge như Vault. Mã hoá khi lưu bằng khoá riêng `INTEGRATION_SECRET_KEY` (env, Fernet/AES-GCM, khác `API_KEY`); thiếu khoá thì endpoint tạo kết nối trả 503. Mất khoá thì phải nhập lại token. Không log, không đưa token vào `raw_payload`, `import_audit`, response hay message lỗi.
+
+**Chuyển cấu hình từ trình duyệt:** panel B4 đọc `localStorage` (phía client) và có nút "Chuyển các kết nối này lên server" (gửi qua Server Action một lần, rồi xoá khỏi `localStorage` khi thành công). Đề xuất có nút này (D-B4c).
+
+**B4b: chạy sync**
+- `POST /api/v1/integrations/{id}/sync?since=` chạy sync theo yêu cầu, polling, không webhook (theo `project.md`). Trả `{added, updated, skipped, errors}`. Giới hạn 100 trang, timeout 30 giây mỗi request tới Jira, chỉ gọi tới `base_url` đã lưu (không theo redirect sang host khác).
+- JQL mặc định dùng `current_users` của B2.
+- Nơi chạy connector: xem D-B4a. `project.md` quy định connector viết bằng **TypeScript + MCP SDK** trong `mcp-servers/` (thư mục này chưa tồn tại). Viết connector Python trong `apps/core` là đi lệch quy ước đó.
+- URL sync và Excel import ở chế độ api: web vẫn tải/đọc Excel như hiện tại, rồi gọi `upsert-batch` thay vì engine.
+- Chế độ file: `syncJiraAction` giữ nguyên.
+
+**Bảo mật:** lưu token phía server, outbound HTTP tới host do người dùng cấu hình (SSRF: chỉ `https`, chặn IP private/loopback trừ khi User cho phép Jira on-prem), dữ liệu Jira là untrusted (không bao giờ đưa vào prompt như instruction). `security-auditor` **bắt buộc**.
+
+**Ownership B4:** backend-dev: models `integration.py`, migration `<rev>_add_integration_connections.py`, `core/secrets.py` (mã hoá token), schemas/services/routers integrations + `tasks.py` (`/upsert-batch` khai báo trước `/{task_id}`), connector (nếu D-B4a chọn Python), `pyproject.toml` (+ lock) nếu cần thư viện. frontend-dev: `lib/api.ts`, `app/jira-actions.ts` (nhánh api), `app/actions-import.ts` (nhánh api gọi upsert), `app/actions.ts` (`syncFromUrlAction` nhánh api), `components/jira-sync-manager.tsx`, `components/file-upload-manager.tsx`, `components/url-sync-manager.tsx`, `app/data/page.tsx`. orchestrator: `.env.example`, `docker-compose*.yml` (biến `INTEGRATION_SECRET_KEY`), docs.
+
+**Nghiệm thu B4:** pytest: token không xuất hiện trong mọi response (`GET`, `POST`, lỗi), trong log (caplog), trong DB ở dạng chữ rõ; `upsert-batch` idempotent (chạy hai lần → `added=0`); trùng `(source, external_id)` với task trong thùng rác thì tạo mới (partial index); connector chạy với Jira giả (`httpx.MockTransport`), không gọi mạng thật; `base_url` `http://` hoặc `127.0.0.1` bị từ chối. Web: `tsc`; `grep -rn "localStorage" apps/web/components/jira-sync-manager.tsx` chỉ còn ở đường chuyển một lần. UAT: sync thật với Jira của User ở chế độ api, kết quả khớp số task đã nhập ở B1 (`updated`, không `added` trùng).
+
+---
+
+## 12. Câu hỏi còn lại cần User chốt
+
+**B1**
+- **D15:** Thêm bảng `import_runs` / `import_audit` (có migration) để lưu giá trị trước khi ghi đè, phục vụ hoàn tác? Đề xuất: có.
+- **D16:** Bản ghi chỉ khác `updated_at` thì coi là không đổi, không ghi đè? Đề xuất: có.
+- **D17:** Lần nhập thật bắt buộc gửi `expect_replaced` khớp với số bản ghi ghi đè thực tế, lệch thì huỷ? Đề xuất: có.
+
+**B2**
+- **D-B2a:** Không lưu `minutes_logged_today` (backend đã tự tính từ nhật ký)? Đề xuất: không lưu.
+- **D-B2b:** Allowlist host cho `sync_urls`? Đề xuất: Google Drive/Sheets, SharePoint/OneDrive; thêm host khác qua biến môi trường.
+
+**B3**
+- **D-B3a:** Ở chế độ api, Vault chuyển vào Postgres? Việc này bỏ thiết kế hiện tại "Vault độc lập với DATA_SOURCE". Đề xuất: có.
+- **D-B3b:** Nhập `vault.json` vào Postgres đã có két → replace, kèm giữ 5 bản cũ trong `vault_blob_history`? Hay từ chối khi đã có két? Đề xuất: replace có lịch sử.
+- **D-B3c:** Bỏ query string và fragment của URL lịch sử Chrome trước khi lưu, để tránh lưu token? Đề xuất: bỏ.
+
+**B4**
+- **D-B4a:** Connector Jira chạy ở đâu?
+  - (1) Python trong `apps/core`: lệch quy ước TS + MCP trong `project.md`.
+  - (2) Giữ phần gọi Jira ở web (TS), token lưu ở core, web lấy token qua endpoint nội bộ: phức tạp, token đi qua hai tiến trình.
+  - (3) Tạo `mcp-servers/jira` (TS): đúng quy ước nhưng thêm một service mới.
+  - Đề xuất: (1), kèm ghi chú ngoại lệ vào `project.md`.
+- **D-B4b:** Token Jira mã hoá bằng `INTEGRATION_SECRET_KEY` trong `.env` (mất khoá thì nhập lại token)? Đề xuất: có.
+- **D-B4c:** Có nút chuyển cấu hình Jira từ `localStorage` lên server một lần? Đề xuất: có.
+- **D-B4d:** Cho phép `base_url` Jira trỏ tới IP private (Jira on-prem trong LAN)? Đề xuất: mặc định chặn, mở bằng biến môi trường.
 
 ## Phụ lục A. Giả định ban đầu lệch với code thật
 
-1. **`components/data-tabs.tsx` và `LocalOnlyNotice` không tồn tại** (grep toàn repo, kể cả `.next`, không thấy). Trang `/data` hiện là một trang dài trong `app/data/page.tsx` với các khối `<details>`. Spec này tạo mới `local-only-notice.tsx`.
-2. **Không phải mọi đường nhập đều chặn ở chế độ api.** `importDataAction` → `transfer.importJson` có nhánh api POST từng bản ghi, nhưng với file thật:
-   - Project đầu tiên đã có `color: "hsl(...)"` → `ProjectCreate` 422; vòng lặp project không có `try/catch` nên cả lần nhập dừng ngay.
-   - Key `ONE NEXUS`, `SAO MỘC`, `KHÁC` không qua regex `^[A-Z][A-Z0-9_]{1,19}$`.
-   - Task không gửi `source`, `external_id`, `external_url`, `assignee`, `completed_at`, `created_at`, `spent_minutes`, `events`: 498 task Jira sẽ thành task `manual`, mất người được giao; `create_task` đặt `completed_at = now()` cho task `done`.
-   - Task không có chống trùng → chạy lại là nhân đôi.
-   - 498+ request liên tiếp vượt rate limit 120 req/phút → phần lớn bị 429.
-   - Nhánh api của `importAiLogsJson` gửi `category: "TOOL"` (backend cần chữ thường) và không có `handling` (backend bắt buộc) → 61/61 bị từ chối.
-3. Comment ở `lib/store/types.ts` ("nhập dữ liệu vào Postgres chỉ là POST từng bản ghi lên /api/v1/tasks, không cần viết lớp chuyển đổi") và header `transfer.ts` ("chỉ cần đổi DATA_SOURCE=api rồi nhập lại") **sai** theo mục 2. Orchestrator nên sửa hai comment này khi cập nhật docs (hoặc giao frontend-dev trong cùng nhánh, tuỳ chọn).
-4. **`sync_urls` không bao giờ được ghi xuống đĩa**: `engine.snapshot()` không đưa `sync_urls` vào `DataFile`, và `restore()` cũng không đọc nó. File thật chỉ có các khoá cấp cao `schema_version, exported_at, projects, tasks, notes, meta`. Danh sách URL đồng bộ chỉ sống trong RAM. Lỗi riêng, ngoài phạm vi.
-5. **`ai_logs` không nằm trong `builder-data.json`** (tách ra `data/ai-logs.json` từ schema v4), và schema của file đó (`category` in hoa, không có `handling`, không có `updated_at`) khác backend.
-6. Số liệu file thật lúc viết spec: 14 project (cả 14 màu `hsl`, 3 key không hợp lệ), 498 task (tất cả `source=jira` có `external_id`, không task nào ở thùng rác, không có event, không có `scheduled_for`/`estimate_minutes`/`spent_minutes > 0`), 0 note; `meta.current_users = ["Đoàn Việt Hưng"]`. `data/ai-logs.json`: 61 log.
+1. `components/data-tabs.tsx` và `LocalOnlyNotice` không tồn tại (grep toàn repo, kể cả `.next`). Trang `/data` là các khối `<details>` trong `app/data/page.tsx`.
+2. `importDataAction` → `transfer.importJson` **có** nhánh api (POST từng bản ghi), nhưng với file thật nó hỏng như sau:
+   - Màu `hsl(...)` → `ProjectCreate` 422 ngay project đầu tiên; vòng lặp project không có `try/catch` nên cả lần nhập dừng.
+   - Key `ONE NEXUS`, `SAO MỘC`, `KHÁC` không qua regex.
+   - Task không gửi `source`, `external_id`, `external_url`, `assignee`, `completed_at`, `created_at`, `spent_minutes`, `events`; `create_task` đặt `completed_at = now()` cho task `done`.
+   - Task không có chống trùng.
+   - 498+ request liên tiếp vượt rate limit 120 req/phút.
+   - Ai-log: `category` in hoa và thiếu `handling` → 61/61 bị từ chối.
+3. Comment ở `lib/store/types.ts` ("chỉ là POST từng bản ghi... không cần viết lớp chuyển đổi") và header `transfer.ts` ("chỉ cần đổi DATA_SOURCE=api rồi nhập lại") sai theo mục 2.
+4. `engine.snapshot()` không ghi `sync_urls`, `restore()` không đọc nó, nên danh sách URL đồng bộ chỉ sống trong RAM. File thật chỉ có khoá `schema_version, exported_at, projects, tasks, notes, meta`. Sửa ở B2.
+5. `ai_logs` nằm ở `data/ai-logs.json` riêng (từ schema v4), với schema khác backend.
+6. Jira token nằm ở `localStorage` dưới dạng chữ rõ; `syncFromUrlAction` fetch URL bất kỳ phía server; `scrapeChromeHistory` dựng lệnh shell bằng nội suy chuỗi. Ba điểm này lần lượt được xử lý ở B4, B2, B3.
+7. Số liệu file thật (2026-10-07):
+   - `builder-data.json`: 14 project (14 màu hsl, 3 key không hợp lệ); 498 task, tất cả `source=jira` có `external_id`, không task nào ở thùng rác, không có event, không có `scheduled_for`/`estimate_minutes`/`spent_minutes > 0`; 0 note; `meta.current_users = ["Đoàn Việt Hưng"]`.
+   - `ai-logs.json`: 61 log.
+   - `chrome-history.json`: có `synced_at`, `source_path`, `items` với `last_visit_time` là giờ địa phương không có múi giờ.
