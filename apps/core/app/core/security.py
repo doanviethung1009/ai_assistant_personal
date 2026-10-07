@@ -19,7 +19,10 @@ _API_KEY_HEADER = "X-API-Key"
 api_key_scheme = APIKeyHeader(
     name=_API_KEY_HEADER,
     auto_error=False,
-    description="Khoá tĩnh của người dùng. Web UI gọi qua route handler phía server, khoá không xuống browser.",
+    description=(
+        "Khoá tĩnh của người dùng. Web UI gọi qua route handler phía server, "
+        "khoá không xuống browser."
+    ),
 )
 
 

@@ -42,6 +42,7 @@ class TaskFilters:
     priority: list[TaskPriority] | None = None
     project_id: uuid.UUID | None = None
     source: TaskSource | None = None
+    assignee: str | None = None
     tags: list[str] = field(default_factory=list)
     query: str | None = None
     scheduled_on: date | None = None
@@ -90,6 +91,8 @@ def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
         stmt = stmt.where(Task.project_id == filters.project_id)
     if filters.source is not None:
         stmt = stmt.where(Task.source == filters.source)
+    if filters.assignee:
+        stmt = stmt.where(Task.assignee == filters.assignee)
     if filters.tags:
         # contains → toán tử @> của Postgres, dùng được index GIN
         stmt = stmt.where(Task.tags.contains(filters.tags))
@@ -106,11 +109,9 @@ def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
 
 
 def _apply_sort(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
-    column: Any
-    if filters.sort_by == "priority":
-        column = _priority_rank()
-    else:
-        column = getattr(Task, filters.sort_by)
+    column: Any = (
+        _priority_rank() if filters.sort_by == "priority" else getattr(Task, filters.sort_by)
+    )
 
     # nulls_last để task không có due_at/scheduled_for không chen lên đầu
     ordering = column.desc().nulls_last() if filters.sort_desc else column.asc().nulls_last()

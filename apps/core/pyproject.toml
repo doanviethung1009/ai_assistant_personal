@@ -41,3 +41,9 @@ ignore = ["S101"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+# Một event loop cho cả phiên: engine asyncpg tạo ở module nên không dùng được qua nhiều loop.
+asyncio_default_fixture_loop_scope = "session"
+asyncio_default_test_loop_scope = "session"
+# Test đánh dấu `db` cần Postgres thật qua TEST_DATABASE_URL, không có thì tự bỏ qua.
+markers = ["db: cần Postgres thật (TEST_DATABASE_URL)"]

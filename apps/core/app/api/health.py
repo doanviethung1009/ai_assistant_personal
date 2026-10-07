@@ -51,7 +51,7 @@ async def _check_database() -> ComponentHealth:
         return ComponentHealth(
             status="ok", latency_ms=round((time.perf_counter() - started) * 1000, 2)
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ComponentHealth(status="error", error=f"{type(exc).__name__}: {exc}")
 
 
@@ -62,7 +62,7 @@ async def _check_redis() -> ComponentHealth:
         return ComponentHealth(
             status="ok", latency_ms=round((time.perf_counter() - started) * 1000, 2)
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         return ComponentHealth(status="error", error=f"{type(exc).__name__}: {exc}")
 
 

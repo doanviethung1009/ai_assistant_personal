@@ -285,6 +285,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CLAUDE_OPERATING_GUIDE.md"),
   },
   {
+    slug: "ci-and-testing",
+    title: "CI và kiểm thử backend",
+    description: "CI kiểm gì trước khi merge, cách chạy pytest trên database riêng, hai nhóm test và giới hạn hiện tại.",
+    category: "DevOps & Triển khai",
+    file: path.join("docs", "CI_AND_TESTING.md"),
+  },
+  {
     slug: "multi-agent-system",
     title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
     description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",

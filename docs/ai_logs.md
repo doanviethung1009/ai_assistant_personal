@@ -754,3 +754,25 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Viết lại cây thư mục trong `docs/PROJECT_STRUCTURE.md` (trước thiếu `.claude/`, `.codex/`, `infra/`, `specs/`); cập nhật bảng trong `CLAUDE.md`.
   - Không chuyển file trong `docs/` vì AGENTS.md, rules, hook đang tham chiếu cứng `docs/<TÊN>.md`; file Excel trong `task/` để nguyên vì chưa rõ có dữ liệu Jira nội bộ.
 - **Phản hồi:** Thư mục gọn hơn, 6 subagent, có spec mẫu.
+
+---
+
+### [08-10-2026 10:00] | Category: [API]
+- **Prompt:** "thực hiện 1 và 2": sửa lỗi backend không khởi động được, thêm CI và test.
+- **Xử lý:**
+  - Tái hiện lỗi bằng cách chạy thật: `import app.main` sập vì `api/v1/ai_logs.py` import `app.api.dependencies` và `app.schemas.pagination` không tồn tại. Viết lại router theo khuôn notes (`SessionDep`, `Page[T]`).
+  - Dựng Postgres tạm, chạy `alembic upgrade/downgrade/upgrade` và `alembic check`: phát hiện thiếu migration cho bảng `ai_logs` và cột `tasks.assignee` (có trong model, không có trong migration). Thêm 2 migration có downgrade.
+  - Dọn 20 lỗi ruff có sẵn (import, dòng dài, ternary) để CI xanh; không đổi hành vi.
+  - Thêm `apps/core/tests/` (22 test: 7 unit, 15 cần Postgres), `scripts/test-backend.sh` + `make test` chạy trên DB riêng, `.github/workflows/ci.yml`, `docs/CI_AND_TESTING.md` (đã đăng ký docs.ts).
+  - Khó khăn: socket Postgres tạm quá dài, DB tạm mặc định SQL_ASCII làm lỗi UTF-8 (lỗi môi trường, không phải code); hook guard-bash chặn `drop database` nên chỉ tạo DB mới.
+- **Phản hồi:** Backend import được, model và migration khớp, 22/22 test pass trên Postgres 14 cục bộ. Chưa chạy được `make test`/`make smoke`/CI thật vì máy không có Docker.
+
+---
+
+### [08-10-2026 11:00] | Category: [API]
+- **Prompt:** (tiếp nối) xử lý kết quả review độc lập của db-reviewer và code-reviewer cho nhánh fix backend và CI.
+- **Xử lý:**
+  - db-reviewer: `GET /tasks?assignee=` bị route bỏ qua (có từ trước) → thêm vào `TaskFilters`, `_apply_filters`, route, kèm test.
+  - code-reviewer: thêm hàng rào chống TRUNCATE nhầm DB thật (conftest `pytest.exit` nếu tên DB không kết thúc `_test`; script thoát nếu URL test trùng URL dev), sinh và commit `apps/core/uv.lock`, CI dùng `uv sync --locked`, thêm test thứ tự/offset của ai-logs.
+  - Xác minh bằng môi trường dựng đúng từ uv.lock: ruff, `alembic check`, 26 test đều pass. Không ghim action theo SHA và chưa gộp nguồn tên DB trong script (đã ghi vào docs).
+- **Phản hồi:** Nhánh sẵn sàng; chưa có kết quả CI thật trên GitHub.

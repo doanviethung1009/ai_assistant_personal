@@ -37,7 +37,10 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
     "/agenda",
     response_model=AgendaResponse,
     summary="Việc của hôm nay",
-    description="Gom việc quá hạn, đã xếp lịch hôm nay, đang làm, sắp đến hạn, và đã xong trong ngày.",
+    description=(
+        "Gom việc quá hạn, đã xếp lịch hôm nay, đang làm, sắp đến hạn, "
+        "và đã xong trong ngày."
+    ),
 )
 async def get_agenda(
     session: SessionDep,
@@ -119,7 +122,9 @@ async def list_tasks(
     project_id: Annotated[uuid.UUID | None, Query()] = None,
     source: Annotated[TaskSource | None, Query()] = None,
     tags: Annotated[list[str] | None, Query(description="Task phải có TẤT CẢ tag này")] = None,
-    q: Annotated[str | None, Query(max_length=200, description="Tìm trong title và description")] = None,
+    q: Annotated[
+        str | None, Query(max_length=200, description="Tìm trong title và description")
+    ] = None,
     scheduled_on: Annotated[date | None, Query()] = None,
     due_before: Annotated[datetime | None, Query()] = None,
     assignee: Annotated[str | None, Query()] = None,
@@ -134,6 +139,7 @@ async def list_tasks(
         priority=priority_in,
         project_id=project_id,
         source=source,
+        assignee=assignee,
         tags=tags or [],
         query=q,
         scheduled_on=scheduled_on,
