@@ -11,6 +11,7 @@
 | **Người dùng Claude Code** để làm việc | `CLAUDE_CLI_QUICKSTART.md` → `MULTI_AGENT_SYSTEM.md` → `MULTI_AGENT_TRIAL.md` | 30 phút |
 | **AI agent mới nhận việc** | `AI_HANDOFF_STATE.md` → `NEW_AGENT_ONBOARDING.md` → `project-review.md` | 5 phút |
 | **Người vận hành / triển khai** | `deploy-runbook.md` → `DOCKER_ARCHITECTURE.md` → `git-workflow.md` | 30 phút |
+| **Chuyển dữ liệu từ file sang Postgres** | `DATA_MIGRATION_TO_POSTGRES.md` | 10 phút |
 | **Thiết kế tính năng mới** | `TARGET_ARCHITECTURE.md` → `specs/_TEMPLATE.md` → `specs/note-archive.md` (ví dụ thật) | 20 phút |
 
 ## 2. Các tài liệu hay bị nhầm lẫn: cái nào là bản chính

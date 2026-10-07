@@ -68,6 +68,27 @@ Base path: `/api/v1/system`
 |-------------|----------|-----------|
 | `GET` | `/db-stats` | Trạng thái DB |
 
+## 5. API Nhập dữ liệu hàng loạt (Import)
+Base path: `/api/v1/import`
+
+Đưa dữ liệu từ file JSON của web (chế độ file) vào Postgres. **GHI ĐÈ** bản ghi đã tồn tại, **không xoá** gì. Hướng dẫn từng bước và hoàn tác: `docs/DATA_MIGRATION_TO_POSTGRES.md`.
+
+| Phương thức | Endpoint | Body | Chức năng |
+|-------------|----------|------|-----------|
+| `POST` | `/datafile` | Nội dung `builder-data.json` | Nhập project, task, task_events, note |
+| `POST` | `/ai-logs` | Nội dung `ai-logs.json` | Nhập nhật ký AI |
+
+Tham số của cả hai endpoint:
+
+| Tham số | Kiểu | Ghi chú |
+|---------|------|---------|
+| `dry_run` | query, bool, mặc định `true` | `true`: chạy thử rồi rollback, trả báo cáo (kèm diff từng bản ghi sẽ bị ghi đè). Chỉ `dry_run=false` mới ghi thật |
+| `expect_replaced` | query, int | **Bắt buộc khi nhập thật.** Số bản ghi sẽ bị ghi đè theo báo cáo dry-run; lệch thì huỷ (`replace_count_mismatch`) |
+| `expect_sha256` | query, 64 ký tự hex | **Bắt buộc khi nhập thật.** `file_sha256` của báo cáo dry-run; file khác thì huỷ (`file_changed_since_dry_run`) |
+| `X-Import-Secret` | header | **Bắt buộc khi nhập thật.** Giá trị biến `IMPORT_COMMIT_SECRET` của core (tối thiểu 16 ký tự). Chưa cấu hình hoặc sai: `403`. Dry-run không cần |
+
+Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`.
+
 ---
 
 > 💡 **Lưu ý quan trọng cho AI Agent (LLM):**

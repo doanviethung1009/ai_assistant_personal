@@ -52,9 +52,11 @@ export function trashRetentionDays(): number {
 /**
  * Cấu trúc file JSON.
  *
- * Tên field trùng khớp schema của core API. Đây là ràng buộc có chủ đích:
- * nhờ vậy nhập dữ liệu vào Postgres chỉ là POST từng bản ghi lên
- * /api/v1/tasks, không cần viết lớp chuyển đổi.
+ * Tên field gần với schema của core API, nhưng KHÔNG đủ để POST từng bản ghi lên
+ * /api/v1/tasks: màu `hsl(...)`, key project có dấu cách, `source`/`external_id`/
+ * `assignee`/`completed_at` và event sẽ bị từ chối hoặc mất. Nhập vào Postgres đi qua
+ * endpoint riêng POST /api/v1/import/datafile (chuẩn hoá, idempotent, có audit);
+ * xem docs/DATA_MIGRATION_TO_POSTGRES.md.
  */
 export interface DataFile {
   /** Tăng khi cấu trúc file đổi, dùng để migrate về sau. */
