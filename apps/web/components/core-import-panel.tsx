@@ -306,7 +306,10 @@ export function CoreImportPanel() {
               <input
                 id="core-import-secret"
                 type="password"
-                autoComplete="off"
+                // "off" bị trình duyệt bỏ qua; "new-password" + các cờ dưới giảm việc đề nghị lưu mật khẩu.
+                autoComplete="new-password"
+                data-1p-ignore
+                data-lpignore="true"
                 value={secret}
                 disabled={pending}
                 onChange={(e) => setSecret(e.target.value)}

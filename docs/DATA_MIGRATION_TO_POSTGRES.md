@@ -10,6 +10,9 @@
 - **Web chưa có đăng nhập.** Vì vậy nhập thật bắt buộc **mật khẩu** (`IMPORT_COMMIT_SECRET`). Kiểm tra thì không cần.
 - **Hai kho không tự đồng bộ.** Đổi nguồn không xoá dữ liệu bên kia, nhưng bạn sẽ không thấy nó cho tới khi đổi lại.
 
+- **Mật khẩu nhập đi qua mạng dạng chữ thường** từ trình duyệt tới web. Dùng trên `localhost` thì không sao; khi chạy `make lan-up` trên wifi dùng chung, ai nghe lén được sẽ đọc được. Chỉ nhập thật trên máy của bạn.
+- **Dùng mật khẩu do `make env` sinh** (96 bit). Core tối thiểu 16 ký tự nhưng không kiểm độ mạnh; `aaaaaaaaaaaaaaaa` vẫn qua. Đặt tay thì không để khoảng trắng ở đầu hoặc cuối.
+
 ## 2. Các bước
 
 1. **Sao lưu Postgres** (đặc biệt nếu đã có dữ liệu trong đó):
@@ -71,23 +74,29 @@ Lỗi thường gặp: `403` (sai mật khẩu hoặc chưa đặt `IMPORT_COMMI
 
 Cách chắc chắn nhất là khôi phục từ bản sao lưu ở bước 1. Ngoài ra mỗi lần nhập thật ghi sổ cái vào hai bảng `import_runs` và `import_audit`: với mỗi bản ghi bị ghi đè, cột `before` giữ **toàn bộ giá trị trước khi ghi đè**; với mỗi bản ghi tạo mới, giữ `entity_id`.
 
-> **Các câu SQL dưới đây chưa được chạy thử trên máy dev** (hook chặn `DELETE`/`TRUNCATE` qua `psql` và máy không có Docker). Luôn chạy trong `BEGIN; ... ROLLBACK;` trước, xem số dòng bị ảnh hưởng, rồi mới đổi thành `COMMIT;`. Thay `:import_id` bằng id lần nhập (có trong báo cáo, hoặc `SELECT id, created_at, counts FROM import_runs ORDER BY created_at DESC;`).
+> **Các câu SQL dưới đây chưa được chạy thử trên máy dev** (hook chặn `DELETE`/`TRUNCATE` qua `psql` và máy không có Docker). Luôn chạy trong `BEGIN; ... ROLLBACK;` trước, xem số dòng bị ảnh hưởng, rồi mới đổi thành `COMMIT;`. Id lần nhập có trong báo cáo, hoặc `SELECT id, created_at, counts FROM import_runs ORDER BY created_at DESC;`. Trong `psql`, đặt một lần rồi dùng `:'import_id'` (có dấu nháy; dán UUID trần vào câu SQL sẽ lỗi cú pháp):
+>
+> ```sql
+> \set import_id 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'
+> ```
 
 Xem một lần nhập đã làm gì:
 
 ```sql
-SELECT entity, action, count(*) FROM import_audit WHERE import_id = :import_id GROUP BY 1, 2;
+SELECT entity, action, count(*) FROM import_audit WHERE import_id = :'import_id' GROUP BY 1, 2;
 ```
 
-Hoàn tác bản ghi **tạo mới** (xoá task, note, project do lần nhập tạo; sự kiện của task tự xoá theo `CASCADE`):
+Hoàn tác bản ghi **tạo mới**. Thứ tự quan trọng: xoá sự kiện trước (kể cả sự kiện được nhập vào task đã có sẵn, các sự kiện này không bị `CASCADE` vì task cha không bị xoá), rồi task, note, nhật ký AI, cuối cùng project:
 
 ```sql
 BEGIN;
-DELETE FROM tasks    WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :import_id AND entity = 'task'    AND action = 'created');
-DELETE FROM notes    WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :import_id AND entity = 'note'    AND action = 'created');
-DELETE FROM projects WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :import_id AND entity = 'project' AND action = 'created');
--- Các sự kiện 'updated' do lần nhập chèn vào task bị ghi đè không tự xoá, dọn bằng:
-DELETE FROM task_events WHERE actor = 'import:datafile' AND payload->>'import_id' = :import_id::text;
+DELETE FROM task_events WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'task_event' AND action = 'created');
+DELETE FROM tasks       WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'task'       AND action = 'created');
+DELETE FROM notes       WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'note'       AND action = 'created');
+DELETE FROM ai_logs     WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'ai_log'     AND action = 'created');
+DELETE FROM projects    WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'project'    AND action = 'created');
+-- Kiểm tra nếu còn sót sự kiện do lần nhập sinh ra mà chưa có audit (lần nhập cũ):
+SELECT count(*) FROM task_events WHERE actor LIKE 'import:%' AND payload->>'import_id' = :'import_id';
 ROLLBACK;  -- đổi thành COMMIT khi đã kiểm tra số dòng
 ```
 
@@ -98,7 +107,7 @@ BEGIN;
 UPDATE tasks t
 SET title = r.title, status = r.status, updated_at = r.updated_at
 FROM import_audit a, LATERAL jsonb_populate_record(NULL::tasks, a.before) r
-WHERE a.import_id = :import_id AND a.entity = 'task' AND a.action = 'replaced' AND t.id = a.entity_id;
+WHERE a.import_id = :'import_id' AND a.entity = 'task' AND a.action = 'replaced' AND t.id = a.entity_id;
 ROLLBACK;  -- đổi thành COMMIT khi đã kiểm tra
 ```
 

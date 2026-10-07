@@ -32,6 +32,9 @@ set_var() {
   if grep -q "^${key}=" .env; then
     sed -i '' "s|^${key}=.*|${key}=${value}|" .env
   else
+    # Nếu dòng cuối của .env không kết thúc bằng newline thì `echo >>` sẽ dính biến
+    # mới vào biến cuối (KEY=abcNEW=...), nên thêm newline trước.
+    [[ -n "$(tail -c1 .env)" ]] && echo >> .env
     echo "${key}=${value}" >> .env
   fi
 }
