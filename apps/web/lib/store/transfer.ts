@@ -132,6 +132,9 @@ function emptySummary(): ImportSummary {
   };
 }
 
+const API_IMPORT_REDIRECT =
+  "Ở chế độ Core API, dùng mục 'Chuyển dữ liệu JSON vào Postgres' (có bước Kiểm tra trước khi nhập).";
+
 function assertReplaceAllowed(mode: ImportMode): void {
   if (mode === "replace" && !IS_LOCAL) {
     throw new Error(
@@ -516,6 +519,8 @@ export async function importJson(
   text: string,
   mode: ImportMode,
 ): Promise<ImportSummary> {
+  // Ở chế độ api, nhập JSON phải đi qua endpoint có dry-run, báo cáo ghi đè và audit.
+  if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   const data = parseDataFile(text);
   return apply(data.projects, data.tasks, data.notes, mode);
 }
@@ -620,8 +625,9 @@ export async function importAiLogsJson(
   text: string,
   mode: ImportMode,
 ): Promise<ImportSummary> {
+  if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   assertReplaceAllowed(mode);
-  
+
   let parsed: any;
   try {
     parsed = JSON.parse(text);

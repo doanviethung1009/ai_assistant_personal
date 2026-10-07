@@ -6,6 +6,7 @@ import { DATA_SOURCE, trashRetentionDays } from "./store/types";
 import type {
   Agenda,
   HealthResponse,
+  ImportReport,
   Note,
   NoteKind,
   NoteSortField,
@@ -124,12 +125,28 @@ async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   const text = await response.text();
-  const body: unknown = text ? JSON.parse(text) : null;
+  let body: unknown = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    // Body không phải JSON (ví dụ 413 từ proxy): với lỗi thì dùng thông báo mặc định.
+    if (response.ok) throw new CoreApiError("Core API trả về body không phải JSON", 502);
+  }
 
   if (!response.ok) {
-    const detail =
+    const rawDetail =
       body && typeof body === "object" && "detail" in body
-        ? String((body as { detail: unknown }).detail)
+        ? (body as { detail: unknown }).detail
+        : undefined;
+    // 422 của FastAPI trả `detail` là mảng lỗi; String(mảng) chỉ ra "[object Object]".
+    const detail = Array.isArray(rawDetail)
+      ? rawDetail
+          .map((d) =>
+            d && typeof d === "object" && "msg" in d ? String((d as { msg: unknown }).msg) : String(d),
+          )
+          .join("; ")
+      : rawDetail !== undefined
+        ? String(rawDetail)
         : `Core API trả về ${response.status}`;
     throw new CoreApiError(detail, response.status);
   }
@@ -171,6 +188,60 @@ export async function getHealth(): Promise<HealthResponse | null> {
 export function getSystemInfo(): Promise<SystemInfo | null> {
   if (IS_LOCAL) return Promise.resolve(null);
   return coreFetch<SystemInfo>("/api/v1/system/info");
+}
+
+// ── Nhập hàng loạt vào Postgres (B1) ─────────────────────────────────────
+
+export interface ImportCallOptions {
+  /** true (mặc định phía core): chạy thử rồi rollback. */
+  dryRun: boolean;
+  /** Bắt buộc khi dryRun=false: tổng số bản ghi sẽ bị ghi đè, lấy từ lần Kiểm tra. */
+  expectReplaced?: number;
+}
+
+/**
+ * Gửi nguyên văn nội dung file lên core. Chỉ chạy ở chế độ api.
+ *
+ * Vì sao body là chuỗi thô: core tính sha256 từ body để audit, và tự validate
+ * từng dòng. Web không parse lại, nên không thể vô tình sửa nội dung. BOM đầu
+ * file (Excel/Windows hay thêm) làm JSON.parse phía core lỗi nên bỏ ở đây.
+ */
+async function postImport(
+  endpoint: "datafile" | "ai-logs",
+  text: string,
+  options: ImportCallOptions,
+): Promise<ImportReport> {
+  if (IS_LOCAL) {
+    return Promise.reject(
+      new CoreApiError("Nhập vào Postgres chỉ dùng được ở chế độ DATA_SOURCE=api", 501),
+    );
+  }
+  const params = new URLSearchParams({ dry_run: options.dryRun ? "true" : "false" });
+  if (!options.dryRun) {
+    if (
+      options.expectReplaced === undefined ||
+      !Number.isInteger(options.expectReplaced) ||
+      options.expectReplaced < 0
+    ) {
+      return Promise.reject(new CoreApiError("Thiếu số bản ghi dự kiến bị ghi đè (expect_replaced)", 400));
+    }
+    params.set("expect_replaced", String(options.expectReplaced));
+  }
+  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
+  return coreFetch<ImportReport>(`/api/v1/import/${endpoint}?${params.toString()}`, {
+    method: "POST",
+    body,
+  });
+}
+
+/** Nhập file backup JSON (projects/tasks/notes) vào Postgres. */
+export function importDataFile(text: string, options: ImportCallOptions): Promise<ImportReport> {
+  return postImport("datafile", text, options);
+}
+
+/** Nhập file ai-logs.json vào Postgres. */
+export function importAiLogsFile(text: string, options: ImportCallOptions): Promise<ImportReport> {
+  return postImport("ai-logs", text, options);
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────

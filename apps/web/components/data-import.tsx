@@ -16,14 +16,29 @@ const KINDS = [
   { value: "notes-csv", label: "CSV sổ tay", accept: ".csv,text/csv" },
 ] as const;
 
-export function DataImport({ allowReplace }: { allowReplace: boolean }) {
-  const [kind, setKind] = useState<(typeof KINDS)[number]["value"]>("json");
+type KindValue = (typeof KINDS)[number]["value"];
+
+/**
+ * `kinds` giới hạn các loại hiện trong dropdown: ở chế độ api trang chỉ truyền
+ * các loại CSV để JSON đi qua CoreImportPanel (có dry-run), không đi đường cũ.
+ * (Không export hằng số từ file client này: server page sẽ nhận về client
+ * reference thay vì giá trị.)
+ */
+export function DataImport({
+  allowReplace,
+  kinds,
+}: {
+  allowReplace: boolean;
+  kinds?: readonly KindValue[];
+}) {
+  const visibleKinds = kinds ? KINDS.filter((k) => kinds.includes(k.value)) : KINDS;
+  const [kind, setKind] = useState<KindValue>(visibleKinds[0]?.value ?? "json");
   const [mode, setMode] = useState<"merge" | "replace">("merge");
   const [result, setResult] = useState<ImportActionResult | null>(null);
   const [pending, startTransition] = useTransition();
   const formRef = useRef<HTMLFormElement>(null);
 
-  const accept = KINDS.find((item) => item.value === kind)!.accept;
+  const accept = (visibleKinds.find((item) => item.value === kind) ?? KINDS[0]).accept;
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -63,11 +78,11 @@ export function DataImport({ allowReplace }: { allowReplace: boolean }) {
               id="import-kind"
               value={kind}
               onChange={(event) =>
-                setKind(event.target.value as (typeof KINDS)[number]["value"])
+                setKind(event.target.value as KindValue)
               }
               className={INPUT_CLASS}
             >
-              {KINDS.map((item) => (
+              {visibleKinds.map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
                 </option>
