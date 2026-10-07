@@ -788,3 +788,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Lệch phạm vi cần User biết: orchestrator xoá 1 dòng `assignee` thừa ở `lib/store/engine.ts` và thêm `assignee` vào `TaskRead`, ngoài Ownership của spec.
   - Tạo `docs/MULTI_AGENT_TRIAL.md`, đăng ký thêm spec thật vào docs.ts, cập nhật API_REFERENCE, HANDOFF, MULTI_AGENT_SYSTEM.
 - **Phản hồi:** 43 test pass, tsc xanh; chưa chạy make smoke/UI thật (không có Docker).
+
+---
+
+### [08-10-2026 16:00] | Category: [WEB]
+- **Prompt:** "hãy tối ưu chỗ tài liệu đi, tôi thấy rối quá"
+- **Xử lý:**
+  - Nguyên nhân gây rối: tab Tài liệu bày 43 thẻ cùng lúc và nhóm "Quy ước Code (AI Rules)" nhồi 21 mục lẫn lộn (hướng dẫn agent, luật code, ví dụ, spec).
+  - Gom lại 7 nhóm đánh số (Bắt đầu, Làm việc với AI Agent, Quy ước Code & Rules, Skills, Kiến trúc & Dữ liệu, Spec, DevOps) trong `lib/docs.ts` bằng script có kiểm tra không sót mục; slug giữ nguyên nên link cũ không hỏng.
+  - `app/docs/page.tsx`: mỗi nhóm là `<details>` kèm số lượng, chỉ nhóm đang xem được mở sẵn (không cần JS).
+  - Thêm `docs/INDEX.md` (đường đọc theo vai, bảng "bản chính hay bản phụ", quy ước thêm tài liệu), đặt làm trang mặc định; thêm banner trỏ về bản chính ở MULTI_AGENT_WORKFLOW và AI_REAL_WORLD_EXAMPLE.
+  - Không chuyển file trong docs/ vì AGENTS.md, rules, hook trỏ cứng đường dẫn.
+- **Phản hồi:** Đã kiểm trên web chạy chế độ demo (RAM): nhóm gập đúng, tài liệu hiển thị, không lỗi console. tsc xanh.

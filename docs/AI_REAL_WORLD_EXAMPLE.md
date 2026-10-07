@@ -1,5 +1,7 @@
 # Ví dụ Thực chiến: Xây dựng Hệ sinh thái Multi-App & Vault
 
+> **Case study cũ**, viết theo kiểu "đóng vai" nhiều agent. Muốn xem luồng subagent chạy thật với lỗi và số liệu: `MULTI_AGENT_TRIAL.md`. Xem `INDEX.md` để biết nên đọc gì.
+
 Tài liệu này là một **Case Study (Bài học thực tế)** dành cho các thành viên trong dự án. Nó minh hoạ cách áp dụng cơ chế Multi-Agent (Nhiều AI phối hợp) với 8 Roles để nâng cấp hệ thống từ Phase 1 (Local JSON) lên Phase 2 & 3: **Hệ sinh thái Đa Ứng dụng (Multi-App Portal)** kết hợp **Két bảo mật (Vault)**.
 
 ---
