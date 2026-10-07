@@ -1,6 +1,6 @@
 # Spec: Chuyển dữ liệu chế độ file sang Postgres qua core API
 
-- Trạng thái: **DRAFT v2** (đã có quyết định của User cho D1-D14, chờ User duyệt thiết kế các pha mới B2-B4)
+- Trạng thái: **DRAFT v2.1** (User đã loại Vault khỏi Postgres; chờ User duyệt pha)
 - Tác giả: architect
 - Ngày: 2026-10-07 (v1), cập nhật v2 cùng ngày
 - Nhánh lúc viết: `feat/data-tab-cleanup`
@@ -12,7 +12,8 @@
 | Quyết định | v1 đề xuất | v2 (User chốt) |
 |---|---|---|
 | D4 bản ghi đã tồn tại | `skip` mặc định, `update_if_newer` tuỳ chọn | **Replace**: ghi đè bằng nội dung file. Bỏ `skip` và `update_if_newer`. Giữ rào chắn: dry-run mặc định, báo cáo diff từng bản ghi, không xoá hàng loạt, ghi event/audit cho mỗi bản ghi bị ghi đè. |
-| D10 thứ ngoài thực thể | Ngoài phạm vi | **Làm cả**, chia thành 4 pha B1-B4 giao và merge độc lập. |
+| D10 thứ ngoài thực thể | Ngoài phạm vi | **Làm cả**, chia thành 4 pha B1-B4 giao và merge độc lập. **Trừ Vault** (v2.1, xem dòng D-B3a). |
+| D-B3a Vault (v2.1) | v2 đề xuất chuyển vào Postgres ở chế độ api | **Không** (User chốt): Vault không vào Postgres ở bất kỳ chế độ nào. Bỏ `vault_blobs`, bỏ D-B3b, bỏ mọi endpoint/UI Vault khỏi B3. Xem 1.1. |
 | D7 | Chuẩn hoá key, đổi màu hsl → hex | Giữ nguyên, có cảnh báo trong báo cáo. |
 | D1-D3, D5, D6, D8, D9, D11-D14 | — | Duyệt theo đề xuất v1. D3 được làm rõ cho replace ở 2.2. |
 | Migration B1 | Không có | **Có**: bảng `import_runs` và `import_audit` để ghi lại giá trị trước khi ghi đè (hệ quả của replace, xem D15). |
@@ -23,14 +24,25 @@
 |---|---|---|---|---|
 | **B1** | Nhập thực thể: projects, tasks, task_events, notes (file `builder-data.json`), ai_logs (file `ai-logs.json`). Replace có audit. | `import_runs`, `import_audit` | Không | **Có**: endpoint ghi hàng loạt có phá huỷ, Server Action mới |
 | **B2** | Cài đặt người dùng: `current_users`, `sync_urls`, danh sách assignee ở chế độ api; nhập `meta.current_users` từ file. | `app_settings` | B1 (dùng lại service nhập, mở rộng phần `meta`) | **Có**: `sync_urls` là URL do người dùng nhập mà server sẽ fetch (SSRF) |
-| **B3** | Vault (chỉ ciphertext) và lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `vault.json`, `chrome-history.json`. | `vault_blobs`, `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có, bắt buộc**: Vault E2EE (zero-knowledge phải giữ), lịch sử duyệt web là dữ liệu cá nhân nhạy cảm, lỗ hổng shell injection có sẵn |
+| **B3** | Lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `chrome-history.json`. | `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có**: lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; sửa lỗi nội suy shell có sẵn trong `scrapeChromeHistory` |
 | **B4** | Jira sync chạy ở backend: lưu cấu hình kết nối (token mã hoá phía server), endpoint upsert hàng loạt cho integration, chạy sync theo yêu cầu; URL/Excel sync ở chế độ api dùng lại endpoint upsert. | `integration_connections` | B1 (chuẩn hoá key project), B2 (`current_users` cho JQL mặc định, `sync_urls`) | **Có, bắt buộc**: lưu token Jira ở server, outbound HTTP, dữ liệu ngoài không đáng tin |
 
 **Thứ tự đề xuất:** B1 → B2 → B4. B3 làm song song với B2 hoặc B4 được, vì không chạm cùng file.
 
 **Migration phải tuyến tính.** Mỗi pha tạo revision với `down_revision` là head **lúc pha đó merge**. Nếu hai pha làm song song, pha merge sau phải sửa lại `down_revision` trước khi merge. Orchestrator kiểm `alembic heads` ra đúng một head sau mỗi lần merge.
 
-**Chế độ `DATA_SOURCE=file` sau mọi pha:** hành vi giữ nguyên. Mọi tính năng mới nằm sau `!IS_LOCAL` trong `lib/api.ts`; nhánh local vẫn gọi engine như cũ. Riêng B3 có một thay đổi cố ý: Vault không còn "độc lập với DATA_SOURCE" (D-B3a).
+**Chế độ `DATA_SOURCE=file` sau mọi pha:** hành vi giữ nguyên. Mọi tính năng mới nằm sau `!IS_LOCAL` trong `lib/api.ts`; nhánh local vẫn gọi engine như cũ. Ngoại lệ duy nhất là phần sửa lỗi `sync_urls` ở B2.
+
+### 1.1. Cố ý KHÔNG chuyển: Vault
+
+User chốt (D-B3a = Không): Vault **không** vào Postgres ở bất kỳ chế độ nào, và không pha nào chạm tới nó. Thiết kế hiện có giữ nguyên: `lib/vault/store.ts` lưu blob ciphertext ở `data/vault.json`, độc lập với `DATA_SOURCE`, mã hoá và giải mã chỉ ở trình duyệt. Lý do:
+- Giữ đúng E2EE.
+- Backend (core API, Postgres) không giữ, không nhận, cũng không nhìn thấy ciphertext.
+- Không phải migrate Vault qua lại khi đổi `DATA_SOURCE`.
+
+Không endpoint nhập nào nhận `vault.json`; `VaultImportManager` và `lib/vault/**` nằm ngoài Ownership của mọi pha.
+
+**Hệ quả và rủi ro vận hành.** Ở `DATA_SOURCE=api`, Vault vẫn là file cục bộ của web (`data/vault.json`, mount `./data:/data`), nên backup vẫn đi qua `/api/export?format=json&entity=vault` hoặc sao lưu thư mục `data/` như hiện nay. **File Vault không nằm trong backup Postgres** (`pg_dump`). Nếu chỉ backup Postgres sau khi chuyển sang chế độ api thì sẽ mất Vault khi mất máy hoặc mất volume. Orchestrator cần ghi rủi ro này vào tài liệu hướng dẫn chuyển đổi và `AI_HANDOFF_STATE.md`.
 
 Phần B1 dưới đây là thiết kế chi tiết. B2-B4 ở mục 9-11 viết gọn hơn, đủ để User duyệt hướng; mỗi pha sẽ được viết chi tiết thêm trước khi giao nếu User yêu cầu.
 
@@ -70,7 +82,7 @@ sequenceDiagram
 
 **Out-of-scope B1**
 - Xoá bản ghi DB không có trong file, hay bất kỳ chế độ xoá hàng loạt nào. Không có.
-- `meta.*`, `sync_urls` (B2), Vault, Chrome (B3), Jira (B4). B1 chỉ báo trong `ignored_fields`.
+- `meta.*`, `sync_urls` (B2), Chrome (B3), Jira (B4). B1 chỉ báo trong `ignored_fields`. Vault không thuộc pha nào (1.1).
 - Nhập CSV ở chế độ api (giữ đường cũ, hạn chế đã biết: rate limit).
 - `scripts/smoke-test.sh` (cần Docker).
 
@@ -422,36 +434,11 @@ Rủi ro B1:
 
 ---
 
-# PHA B3: Vault (ciphertext) và lịch sử Chrome (gọn)
+# PHA B3: Lịch sử Chrome (gọn)
 
 ## 10. B3
 
-### 10.1. Vault
-
-**Hiện trạng.** `lib/vault/store.ts` lưu blob đã mã hoá ở `data/vault.json`, **cố ý độc lập với `DATA_SOURCE`**. Mã hoá/giải mã ở trình duyệt (PBKDF2 600k vòng + AES-GCM, blob v1/v2 có `wraps.password`/`wraps.recovery`). Server chỉ thấy ciphertext. Chống ghi đè bằng `expectedUpdatedAt`.
-
-**Đề xuất.** Khi `DATA_SOURCE=api`, blob nằm ở Postgres; khi `file`/`memory` thì giữ nguyên như hiện tại (D-B3a).
-
-| Bảng | Cột | Ghi chú |
-|---|---|---|
-| `vault_blobs` (mới) | `id smallint PK CHECK (id = 1)` (một két duy nhất), `blob jsonb NOT NULL`, `blob_version smallint`, `updated_at timestamptz` (lấy từ blob) | Một dòng. |
-| `vault_blob_history` (mới) | `id uuid PK`, `blob jsonb`, `replaced_at timestamptz` | Giữ **5 bản trước** mỗi lần ghi đè, để lỡ ghi đè vẫn khôi phục được (D-B3b). |
-
-| Method | Path | Ghi chú |
-|---|---|---|
-| GET | `/api/v1/vault` | 200 blob, hoặc 404 khi chưa có |
-| PUT | `/api/v1/vault` | Body `{ blob, expected_updated_at: str \| null }`; lệch → 409 (giữ đúng ngữ nghĩa `VaultConflictError`) |
-| DELETE | `/api/v1/vault` | Xoá két (bản cũ vẫn vào history) |
-| POST | `/api/v1/import/vault?dry_run=true` | Nhập nội dung `vault.json`. DB chưa có két → tạo. DB đã có két với `updated_at` khác → **replace** theo D4, nhưng dry-run báo rõ "Két hiện có sẽ bị thay; KHÔNG xem được nội dung để so sánh", và bản cũ vào `vault_blob_history`. |
-
-**Ràng buộc zero-knowledge (bắt buộc, security-auditor kiểm):**
-- Backend **không bao giờ** giải mã, không nhận mật khẩu hay recovery code, không có code import thư viện mã hoá cho Vault.
-- Chỉ kiểm hình dạng blob (port `isVaultBlob`: `v ∈ {1,2}`, các field base64, `kdf.iterations ≥ 100 000`) và kích thước ≤ 5 MB.
-- Không log blob, không đưa blob vào `import_audit.before` (chỉ ghi `updated_at` cũ/mới), không có trong export JSON chung của chế độ api.
-- Diff ở dry-run chỉ so `updated_at`, `v`, kích thước.
-- Web vẫn đi qua `lib/api.ts` (server-only) giống mọi route khác; trình duyệt nhận blob qua Server Action/route như hiện nay.
-
-### 10.2. Lịch sử Chrome
+Vault không thuộc B3 (đã loại ở v2.1, xem 1.1).
 
 **Hiện trạng.** `lib/chrome-history.ts` copy file SQLite `History` của Chrome trên **máy chạy web**, đọc bằng `sqlite3` CLI, ghi đè `data/chrome-history.json` (`{synced_at, source_path, items: [{url, title, visit_count, last_visit_time}]}`); `/history` đọc file đó trực tiếp. `last_visit_time` là giờ địa phương **không có múi giờ** (`'localtime'` trong SQL).
 
@@ -470,12 +457,22 @@ Rủi ro B1:
 
 **Bảo mật/riêng tư:**
 - Lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; URL có thể chứa token trong query string (link reset mật khẩu, OAuth `code=`). Đề xuất bỏ query string và fragment trước khi lưu (D-B3c).
-- **Lỗi có sẵn cần sửa trong B3:** `scrapeChromeHistory` ghép `customPath` (do client gửi qua `syncChromeHistoryAction`) vào chuỗi lệnh shell `exec(\`sqlite3 -json "${tmpHistoryPath}" ...\`)`. `customPath` chỉ đi vào `fs.copyFileSync`, nhưng `limit` được nội suy vào SQL/shell và không được kiểm tra kiểu ở Server Action. Chuyển sang `execFile` với mảng tham số và ép `limit` về số nguyên trong khoảng 1..10 000; `customPath` phải nằm dưới thư mục Chrome của user.
-- `security-auditor` bắt buộc cho cả 10.1 và 10.2.
+- **Lỗi có sẵn cần sửa trong B3:** `scrapeChromeHistory` dựng lệnh shell bằng nội suy chuỗi: `exec(\`sqlite3 -json "${tmpHistoryPath}" "${query}" > ...\`)`, trong đó `query` chứa `LIMIT ${limit}`. `limit` do client gửi qua `syncChromeHistoryAction` và không được kiểm tra kiểu ở Server Action, nên một chuỗi chứa `"` hay `;` sẽ thoát khỏi tham số. `customPath` cũng do client gửi, nhưng chỉ đi vào `fs.copyFileSync`. Cách sửa:
+  - Chuyển sang `execFile("sqlite3", ["-json", tmpPath, query])` và tự ghi stdout ra file, không dùng chuyển hướng của shell.
+  - Ép `limit` về số nguyên trong khoảng 1..10 000.
+  - Bắt `customPath` phải nằm dưới thư mục Chrome của user.
+- `security-auditor` bắt buộc: dữ liệu cá nhân nhạy cảm và sửa lỗi nội suy shell.
 
-**Ownership B3:** backend-dev: models `vault.py`, `browser_history.py`, migration `<rev>_add_vault_and_browser_history.py`, schemas/services/routers tương ứng, mở rộng `import_service.py` (hoặc service nhập riêng), test. frontend-dev: `lib/vault/store.ts` (rẽ nhánh theo `DATA_SOURCE`), `lib/api.ts`, `lib/chrome-history.ts`, `app/actions-chrome.ts`, `app/history/page.tsx`, `components/vault-import-manager.tsx`, `components/chrome-history-manager.tsx`, `components/core-import-panel.tsx` (thêm loại file vault/chrome). **Không ai sửa** `lib/vault/crypto.ts` (thuật toán mã hoá không đổi).
+**Ownership B3:**
+- backend-dev: model `browser_history.py`, migration `<rev>_add_browser_history.py`, schemas/services/routers tương ứng, mở rộng `import_service.py` (hoặc service nhập riêng), test.
+- frontend-dev: `lib/api.ts`, `lib/chrome-history.ts`, `app/actions-chrome.ts`, `app/history/page.tsx`, `components/chrome-history-manager.tsx`, `components/core-import-panel.tsx` (thêm loại file `chrome-history.json`).
+- **Không ai sửa:** `lib/vault/**`, `components/vault-import-manager.tsx`, `app/vault-actions.ts`.
 
-**Nghiệm thu B3:** pytest: PUT với `expected_updated_at` sai → 409; blob sai hình dạng/quá 5 MB → 422/413; ghi đè đẩy bản cũ vào history, giữ đúng 5 bản; `grep -rn "cryptography\|AESGCM\|pbkdf2" apps/core/app` không có kết quả liên quan vault; log của request vault không chứa `ciphertext`. Batch history upsert idempotent; giờ địa phương đổi đúng sang UTC; query string bị bỏ (nếu D-B3c chốt). Web: `tsc`; UAT: tạo két ở chế độ file → nhập lên api → mở khoá được bằng cùng mật khẩu và recovery code; `/history` phân trang 50/trang ở chế độ api.
+**Nghiệm thu B3:**
+- pytest: batch upsert idempotent (gửi hai lần không tăng số dòng, `visit_count` không giảm); giờ địa phương đổi đúng sang UTC theo `display_timezone`; query string và fragment bị bỏ (nếu D-B3c chốt); vượt 10 000 item → 422; `GET` phân trang đúng.
+- `grep -rn "vault" apps/core/app` → không có kết quả mới.
+- Web: `tsc`. `grep -n "exec(" apps/web/lib/chrome-history.ts` → rỗng (chỉ còn `execFile`). `git diff --name-only -- apps/web/lib/vault apps/web/components/vault-import-manager.tsx` → rỗng.
+- UAT: `/history` ở chế độ api phân trang 50/trang; nhập `chrome-history.json` hai lần không nhân đôi.
 
 ---
 
@@ -532,9 +529,7 @@ Rủi ro B1:
 - **D-B2a:** Không lưu `minutes_logged_today` (backend đã tự tính từ nhật ký)? Đề xuất: không lưu.
 - **D-B2b:** Allowlist host cho `sync_urls`? Đề xuất: Google Drive/Sheets, SharePoint/OneDrive; thêm host khác qua biến môi trường.
 
-**B3**
-- **D-B3a:** Ở chế độ api, Vault chuyển vào Postgres? Việc này bỏ thiết kế hiện tại "Vault độc lập với DATA_SOURCE". Đề xuất: có.
-- **D-B3b:** Nhập `vault.json` vào Postgres đã có két → replace, kèm giữ 5 bản cũ trong `vault_blob_history`? Hay từ chối khi đã có két? Đề xuất: replace có lịch sử.
+**B3** (D-B3a đã chốt là Không, D-B3b bị bỏ cùng Vault)
 - **D-B3c:** Bỏ query string và fragment của URL lịch sử Chrome trước khi lưu, để tránh lưu token? Đề xuất: bỏ.
 
 **B4**
