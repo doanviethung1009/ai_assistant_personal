@@ -3,6 +3,8 @@
 import { useState, useTransition } from "react";
 
 import {
+  archiveNoteAction,
+  unarchiveNoteAction,
   deleteNoteAction,
   markNoteUsedAction,
   toggleNotePinAction,
@@ -15,7 +17,20 @@ import type { Note } from "@/lib/types";
 const ACTION_CLASS =
   "rounded-md border border-[var(--color-border)] px-2 py-1 text-xs transition-colors hover:bg-[var(--color-surface-hover)] disabled:opacity-50";
 
-export function NoteItem({ note }: { note: Note }) {
+/**
+ * Một mục sổ tay. `archiveSupported` do trang truyền xuống (false khi
+ * DATA_SOURCE là file/memory) để ẩn nút Lưu trữ: engine cục bộ chưa có
+ * trạng thái này, bấm sẽ chỉ ra lỗi 501.
+ */
+export function NoteItem({
+  note,
+  archiveSupported,
+}: {
+  note: Note;
+  archiveSupported: boolean;
+}) {
+  // archived_at là optional trong type sinh ra, nên `?? null` gộp cả undefined.
+  const archivedAt = note.archived_at ?? null;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [expanded, setExpanded] = useState(false);
@@ -122,6 +137,23 @@ export function NoteItem({ note }: { note: Note }) {
           {note.is_pinned ? "Bỏ ghim" : "Ghim"}
         </button>
 
+        {archiveSupported ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() =>
+              run(() =>
+                archivedAt === null
+                  ? archiveNoteAction(note.id)
+                  : unarchiveNoteAction(note.id),
+              )
+            }
+            className={ACTION_CLASS}
+          >
+            {archivedAt === null ? "Lưu trữ" : "Bỏ lưu trữ"}
+          </button>
+        ) : null}
+
         <button
           type="button"
           disabled={pending}
@@ -135,6 +167,9 @@ export function NoteItem({ note }: { note: Note }) {
           {note.use_count > 0
             ? `Đã dùng ${note.use_count} lần, gần nhất ${formatDateTime(note.last_used_at)}`
             : "Chưa dùng lần nào"}
+          {archivedAt !== null
+            ? ` · Lưu trữ lúc ${formatDateTime(archivedAt)}`
+            : ""}
         </span>
       </div>
 

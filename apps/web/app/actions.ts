@@ -8,6 +8,8 @@ import {
   createNote,
   createProject,
   createTask,
+  archiveNote,
+  unarchiveNote,
   deleteNote,
   deleteTask,
   emptyNoteTrash,
@@ -383,6 +385,27 @@ export async function markNoteUsedAction(id: string): Promise<ActionResult> {
 export async function deleteNoteAction(id: string): Promise<ActionResult> {
   try {
     await deleteNote(id);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Lưu trữ note: ẩn khỏi tab Đang dùng, không bị dọn như thùng rác. */
+export async function archiveNoteAction(id: string): Promise<ActionResult> {
+  try {
+    await archiveNote(id);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+export async function unarchiveNoteAction(id: string): Promise<ActionResult> {
+  try {
+    await unarchiveNote(id);
     revalidateAll();
     return { ok: true };
   } catch (error) {

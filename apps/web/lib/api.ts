@@ -420,12 +420,27 @@ export interface ListNotesOptions {
   sortDesc?: boolean;
   assignee?: string | null;
   forCurrentUser?: boolean;
+  /** true = chỉ note đã lưu trữ. Mặc định (false) = chỉ note đang dùng. */
+  archived?: boolean;
 }
 
 export function listNotes(options: ListNotesOptions = {}): Promise<Paged<Note>> {
-  if (IS_LOCAL) return local(() => engine.listNotes(options));
+  if (IS_LOCAL) {
+    // File/memory mode chưa có khái niệm lưu trữ. Trả trang rỗng thay vì để
+    // engine âm thầm bỏ qua cờ và hiện toàn bộ note ở tab Lưu trữ.
+    if (options.archived) {
+      return Promise.resolve({
+        items: [],
+        total: 0,
+        limit: options.limit ?? 100,
+        offset: options.offset ?? 0,
+      });
+    }
+    return local(() => engine.listNotes(options));
+  }
 
   const params = new URLSearchParams();
+  if (options.archived) params.set("archived", "true");
   options.kind?.forEach((value) => params.append("kind", value));
   options.tags?.forEach((value) => params.append("tags", value));
   if (options.projectId) params.set("project_id", options.projectId);
@@ -445,9 +460,36 @@ export function getNote(id: string): Promise<Note> {
   return coreFetch<Note>(`/api/v1/notes/${id}`);
 }
 
-export function getNoteStats(): Promise<Record<string, number>> {
-  if (IS_LOCAL) return local(() => engine.countNotesByKind());
-  return coreFetch<Record<string, number>>("/api/v1/notes/stats");
+/** Đếm note theo loại trong đúng view đang xem (đang dùng hoặc lưu trữ). */
+export function getNoteStats(
+  options: { archived?: boolean } = {},
+): Promise<Record<string, number>> {
+  if (IS_LOCAL) {
+    if (options.archived) return Promise.resolve({});
+    return local(() => engine.countNotesByKind());
+  }
+  const query = options.archived ? "?archived=true" : "";
+  return coreFetch<Record<string, number>>(`/api/v1/notes/stats${query}`);
+}
+
+/**
+ * Lưu trữ note: ẩn khỏi danh sách mặc định nhưng không bị dọn như thùng rác.
+ * Chỉ hỗ trợ DATA_SOURCE=api; engine cục bộ chưa có trạng thái này nên
+ * từ chối rõ ràng thay vì giả vờ thành công.
+ */
+export function archiveNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
+  return coreFetch<Note>(`/api/v1/notes/${id}/archive`, { method: "POST" });
+}
+
+/** Đưa note từ Lưu trữ về danh sách đang dùng. Cùng giới hạn như archiveNote. */
+export function unarchiveNote(id: string): Promise<Note> {
+  if (IS_LOCAL) return Promise.reject(localArchiveUnsupported());
+  return coreFetch<Note>(`/api/v1/notes/${id}/unarchive`, { method: "POST" });
+}
+
+function localArchiveUnsupported(): CoreApiError {
+  return new CoreApiError("Lưu trữ note chỉ hỗ trợ khi DATA_SOURCE=api", 501);
 }
 
 export interface CreateNoteInput {
