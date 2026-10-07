@@ -95,9 +95,10 @@ Dự án sinh ra rất nhiều file script tạm (`patch_*.py`, `fix_*.py`) tron
 
 ## 6. Tương thích Đa nền tảng (Universal Compatibility)
 
-Dự án này được thiết kế để tương thích với **bất kỳ** nền tảng AI nào. Để đảm bảo các AI khác không bị "lạc lối" và bắt buộc phải đọc `AGENTS.md`, chúng ta đã thiết lập sẵn các file cầu nối (Bridges):
+Dự án này được thiết kế để tương thích với **bất kỳ** nền tảng AI nào. `AGENTS.md` chính là "Source of Truth" (Nguồn chân lý). Chúng ta thiết lập cấu trúc "Một Gốc - Nhiều Nhánh" để duy trì luật tại một nơi duy nhất:
 
-1. **Cursor IDE & Windsurf:** Đã có sẵn file `.cursorrules`. Khi Editor mở dự án, nó đọc file này và tự chuyển hướng sang đọc `AGENTS.md`.
-2. **Claude Code CLI (Terminal):** Công cụ dòng lệnh của Anthropic sẽ tự động nhận diện file `CLAUDE.md`. File này sẽ ép Claude đọc System Prompt gốc.
-3. **GitHub Copilot Chat (ChatGPT Core):** Đã thiết lập sẵn file `.github/copilot-instructions.md` để tiêm luật vào ngữ cảnh của Copilot bên trong VS Code.
-4. **ChatGPT / Claude Web:** Với bản Web, hãng không cho phép quét ổ cứng. Bạn bắt buộc phải tạo Custom GPT / Claude Project và copy nội dung `AGENTS.md` dán vào phần System Instructions.
+1. **OpenAI Codex Ecosystem (MỚI):** File `AGENTS.md` chính là cơ chế Native (bản địa) mà hệ sinh thái Codex (Codex CLI, Codex IDE, Codex App) tự động đọc. Chúng tôi cũng đã trang bị file `.codex/config.toml` để tối ưu dự án.
+2. **Cursor IDE & Windsurf:** Đã có sẵn file cầu nối `.cursorrules`. Khi Editor mở dự án, nó đọc file này và tự chuyển hướng sang đọc `AGENTS.md`.
+3. **Claude Code CLI (Terminal):** Tự động nhận diện file `CLAUDE.md`. File này sẽ ép Claude đọc `AGENTS.md`.
+4. **GitHub Copilot Chat:** Đã thiết lập file `.github/copilot-instructions.md` để tiêm luật vào ngữ cảnh bên trong VS Code.
+5. **ChatGPT / Claude Web:** Với bản Web, hãng không cho phép quét ổ cứng. Bạn tạo Custom GPT / Claude Project và copy nội dung `AGENTS.md` dán vào phần System Instructions.

@@ -50,6 +50,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Tài liệu
 
+- cập nhật hướng dẫn tương thích đa nền tảng và vá log (`871f3e8`)
 - cập nhật cẩm nang AI, bản đồ hệ thống và các nền tảng thay thế (`807fc4e`)
 - cập nhật danh sách skill thực tế vào tài liệu hướng dẫn Agent (`48e0e12`)
 - bổ sung skill hướng dẫn triển khai RBAC (roles, rules, privileges) (`4f186e7`)

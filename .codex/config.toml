@@ -1,0 +1,10 @@
+# Cấu hình dự án cho hệ sinh thái OpenAI Codex
+# (Codex CLI, Codex IDE Extension, Codex App)
+
+# Codex tự động đọc file AGENTS.md làm native rule, 
+# khai báo này giúp Codex nhận diện thêm các file cầu nối nếu cần.
+project_doc_fallback_filenames = [
+  "CLAUDE.md",
+  ".cursorrules",
+  ".github/copilot-instructions.md"
+]
