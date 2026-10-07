@@ -23,8 +23,9 @@ Nhiều tài liệu nói về AI agent vì dự án dùng nhiều IDE và nhiề
 | Xem luồng đó chạy thật, lỗi gì bắt được | **`MULTI_AGENT_TRIAL.md`** | `AI_REAL_WORLD_EXAMPLE.md` là case study cũ (Vault, Portal), viết theo kiểu "đóng vai" |
 | Chạy Claude Code lần đầu | **`CLAUDE_CLI_QUICKSTART.md`** | `CLAUDE_OPERATING_GUIDE.md` (dài ~1000 dòng) là tài liệu cơ chế nạp context, chỉ đọc khi cần đào sâu |
 | Dùng Codex | `CODEX_OPERATING_GUIDE.md` | Chỉ liên quan khi dùng OpenAI Codex |
-| Biết AI phải làm gì khi bắt đầu session | **`NEW_AGENT_ONBOARDING.md`** và `AI_HANDOFF_STATE.md` | `AI_AGENT_GUIDE.md` mô tả cấu trúc `.agents/` |
-| Viết prompt giao việc | `AGENT_PROMPT_EXAMPLES.md` | Prompt theo từng tình huống nằm trong `MULTI_AGENT_SYSTEM.md` mục 5 |
+| Biết cấu hình AI nằm ở đâu, công cụ nào đọc gì | **`AI_AGENT_GUIDE.md`** | Đã gộp tài liệu prompt mẫu cũ vào đây |
+| Biết AI phải làm gì khi bắt đầu session | **`NEW_AGENT_ONBOARDING.md`** và `AI_HANDOFF_STATE.md` | |
+| Viết prompt giao việc | `AI_AGENT_GUIDE.md` mục 3 (một agent) | Prompt cho nhiều agent: `MULTI_AGENT_SYSTEM.md` mục 5 |
 | Tự tạo thêm rule, skill, hook | `CREATE_AI_CUSTOMIZATIONS.md` | |
 | Biết quy trình phát triển sản phẩm 6 bước | `PRODUCT_DEVELOPMENT_LIFECYCLE.md` | |
 | Biết luật code | `.agents/rules/*.md` (xem nhóm "Quy ước Code" trên tab Tài liệu) | `AGENTS.md` là luật chung cho mọi agent |

@@ -1,156 +1,136 @@
-# Hướng dẫn Quản lý AI Agent & Document trong Dự án
+# Cẩm nang AI Agent: cấu trúc, nền tảng, prompt mẫu
 
-Tài liệu này hướng dẫn cách cấu hình, sử dụng và quản lý các AI models/agents trong dự án thông qua kiến trúc thư mục chuẩn `.agents/`.
+> File duy nhất trả lời ba câu: **cấu hình AI của dự án nằm ở đâu**, **mỗi công cụ (Claude, Codex, Cursor...) đọc cái gì**, và **gõ prompt thế nào cho hiệu quả**.
+> Gộp từ ba tài liệu cũ (`AI_AGENT_GUIDE`, `AGENT_PROMPT_EXAMPLES`, phần nền tảng) để khỏi phải đọc ba nơi.
+>
+> Muốn đi sâu: `MULTI_AGENT_SYSTEM.md` (nhiều agent phối hợp), `CLAUDE_CLI_QUICKSTART.md` (Claude Code), `CREATE_AI_CUSTOMIZATIONS.md` (tự tạo rule, skill, hook), `NEW_AGENT_ONBOARDING.md` (việc AI phải làm khi bắt đầu session).
 
-## 1. Kiến trúc thư mục chuẩn cho AI (`.agents/`)
+---
 
-Để dự án hỗ trợ tốt nhất khi làm việc với nhiều Agent (Gemini, Claude, GPT-4, Cursor, AWS Q, v.v.), chuẩn chung được khuyến nghị là sử dụng thư mục **`.agents/`** tại gốc dự án (thay vì dùng thư mục custom lẻ tẻ như `.kiro`).
+## 1. Cấu hình AI nằm ở đâu
 
-Hầu hết các nền tảng Agentic Coding hiện nay (như Antigravity) đều tự động nhận diện thư mục này.
+Nguyên tắc **một gốc, nhiều nhánh**: luật viết một lần ở `.agents/` và `AGENTS.md`, mỗi công cụ chỉ có một file mỏng trỏ về đó.
 
 ```text
-.agents/
-  ├── rules/                 # Các luật (Steering Rules) tự động load khi code
-  │   ├── comment-style.md   # Luật về comment, document
-  │   └── backend-conventions.md # Luật chuyên biệt cho backend
-  ├── skills/                # Các kỹ năng/quy trình mẫu (Checklist tự động)
-  │   ├── add-entity/        # Skill: Tạo model/bảng mới xuyên suốt stack
-  │   │   └── SKILL.md
-  │   ├── git-commit/        # Skill: Quy trình commit và changelog
-  │   │   └── SKILL.md
-  │   └── rbac-implementation/ # Skill: Chuẩn mực viết code phân quyền (Role, Rule)
-  │       └── SKILL.md
-  └── plugins/               # Tích hợp sâu hơn (nếu có)
+AGENTS.md                      Luật chung cho MỌI agent (nguồn chân lý)
+CLAUDE.md                      Điểm vào của Claude Code, chỉ import AGENTS.md
+.cursorrules                   Cầu nối cho Cursor/Windsurf, trỏ về AGENTS.md
+.github/copilot-instructions.md  Cầu nối cho GitHub Copilot
+.codex/config.toml             Cấu hình cho OpenAI Codex (đọc AGENTS.md native)
+
+.agents/                       NGUỒN THẬT của cấu hình AI dùng chung
+  ├── rules/                   Luật code, nạp theo file đang sửa
+  ├── skills/                  Quy trình đóng gói (10 skill: commit, migration, QC...)
+  └── roles/                   9 vai "đóng vai" cho IDE không có subagent
+
+.claude/                       Riêng cho Claude Code
+  ├── agents/                  6 subagent thật (architect, backend-dev, ... security-auditor)
+  ├── hooks/                   Chặn lệnh nguy hiểm, chặn script patch_*
+  ├── settings.json            Quyền allow/ask/deny + hook
+  ├── rules  ──► ../.agents/rules    (symlink, không có bản sao thứ hai)
+  └── skills ──► ../.agents/skills   (symlink)
 ```
 
-## 2. Cách làm việc với đa Mô hình (Multi-Model / Multi-Agent)
+Sửa luật hay skill thì sửa ở `.agents/`. **Đừng** sửa qua `.claude/rules` hay `.claude/skills` (chỉ là symlink).
 
-Khi bạn sử dụng nhiều model (ví dụ dùng Gemini cho logic lập trình phức tạp, dùng Claude cho refactor UI):
+### Rule được nạp thế nào
 
-- **Đồng nhất chuẩn Rules**: Cả Gemini và Claude đều hiểu rất tốt định dạng Markdown. Việc quy hoạch vào `.agents/rules/*.md` với YAML frontmatter `fileMatchPattern` giúp **bất kỳ model nào** bạn gọi lên cũng sẽ tự động tuân thủ chung 1 bộ luật duy nhất.
-- **System Prompt chung**: Tạo file `GEMINI.md` hoặc `AGENTS.md` tại gốc dự án để định nghĩa vai trò cốt lõi. Mọi model sẽ tự động đọc file này làm System Prompt.
-- **Tương thích chéo (AWS, Cursor, v.v.)**: Các hệ thống như AWS Q hay Cursor rules hoàn toàn có thể trỏ vào (include) các file trong `.agents/` làm context. Nếu nền tảng bắt buộc dùng tên folder riêng (vd: `.cursorrules`), bạn chỉ cần copy nội dung hoặc tạo tham chiếu đến file trong `.agents/rules/`.
+Mỗi file trong `.agents/rules/` có frontmatter khai báo khi nào nạp, và khai **cả hai** kiểu để mọi công cụ hiểu:
 
-## 3. Quản lý Rules (`.agents/rules/`)
+```yaml
+---
+paths:                       # Claude Code đọc khoá này
+  - "apps/core/**"
+  - "apps/**/*.py"
+inclusion: fileMatch         # Kiro / Antigravity đọc hai khoá này
+fileMatchPattern: ["apps/core/**/*", "apps/**/*.py"]
+---
+```
 
-**Mục đích:** Ép AI hành xử theo đúng coding convention của team mà không cần phải nhắc lại trong mỗi Prompt.
+Nghĩa là: sửa file khớp mẫu thì luật đó tự nạp vào ngữ cảnh của AI, không cần nhắc trong prompt. Tạo ứng dụng mới khớp mẫu thì không phải cấu hình lại.
 
-**Khả năng mở rộng tự động (Scalability):**
-Các file rules hiện tại đã được cấu hình YAML (fileMatchPattern) bằng các biểu thức chính quy (glob patterns) cực kỳ mạnh mẽ. 
-Ví dụ: 
-- `backend-conventions.md` tự động load không chỉ cho `apps/core/` mà còn cho bất kỳ thư mục nào chứa từ khoá `api`, `backend`, hoặc có file `.py`.
-- `web-conventions.md` tự động load cho bất kỳ ứng dụng mới nào có thư mục chứa `web`, `ui`, `admin` hoặc bất kỳ file `.tsx` nào.
-Nghĩa là: **Nếu ngày mai bạn tạo một ứng dụng mới (ví dụ: `apps/admin-panel` hoặc `apps/payment-api`), bạn KHÔNG CẦN phải cấu hình lại AI. Các Agent sẽ tự động nhận diện và nạp đúng các luật Backend/Frontend tương ứng vào bộ nhớ.**
+Cách viết rule hiệu quả: dùng cú pháp **NẾU ... THÌ ...**, có một ví dụ ✅ tốt và một ví dụ ❌ xấu. Hướng dẫn tạo rule, skill, hook từng bước: `CREATE_AI_CUSTOMIZATIONS.md`.
 
-**Cách viết Rule hiệu quả (dành cho người tạo Rule mới):**
-- Thêm metadata ở đầu file để AI biết *khi nào* cần đọc rule này:
-  ```yaml
-  ---
-  inclusion: fileMatch
-  fileMatchPattern: ["apps/core/**/*", "apps/**/*.py"]
-  ---
-  ```
-- **Viết theo cú pháp `NẾU ... THÌ ...`**:
-  - *Sai*: "Phải viết docstring cho code."
-  - *Đúng*: "NẾU bạn tạo mới hoặc sửa một hàm trong thư mục `apps/core/`, THÌ bạn BẮT BUỘC phải viết docstring giải thích lý do tồn tại của hàm."
-- **Đưa ví dụ (Few-shot)**: Đưa ra 1 mẫu Tốt (✅) và 1 mẫu Xấu (❌) để Agent hiểu chính xác.
+### Quy ước dọn dẹp thư mục
 
-## 4. Quản lý Skills (`.agents/skills/`)
-
-**Mục đích:** Dạy cho AI các quy trình thao tác nhiều bước phức tạp. Thay vì phải đưa một prompt dài 50 dòng mỗi khi cần tạo 1 module mới, bạn đóng gói nó thành 1 Skill.
-
-**Cách tạo:**
-1. Tạo thư mục: `.agents/skills/create-api/`
-2. Tạo file `.agents/skills/create-api/SKILL.md`
-3. Cấu trúc file SKILL:
-   ```markdown
-   ---
-   name: "create-api"
-   description: "Dùng để tạo một API RESTful mới bao gồm Schema, Route, Service."
-   ---
-   
-   # Các bước thực hiện
-   Khi User yêu cầu tạo API, bạn PHẢI thực hiện đúng các bước sau theo thứ tự:
-   1. Đọc file `apps/core/models/` để hiểu Schema DB.
-   2. Tạo file Schema Pydantic.
-   3. Tạo file Service xử lý logic.
-   4. Tạo Route FastAPI và nhúng vào `api/v1/router.py`.
-   5. Báo cáo lại cho người dùng khi hoàn thành.
-   ```
-
-**Cách dùng:**
-Khi prompt, bạn chỉ cần gõ: `Sử dụng kỹ năng create-api để làm chức năng tạo User mới`. Agent sẽ tự gọi skill này và thực thi chính xác 5 bước trên.
-
-## 5. Dọn dẹp thư mục gốc (Scripts & Patches)
-
-Dự án sinh ra rất nhiều file script tạm (`patch_*.py`, `fix_*.py`) trong quá trình AI sửa lỗi hoặc cào dữ liệu.
-
-**Quy chuẩn kiến trúc:**
-- **Tuyệt đối không để rác ở thư mục gốc.**
-- Tất cả các script chạy một lần, script sửa lỗi tạm thời đã được gom gọn vào thư mục `scripts/patches/`.
-- Các bash script chạy hệ thống (deploy, test) nằm tại `scripts/`.
-- Dữ liệu tĩnh, data cào về nằm ở `data/`.
-
-*Lưu ý: Nếu một file patch/fix thực sự cần dùng liên tục nhiều lần, hãy cấu trúc nó thành một CLI command bên trong `apps/core/` thay vì để nó trôi nổi ở ngoài.*
-
-## 6. Tương thích Đa nền tảng (Universal Compatibility)
-
-Dự án này được thiết kế để tương thích với **bất kỳ** nền tảng AI nào. `AGENTS.md` chính là "Source of Truth" (Nguồn chân lý). Chúng ta thiết lập cấu trúc "Một Gốc - Nhiều Nhánh" để duy trì luật tại một nơi duy nhất:
-
-1. **OpenAI Codex Ecosystem (MỚI):** File `AGENTS.md` chính là cơ chế Native (bản địa) mà hệ sinh thái Codex (Codex CLI, Codex IDE, Codex App) tự động đọc. Chúng tôi cũng đã trang bị file `.codex/config.toml` để tối ưu dự án.
-2. **Cursor IDE & Windsurf:** Đã có sẵn file cầu nối `.cursorrules`. Khi Editor mở dự án, nó đọc file này và tự chuyển hướng sang đọc `AGENTS.md`.
-3. **Claude Code CLI (Terminal):** Tự động nhận diện file `CLAUDE.md`. File này sẽ ép Claude đọc `AGENTS.md`.
-4. **GitHub Copilot Chat:** Đã thiết lập file `.github/copilot-instructions.md` để tiêm luật vào ngữ cảnh bên trong VS Code.
-5. **ChatGPT / Claude Web:** Với bản Web, hãng không cho phép quét ổ cứng. Bạn tạo Custom GPT / Claude Project và copy nội dung `AGENTS.md` dán vào phần System Instructions.
+- Không để script rác ở thư mục gốc.
+- Script vận hành (deploy, test, release) ở `scripts/`; script kiểm thử dùng lại được ở `scripts/checks/`.
+- Script một lần thật sự cần thiết ở `scripts/patches/`; lịch sử cũ đã chạy xong ở `scripts/patches/archive/` (không chạy lại).
+- Claude Code bị hook chặn tạo `patch_*` và `fix_*`: dùng Edit trực tiếp.
+- Dữ liệu chạy thật ở `data/` (gitignore).
 
 ---
 
-## 7. Hướng dẫn Sử dụng Thực tế (How to Use)
+## 2. Mỗi công cụ đọc gì và dùng thế nào
 
-Dưới đây là cẩm nang thao tác dành cho lập trình viên (Human) để kích hoạt sức mạnh của từng hệ sinh thái AI trong dự án này:
+| Công cụ | File nó đọc | Cách mở | Chi tiết |
+|---|---|---|---|
+| **Claude Code** (CLI, desktop) | `CLAUDE.md` → `AGENTS.md`, `.claude/` | `claude` ở thư mục gốc | `CLAUDE_CLI_QUICKSTART.md`, `CLAUDE_OPERATING_GUIDE.md` |
+| **OpenAI Codex** (CLI, IDE) | `AGENTS.md` (native), `.codex/config.toml` | `codex` ở thư mục gốc | `CODEX_OPERATING_GUIDE.md` |
+| **Cursor, Windsurf, Antigravity** | `.cursorrules` → `AGENTS.md` | Mở thư mục, dùng Composer/Chat | |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | Copilot Chat, gõ `@workspace` | Ít tự trị hơn nhưng vẫn theo luật |
+| **ChatGPT / Claude Web** | Không quét được ổ cứng | Tạo Project/Custom GPT, dán nội dung `AGENTS.md` vào System Instructions | |
 
-### A. Hệ sinh thái OpenAI Codex (CLI / App)
-1. **Codex CLI:** Mở Terminal tại thư mục gốc, gõ lệnh `codex`. CLI sẽ tự động nạp `AGENTS.md` theo cơ chế native. Bạn có thể chat trực tiếp trên terminal để AI tự sửa code.
-2. **Codex IDE Extension:** Cài đặt extension trong VS Code, mở Chat (hoặc Inline Edit). Nó sẽ tự động fallback đọc `AGENTS.md`.
-*(Chi tiết vận hành chuyên sâu: Xem `docs/CODEX_OPERATING_GUIDE.md`)*
-
-### B. Hệ sinh thái Anthropic Claude (CLI / IDE)
-1. **Claude Code CLI:** Mở Terminal, gõ lệnh `claude`. Hệ thống sẽ đọc file `CLAUDE.md` và tự động `@import` các luật từ `AGENTS.md` nhờ cấu trúc Lazy-loading siêu tiết kiệm token.
-2. **Claude IDE (RooCode / Cline):** Mở extension trong VS Code, Claude sẽ tự quét và nạp `CLAUDE.md`.
-*(Chi tiết vận hành chuyên sâu: Xem `docs/CLAUDE_OPERATING_GUIDE.md`)*
-
-### C. Các Agentic IDE (Cursor, Windsurf, Antigravity)
-- **Cách dùng:** Mở thư mục dự án bằng IDE. Hệ thống sẽ tự động bắt tín hiệu từ `.cursorrules` (hoặc cấu hình workspace) và chuyển hướng đọc `AGENTS.md`.
-- **Thao tác:** Nhấn `Cmd + I` (Composer) hoặc `Cmd + L` (Chat), ném yêu cầu (vd: "Thêm API tạo Task mới"). AI sẽ tự động đọc Handoff State, code, viết docs và tự kiểm thử.
-
-### D. GitHub Copilot
-- **Cách dùng:** Mở VS Code, bật Copilot Chat.
-- **Thao tác:** Gõ `@workspace` kèm câu hỏi. Copilot sẽ tự động bị ép đọc luật từ `.github/copilot-instructions.md`. Mặc dù không tự trị (autonomous) mạnh như Cursor, Copilot vẫn sẽ code đúng chuẩn convention của dự án.
+Chỉ **Claude Code** có subagent thật. Các công cụ còn lại dùng vai trong `.agents/roles/` bằng prompt "đóng vai". Bản đối chiếu vai và subagent: `MULTI_AGENT_SYSTEM.md` mục 3.
 
 ---
 
-## 8. Quản lý Nhân cách (Agent Roles / Personas)
+## 3. Prompt mẫu
 
-Để tối ưu hóa cho mô hình Multi-Agent (Nhiều AI cùng làm việc), hệ thống cung cấp sẵn 6 "Nhân cách" chuyên biệt tại thư mục `.agents/roles/`:
+Dự án đã có Rules và Skills, nên **không cần prompt dài**: chỉ cần *bối cảnh + trỏ file + gọi skill + ép rule*.
 
-- 👑 **`tech-lead.md`**: Trưởng nhóm Kỹ thuật (Maintainer). Người giữ cửa cuối cùng, duyệt Pull Request, quyết định Merge vào `main` và sinh Changelog.
-- 📐 **`software-architect.md`**: Kiến trúc sư hệ thống (System Design), định hình luồng dữ liệu, vẽ sơ đồ và quyết định công nghệ trước khi code.
-- 🔐 **`security-auditor.md`**: Chuyên gia an ninh mạng, rà soát lỗ hổng OWASP, kiểm toán tính năng Két bảo mật (Zero-Trust) và mã hoá.
-- 🎨 **`frontend-engineer.md`**: Chuyên gia thiết kế UI/UX, am hiểu Next.js, Tailwind, hoạt ảnh mượt mà.
-- ⚙️ **`backend-engineer.md`**: Kỹ sư Server, tối ưu FastAPI, luồng dữ liệu khắt khe.
-- 🛡️ **`qa-tester.md`**: Kẻ đập phá hệ thống. Chuyên soi rác, bắt lỗi PR (`pr-review`) và test UAT.
-- 🗄️ **`database-architect.md`**: Bậc thầy PostgreSQL, viết migration (Alembic) an toàn, tối ưu Query.
-- 🐳 **`devops-engineer.md`**: Kỹ sư hạ tầng, nắm trùm Docker, CI/CD, Makefile và bảo mật Server.
-- 🧠 **`ai-rag-engineer.md`**: Chuyên gia LLM, làm việc với Vector Database (pgvector) và Prompt Engineering.
+> **Công thức:** (1) Đang bị gì, muốn gì. (2) File liên quan nếu biết. (3) "Hãy dùng skill ...". (4) "Nhớ tuân thủ rule ...".
 
-**Cách sử dụng (Gợi ý Prompts):**
-Khi giao việc, thay vì dùng Agent mặc định (Fullstack Architect từ `AGENTS.md`), bạn hãy dùng các mẫu prompt trực quan sau để gọi đích danh một nhân cách:
+### 3.1. Làm chức năng mới xuyên suốt DB, API, web
 
-**💡 Mẫu 1 (Code Frontend UI/UX):**
-> *"Mở nhân cách `@.agents/roles/frontend-engineer.md`. Hãy tạo một component trang Dashboard hiển thị thống kê. Yêu cầu có hiệu ứng Hover, thiết kế theo phong cách Glassmorphism. Tuyệt đối tuân thủ `web-conventions.md`."*
+> "Làm tính năng Quản lý Khách hàng (Customer): tên, email, số điện thoại. Dùng skill `add-entity` để làm toàn bộ từ Database, Backend API đến Frontend."
 
-**💡 Mẫu 2 (Kiến trúc & Database):**
-> *"Nhập vai `@.agents/roles/database-architect.md`. Hãy tạo bảng `Vault` để lưu mật khẩu. Sau đó gọi skill `@.agents/skills/db-migration/SKILL.md` để sinh file Alembic an toàn. Không tự ý sửa code giao diện."*
+Skill `add-entity` dẫn AI qua 15 bước (model, schema, endpoint, docs, giao diện) nên không bỏ sót bước. Việc chạm từ hai tầng trở lên: dùng luồng architect → dev → reviewer trong `MULTI_AGENT_SYSTEM.md`.
 
-**💡 Mẫu 3 (Nhờ AI duyệt PR / Soát lỗi):**
-> *"Tôi vừa push code lên nhánh `feat/new-api`. Đóng vai `@.agents/roles/qa-tester.md`, hãy chạy kỹ năng `@.agents/skills/pr-review/SKILL.md` để soát lỗi kiến trúc, bảo mật và bắt rác trước khi tôi merge."*
+### 3.2. Sửa lỗi hoặc refactor
+
+> "Trang Danh sách Project không hiện đủ dữ liệu. Kiểm `apps/web/app/projects/page.tsx` và API tương ứng. Tuân thủ `web-conventions` và nguyên tắc phân trang."
+
+Rule `web-conventions` tự nạp khi sửa file trong `apps/web/`, nên AI không tự cài thêm thư viện bừa.
+
+### 3.3. Commit
+
+> "Tôi test xong rồi. Dùng skill `git-commit` đóng gói các thay đổi."
+
+Skill bắt buộc dùng Conventional Commits, kiểm danh sách file, và **không push khi chưa hỏi bạn**.
+
+### 3.4. Tìm lỗi hệ thống
+
+> "API `/api/v1/tasks` trả lỗi 500. Đọc log container `api` (`make logs-api`), tìm nguyên nhân, sửa và ghi comment giải thích vì sao lỗi, theo `comment-style`."
+
+Dùng `make` thay vì tự viết lệnh `docker compose`; xem danh sách bằng `make`.
+
+### 3.5. Review code
+
+> "Review thay đổi của nhánh hiện tại so với `main`. Đối chiếu `backend-conventions`, `web-conventions` và `PROJECT_STRUCTURE.md`."
+
+Với Claude Code: "Dùng `code-reviewer` review nhánh hiện tại" (context sạch, chỉ đọc, đáng tin hơn tự review).
+
+### 3.6. Gọi đích danh một vai (IDE không có subagent)
+
+> "Đóng vai `@.agents/roles/database-architect.md`. Tạo bảng `Vault`, rồi chạy skill `db-migration` để sinh migration an toàn. Không sửa giao diện."
+
+> "Đóng vai `@.agents/roles/qa-tester.md`, chạy skill `pr-review` soát nhánh `feat/new-api` trước khi tôi merge."
+
+Danh sách 9 vai: `tech-lead`, `software-architect`, `security-auditor`, `frontend-engineer`, `backend-engineer`, `qa-tester`, `database-architect`, `devops-engineer`, `ai-rag-engineer`.
+
+### 3.7. Tiếp tục ở session mới
+
+> "Đọc `docs/AI_HANDOFF_STATE.md` rồi tóm tắt trạng thái hiện tại cho tôi."
+
+---
+
+## 4. Lỗi thường gặp khi giao việc cho AI
+
+| Triệu chứng | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| AI không theo luật dự án | Chưa nạp ngữ cảnh | Trỏ AI vào `docs/NEW_AGENT_ONBOARDING.md` |
+| AI tự cài thư viện lạ | Prompt không nhắc rule | Thêm "tuân thủ `web-conventions`" hoặc `backend-conventions` |
+| AI làm xong nhưng không cập nhật docs, không ghi log | Quên bước cuối | Nhắc luật 3.3, 3.4, 3.10 trong `AGENTS.md` |
+| AI sửa file ngoài phạm vi | Không có spec rõ ràng | Với việc lớn, bắt đầu bằng spec trong `docs/specs/` |
+| AI push khi chưa được phép | Luật chỉ là lời dặn | Claude Code đã chặn bằng quyền `ask`; công cụ khác thì nhắc rõ "không push" |

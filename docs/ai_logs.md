@@ -800,3 +800,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Thêm `docs/INDEX.md` (đường đọc theo vai, bảng "bản chính hay bản phụ", quy ước thêm tài liệu), đặt làm trang mặc định; thêm banner trỏ về bản chính ở MULTI_AGENT_WORKFLOW và AI_REAL_WORLD_EXAMPLE.
   - Không chuyển file trong docs/ vì AGENTS.md, rules, hook trỏ cứng đường dẫn.
 - **Phản hồi:** Đã kiểm trên web chạy chế độ demo (RAM): nhóm gập đúng, tài liệu hiển thị, không lỗi console. tsc xanh.
+
+---
+
+### [08-10-2026 17:00] | Category: [TOOL]
+- **Prompt:** "gộp nội dung các tài liệu AI chồng chéo (bắt đầu với bộ AI agent mới nhận việc)"
+- **Xử lý:**
+  - Đọc đủ ba file `NEW_AGENT_ONBOARDING`, `AI_AGENT_GUIDE`, `AGENT_PROMPT_EXAMPLES` và tìm mọi tham chiếu: `NEW_AGENT_ONBOARDING.md` bị `AGENTS.md`, `.cursorrules`, `copilot-instructions.md`, PDLC trỏ cứng nên GIỮ file và đường dẫn.
+  - Viết lại `AI_AGENT_GUIDE.md` thành cẩm nang duy nhất (cấu hình nằm ở đâu, công cụ nào đọc gì, 7 prompt mẫu, lỗi thường gặp), sửa các chỗ lỗi thời (nói "6 vai" nhưng liệt kê 9, thư mục `plugins/` không tồn tại, cách nạp rule cũ).
+  - Xoá `AGENT_PROMPT_EXAMPLES.md` (đã gộp) và mục `agent-prompts` trong `docs.ts`.
+  - Sửa `NEW_AGENT_ONBOARDING.md`: lỗi đánh số hai mục "3.", cập nhật danh sách 10 skill, thêm mục cho Claude Code. Sidebar AI: thêm "Multi-Agent", đổi "Ví dụ Thực chiến" trỏ sang bản chạy thật.
+  - Nhánh chồng lên PR #9 vì cùng sửa `docs.ts`; xung đột `docs.ts` khi stash pop, lấy bản của PR #9 rồi áp lại đúng hai thay đổi.
+- **Phản hồi:** Đã kiểm trên web demo: các trang AI trả 200, `/ai/agent-prompts` trả 404 như dự kiến; tsc xanh.
