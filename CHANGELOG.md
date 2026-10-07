@@ -81,6 +81,7 @@ gom theo type của [Conventional Commits](.agents/skills/git-commit/SKILL.md).
 
 ### Dọn dẹp
 
+- cài đặt trigger tự động ép AI đọc cẩm nang nhập môn (`afdd015`)
 - fix macOS bash compatibility in changelog script and generate latest changelog (`9672eb0`)
 - migrate to .agents architecture, cleanup root patches, and update docs registry (`656d634`)
 - update project files, tasks, history and patch scripts (`ba6315f`)
