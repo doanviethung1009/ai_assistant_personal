@@ -1,7 +1,7 @@
 # Chuyển dữ liệu từ file JSON sang Postgres
 
 > Dành cho bạn đang dùng web ở chế độ `DATA_SOURCE=file` (dữ liệu ở `data/builder-data.json`) và muốn chuyển sang Postgres (`DATA_SOURCE=api`) mà không mất dữ liệu.
-> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI) và **B2** (người dùng hiện tại, URL đồng bộ) và **B3** (lịch sử Chrome). Cả bốn pha B1 đến B4 đã có (xem mục 6).
+> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI), **B2** (người dùng hiện tại, URL đồng bộ) và **B4** (kết nối Jira, upsert hàng loạt, sync Jira ở backend). Lịch sử Chrome (B3) đã gỡ hẳn, không còn chuyển (xem mục 6).
 
 ## 1. Cần biết trước khi làm
 
@@ -161,12 +161,12 @@ TO STDOUT WITH CSV HEADER;
 | Thứ | Hiện tại | Kế hoạch |
 |---|---|---|
 | `current_users`, `sync_urls`, danh sách assignee | **Đã chuyển (B2):** lưu ở bảng `app_settings`, nhập từ `meta.current_users` và `sync_urls` của file | Xong |
-| Lịch sử Chrome | **Đã chuyển (B3):** bảng `browser_history`; ở chế độ api web đẩy lên core, hoặc nhập `chrome-history.json` ở tab Nhập (chọn profile, mặc định `Default`). Xoá theo profile cần mật khẩu | Xong |
+| Lịch sử Chrome | **Đã gỡ hẳn (B3 bị bỏ):** không còn bảng, API hay trang `/history`; `data/chrome-history.json` giữ nguyên nhưng không còn được dùng | Không chuyển |
 | URL/Excel sync | **Đã chuyển (B4a):** ở chế độ api web đọc file/URL rồi đẩy lên `upsert-batch`, cần mật khẩu. Dòng Excel thiếu Issue Key bị bỏ (đếm `skipped_no_key`) | Xong |
 | Cấu hình Jira (token) | **Đã chuyển (B4a):** lưu ở server, token mã hoá bằng `INTEGRATION_SECRET_KEY`; có nút "Chuyển các kết nối này lên server" để đưa cấu hình cũ từ trình duyệt lên | Xong |
 | Jira sync (cào) | **Đã chuyển (B4b):** ở chế độ api bấm "Cào ngay" cho từng kết nối (cần mật khẩu), core gọi Jira Cloud. Chỉ hỗ trợ `*.atlassian.net`; Jira tự cài đặt chưa hỗ trợ | Xong |
 | **Vault** | **Cố ý KHÔNG chuyển.** Vẫn là file `data/vault.json`, độc lập với `DATA_SOURCE` | Không chuyển |
 
-**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Chế độ file vẫn dùng được độc lập (lịch sử Chrome, URL/Excel sync và lưu kết nối Jira đã chạy ở chế độ api) ("người dùng hiện tại", lọc task cá nhân/công việc và danh sách URL đồng bộ đã chạy ở chế độ api). Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
+**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Chế độ file vẫn dùng được độc lập (URL/Excel sync và lưu kết nối Jira đã chạy ở chế độ api) ("người dùng hiện tại", lọc task cá nhân/công việc và danh sách URL đồng bộ đã chạy ở chế độ api). Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
 
 **Vault và sao lưu Postgres:** vì Vault nằm ngoài Postgres nên `pg_dump` **không** bao gồm nó. Hãy sao lưu riêng qua `/api/export?format=json&entity=vault` (tab Xuất dữ liệu, "JSON Két bảo mật").

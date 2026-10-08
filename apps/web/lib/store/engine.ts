@@ -1564,14 +1564,6 @@ export function wipeAllData(options?: WipeOptions): void {
     const backupFile = path.join(backupDir, `builder-data-backup-${timestamp}.json`);
     fs.writeFileSync(backupFile, JSON.stringify(store, null, 2));
     console.log(`[Backup] Data automatically backed up to ${backupFile}`);
-
-    // Backup chrome history if it exists
-    const chromePath = path.join(process.cwd(), "../../data/chrome-history.json");
-    if (fs.existsSync(chromePath)) {
-      const chromeBackup = path.join(backupDir, `chrome-history-backup-${timestamp}.json`);
-      fs.copyFileSync(chromePath, chromeBackup);
-      console.log(`[Backup] Chrome history backed up to ${chromeBackup}`);
-    }
   } catch (e) {
     console.error("[Backup] Failed to create backup before wiping:", e);
   }
@@ -1599,15 +1591,6 @@ export function wipeAllData(options?: WipeOptions): void {
   }
   if (!options || options.notes) store.notes = [];
   if (!options || options.sync_urls) store.sync_urls = [];
-  
-  if (!options || options.chrome_history) {
-    const fs = require('fs');
-    const path = require('path');
-    const outPath = path.join(process.cwd(), "../../data/chrome-history.json");
-    if (fs.existsSync(outPath)) {
-      fs.unlinkSync(outPath);
-    }
-  }
-  
+
   touched();
 }

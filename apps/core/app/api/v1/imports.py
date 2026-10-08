@@ -27,9 +27,8 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
-from app.schemas.browser_history import BrowserHistoryImportReport, ChromeHistoryFile
 from app.schemas.imports import AiLogsEnvelope, DataFileEnvelope, ImportReport
-from app.services import browser_history_service, import_service
+from app.services import import_service
 
 logger = logging.getLogger(__name__)
 
@@ -215,40 +214,4 @@ async def import_ai_logs(
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,
         file_sha256=hashlib.sha256(body).hexdigest(),
-    )
-
-
-@router.post(
-    "/browser-history",
-    response_model=BrowserHistoryImportReport,
-    summary="Nhập chrome-history.json (chỉ tăng, không ghi đè xuống, không xoá)",
-    openapi_extra=_body_schema(ChromeHistoryFile),
-)
-async def import_browser_history(
-    request: Request,
-    session: SessionDep,
-    dry_run: DryRunQuery = True,
-    profile: Annotated[
-        str, Query(max_length=200, description="Tên thư mục profile, mặc định Default.")
-    ] = "Default",
-    import_secret: ImportSecretHeader = None,
-) -> BrowserHistoryImportReport:
-    """Nhập lịch sử Chrome từ file.
-
-    Khác B1: upsert chỉ lấy số lớn hơn nên không có bản ghi bị ghi đè xuống, vì vậy không
-    đòi `expect_replaced`/`expect_sha256`. Nhập thật vẫn cần mật khẩu nhập (dữ liệu duyệt
-    web là nhạy cảm và web không có đăng nhập).
-    """
-    if not dry_run:
-        guard_import_secret(request, import_secret)
-    clean = browser_history_service.normalize_profile(profile)
-    body = await _read_body(request)
-    envelope = _parse(body, ChromeHistoryFile)
-    return await browser_history_service.import_chrome_history(
-        session,
-        envelope,
-        profile=clean,
-        dry_run=dry_run,
-        file_sha256=hashlib.sha256(body).hexdigest(),
-        client_ip=request.client.host if request.client else None,
     )
