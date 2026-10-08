@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
@@ -798,6 +799,7 @@ async def test_due_at_without_timezone_uses_display_timezone(client: httpx.Async
 async def test_upsert_requires_import_secret(
     client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level(logging.WARNING)
     body = _batch([_item("J-1", raw_payload={"token": "LEAKME-123456"})])
     del client.headers["X-Import-Secret"]
     missing = await client.post(URL, json=body)
@@ -808,6 +810,8 @@ async def test_upsert_requires_import_secret(
     for resp in (missing, wrong):
         assert IMPORT_SECRET not in resp.text
         assert "WRONG" not in resp.text and "LEAKME" not in resp.text
+    # Đối chiếu dương tính (xem test_import_api): log cảnh báo phải tồn tại.
+    assert "nhập thật bị từ chối" in caplog.text
     assert IMPORT_SECRET not in caplog.text and "WRONG" not in caplog.text
     assert await _tasks() == []
 

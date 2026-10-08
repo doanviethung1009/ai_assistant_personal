@@ -44,20 +44,6 @@ PUBLIC_IP = "104.192.140.1"
 Handler = Callable[[httpx.Request], Any]
 
 
-@pytest.fixture(autouse=True)
-def _live_loggers() -> None:
-    """Bật lại logger bị tắt.
-
-    `alembic`'s fileConfig (fixture migrated_db) chạy sau khi module app được import và
-    đặt `disabled=True` cho logger sẵn có, kèm logging.disable(DEBUG); khi đó `caplog` rỗng
-    và mọi assert "token không có trong log" đúng vì rỗng chứ không vì không rò.
-    """
-    logging.disable(logging.NOTSET)
-    for name in list(logging.root.manager.loggerDict):
-        if name.startswith(("app.", "httpx", "httpcore")):
-            logging.getLogger(name).disabled = False
-
-
 def _issue(key: str, **over: Any) -> dict[str, Any]:
     fields: dict[str, Any] = {
         "summary": f"Việc {key}",

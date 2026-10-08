@@ -18,7 +18,11 @@ config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False: mặc định của fileConfig là TẮT mọi logger đã tồn tại.
+    # Ở production alembic chạy ở process riêng nên vô hại, nhưng test chạy migration TRONG
+    # process pytest sau khi các module app.* đã được import, làm caplog luôn rỗng và mọi assert
+    # "token không có trong log" đúng vì log rỗng chứ không vì không rò.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 
