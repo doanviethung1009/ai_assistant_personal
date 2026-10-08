@@ -82,6 +82,10 @@ services:
       # từ chối nhập thật (chỉ cho Kiểm tra). Web không có đăng nhập nên đây là lớp chặn
       # duy nhất khi web mở ra LAN. Xem docs/specs/import-json-to-postgres.md (M2).
       IMPORT_COMMIT_SECRET: ${IMPORT_COMMIT_SECRET:-}
+      # Host bổ sung được phép cho URL đồng bộ (ngoài Google Docs/Sheets/Drive, SharePoint,
+      # OneDrive). Danh sách phân cách dấu phẩy, chỉ https, KHÔNG nhận IP hay '*.com'.
+      # Phải đặt GIỐNG NHAU ở service web: backend kiểm lúc lưu, web kiểm lúc fetch.
+      SYNC_URL_EXTRA_HOSTS: ${SYNC_URL_EXTRA_HOSTS:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
       # Giới hạn request/phút theo X-API-Key, đếm ở Redis. Xem core/rate_limit.py.
@@ -126,6 +130,8 @@ services:
       DATA_SOURCE: ${DATA_SOURCE:-api}
       CORE_API_URL: ${CORE_API_URL:-http://api:8000}
       CORE_API_KEY: ${API_KEY}
+      # Cùng giá trị với service api (xem SYNC_URL_EXTRA_HOSTS ở trên).
+      SYNC_URL_EXTRA_HOSTS: ${SYNC_URL_EXTRA_HOSTS:-}
       # Chỉ dùng khi DATA_SOURCE=file. Mount thêm bên dưới để file JSON nằm
       # trên host (./data), không mất khi container bị xoá.
       DATA_DIR: /data
