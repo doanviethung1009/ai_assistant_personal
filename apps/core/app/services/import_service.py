@@ -46,11 +46,13 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_log import AiLog
+from app.models.app_setting import AppSetting
 from app.models.enums import (
     AiLogCategory,
     ImportAction,
     ImportEntity,
     ImportKind,
+    SettingKey,
     TaskEventType,
     default_scope_for,
 )
@@ -74,6 +76,8 @@ from app.schemas.imports import (
     KeyChange,
     Replacement,
 )
+from app.schemas.settings import normalize_names, normalize_urls
+from app.services import settings_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.task_service import _jsonable
 
@@ -150,7 +154,13 @@ _COUNT_KEYS = {
     "task_event": "task_events",
     "note": "notes",
     "ai_log": "ai_logs",
+    "setting": "settings",
 }
+
+# Namespace cố định để suy `entity_id` (UUID) của audit từ khoá cài đặt: app_settings
+# khoá theo chuỗi, còn import_audit.entity_id là UUID. uuid5 ổn định giữa các lần nhập
+# nên tra audit theo (entity='setting', entity_id) luôn ra đúng một cài đặt.
+SETTING_ENTITY_NS = uuid.UUID("6f1c2d4e-8a3b-4c5d-9e7f-0a1b2c3d4e5f")
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1194,6 +1204,117 @@ def _reconcile_completed(r: _Parsed, target: Mapping[str, Any]) -> None:
         r.fallback.discard("completed_at")
 
 
+def _display_list(value: Any) -> list[Any] | None:
+    """Danh sách cài đặt cho báo cáo: từng phần tử cắt 200 ký tự, kiểu lạ thành None."""
+    return [_display(v) for v in value] if isinstance(value, list) else None
+
+
+def setting_entity_id(key: SettingKey) -> uuid.UUID:
+    """UUID cố định đại diện một khoá cài đặt trong sổ audit/báo cáo."""
+    return uuid.uuid5(SETTING_ENTITY_NS, f"app_settings:{key.value}")
+
+
+def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, list[str]]:
+    """Lấy cài đặt từ file: `meta.current_users` và `sync_urls` (cấp file, v6).
+
+    Dùng ĐÚNG hàm chuẩn hoá của API PUT, nên giá trị API từ chối (URL ngoài allowlist,
+    http, > 20 tên...) cũng bị chặn ở đây: nhập file không phải cửa sau qua SSRF.
+    Sai thì là LỖI (all-or-nothing, D6), không lặng lẽ bỏ phần sai rồi ghi đè phần còn
+    lại. Khoá vắng hoặc null = không đụng cài đặt trong DB.
+    `meta.minutes_logged_*` và khoá lạ không nhập (D-B2a: backend tự tính từ nhật ký
+    time_logged); chỉ liệt kê tên trong ignored_fields["meta"].
+    """
+    out: dict[SettingKey, list[str]] = {}
+    meta = envelope.meta or {}
+    skipped = [name for name in meta if name != "current_users"]
+    if skipped:
+        ctx.note_ignored("meta", skipped)
+    candidates = (
+        (
+            SettingKey.CURRENT_USERS,
+            meta.get("current_users"),
+            normalize_names,
+            "meta.current_users",
+        ),
+        (SettingKey.SYNC_URLS, envelope.sync_urls, normalize_urls, "sync_urls"),
+    )
+    for key, raw, normalize, where in candidates:
+        if raw is None:
+            continue
+        try:
+            out[key] = normalize(raw)
+        except ValueError as exc:
+            # Thông điệp của normalize_* không chứa giá trị gốc (URL có thể mang token).
+            ctx.error("setting", "setting_invalid", f"{where} không hợp lệ: {exc}", id_=key.value)
+    return out
+
+
+async def _plan_settings(
+    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, list[str]]
+) -> dict[SettingKey, list[str]]:
+    """So cài đặt trong file với DB; trả về những khoá cần ghi (mới hoặc khác).
+
+    Cài đặt không có `updated_at` trong file nên không có khái niệm "file cũ hơn DB"
+    (`file_older_than_db` luôn False). Replace cả danh sách: file nói `[]` thì DB thành `[]`.
+    """
+    if not wanted:
+        return {}
+    rows = (
+        await session.execute(
+            select(AppSetting)
+            .where(AppSetting.key.in_([k.value for k in wanted]))
+            .with_for_update()
+        )
+    ).scalars()
+    existing = {row.key: row for row in rows}
+    counts = ctx.counts_of("setting")
+    to_write: dict[SettingKey, list[str]] = {}
+    for key, new in wanted.items():
+        counts.received += 1
+        row = existing.get(key.value)
+        entity_id = setting_entity_id(key)
+        if row is None:
+            counts.created += 1
+            to_write[key] = new
+            ctx.audit.append(_audit("setting", entity_id, ImportAction.CREATED, None, ["value"]))
+            continue
+        if row.value == new:
+            counts.unchanged += 1
+            continue
+        counts.replaced += 1
+        to_write[key] = new
+        ctx.audit.append(
+            _audit(
+                "setting",
+                entity_id,
+                ImportAction.REPLACED,
+                {"key": key.value, "value": _jsonable(row.value)},
+                ["value"],
+            )
+        )
+        if len(ctx.replacements) < MAX_REPLACEMENTS:
+            ctx.replacements.append(
+                Replacement(
+                    entity="setting",
+                    id=entity_id,
+                    file_id=entity_id,
+                    label=key.value,
+                    matched_by="natural_key",
+                    file_older_than_db=False,
+                    changes=[
+                        FieldChange(
+                            field="value",
+                            old=_display_list(row.value),
+                            new=_display_list(new),
+                        )
+                    ],
+                )
+            )
+        else:
+            ctx.replacements_truncated = True
+    return to_write
+
+
 def _audit(
     entity: str,
     entity_id: uuid.UUID,
@@ -1622,13 +1743,12 @@ async def import_datafile(
     )
     if envelope.model_extra:
         ctx.note_ignored("file", envelope.model_extra)
-    if envelope.meta:
-        # B1 chưa nhập meta (current_users thuộc B2).
-        ctx.note_ignored("file", ["meta"])
 
     projects = _parse_rows(ctx, "project", envelope.projects, _parse_project)
     tasks = _parse_rows(ctx, "task", envelope.tasks, _parse_task)
     notes = _parse_rows(ctx, "note", envelope.notes, _parse_note)
+    wanted_settings = _parse_settings(ctx, envelope)
+    settings_to_write: dict[SettingKey, list[str]] = {}
 
     task_plan = note_plan = project_plan = _Plan()
     file_events: list[dict[str, Any]] = []
@@ -1641,6 +1761,7 @@ async def import_datafile(
             task_plan = await _plan_entity(ctx, session, TASK_SPEC, tasks)
             note_plan = await _plan_entity(ctx, session, NOTE_SPEC, notes)
             file_events, generated = await _plan_events(ctx, session, tasks, task_plan)
+            settings_to_write = await _plan_settings(ctx, session, wanted_settings)
         except SQLAlchemyError as exc:
             await session.rollback()
             _raise_if_lock_timeout(exc)
@@ -1653,6 +1774,8 @@ async def import_datafile(
         await _insert_rows(session, TaskEvent.__table__, file_events)
         await _insert_rows(session, TaskEvent.__table__, generated)
         await _apply_plan(session, NOTE_SPEC.table, note_plan)
+        for key, value in settings_to_write.items():
+            await settings_service.put_list(session, key, value)
 
     return await _finish(
         session,

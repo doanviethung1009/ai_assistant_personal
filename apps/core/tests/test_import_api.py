@@ -222,13 +222,14 @@ async def test_unsupported_schema_version_is_422(client: httpx.AsyncClient) -> N
     assert resp.status_code == 422
 
 
-async def test_schema_version_5_accepted_and_6_rejected(client: httpx.AsyncClient) -> None:
+async def test_schema_version_5_and_6_accepted_and_7_rejected(client: httpx.AsyncClient) -> None:
     data = json.loads(DATAFILE)
-    data["schema_version"] = 5
-    ok = await client.post("/api/v1/import/datafile", json=data)
-    assert ok.status_code == 200
-    assert ok.json()["schema_version"] == 5
-    data["schema_version"] = 6
+    for version in (5, 6):
+        data["schema_version"] = version
+        ok = await client.post("/api/v1/import/datafile", json=data)
+        assert ok.status_code == 200
+        assert ok.json()["schema_version"] == version
+    data["schema_version"] = 7
     assert (await client.post("/api/v1/import/datafile", json=data)).status_code == 422
 
 

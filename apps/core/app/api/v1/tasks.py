@@ -22,7 +22,7 @@ from app.schemas.task import (
     TimeLogRequest,
     TrashResponse,
 )
-from app.services import task_service
+from app.services import settings_service, task_service
 from app.services.task_service import SortField, TaskFilters
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -80,6 +80,19 @@ async def get_stats(
     owners = task_service.validate_view_params(view, owner)
     data = await task_service.get_stats(session, reference_date, view=view, owners=owners)
     return TaskStatsResponse.model_validate(data)
+
+
+@router.get(
+    "/assignees",
+    response_model=list[str],
+    summary="Danh sách assignee của task công việc",
+    description=(
+        "DISTINCT assignee của task còn sống VÀ scope=work (tối đa 500, sắp theo chữ cái). "
+        "Dùng cho chọn 'tôi là ai'; task cá nhân và task trong thùng rác không góp tên."
+    ),
+)
+async def list_assignees(session: SessionDep) -> list[str]:
+    return await settings_service.list_assignees(session)
 
 
 @router.get(

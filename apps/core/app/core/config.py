@@ -8,6 +8,8 @@ from typing import Annotated, Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.core.url_allowlist import parse_extra_hosts
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -46,6 +48,12 @@ class Settings(BaseSettings):
     # SecretStr: repr/log/dump không in giá trị.
     import_commit_secret: SecretStr | None = Field(default=None, min_length=16)
 
+    # Host bổ sung cho allowlist của sync_urls (ngoài Google/SharePoint/OneDrive đặt
+    # cứng trong core/url_allowlist.py). Phân cách bằng dấu phẩy; `host` khớp chính xác,
+    # `*.host` khớp mọi tên miền con. Chỉ https, cổng 443. Sai cú pháp thì app KHÔNG
+    # khởi động: thừa host là lỗ hổng SSRF, nên không lặng lẽ bỏ qua.
+    sync_url_extra_hosts: Annotated[list[str], NoDecode] = []
+
     # ── LLM gateway (chưa dùng ở Phase 1) ───────────────────────────
     litellm_base_url: str | None = None
     litellm_master_key: str | None = None
@@ -70,6 +78,18 @@ class Settings(BaseSettings):
     def _parse_origins(cls, value: object) -> object:
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("sync_url_extra_hosts", mode="before")
+    @classmethod
+    def _parse_extra_hosts(cls, value: object) -> object:
+        # NoDecode như cors_origins: chuỗi `a.com,*.b.com` từ .env/compose, biến rỗng = [].
+        if isinstance(value, str):
+            value = [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, list):
+            # Chỉ để kiểm cú pháp (ném ValueError -> ValidationError); giữ dạng chuẩn hoá.
+            parse_extra_hosts(value)
+            return [str(item).strip().lower() for item in value if str(item).strip()]
         return value
 
     @field_validator("import_commit_secret", mode="before")

@@ -172,6 +172,8 @@ class ImportEntity(StrEnum):
     TASK_EVENT = "task_event"
     NOTE = "note"
     AI_LOG = "ai_log"
+    # B2: cài đặt app_settings. entity_id của audit là uuid5 cố định theo khoá cài đặt.
+    SETTING = "setting"
 
 
 class ImportAction(StrEnum):
@@ -180,3 +182,16 @@ class ImportAction(StrEnum):
 
     CREATED = "created"
     REPLACED = "replaced"
+
+
+class SettingKey(StrEnum):
+    """Khoá cài đặt hợp lệ của bảng `app_settings` (khai báo CỨNG).
+
+    Bảng này chỉ chứa cài đặt KHÔNG bí mật. Khoá lạ bị từ chối cả ở service lẫn
+    bằng CHECK `ck_app_settings_key_valid`. Thêm khoá mới phải tự viết migration
+    DROP/ADD CONSTRAINT (`alembic check` không so CHECK). TUYỆT ĐỐI không thêm
+    khoá chứa token hay mật khẩu vào đây.
+    """
+
+    CURRENT_USERS = "current_users"
+    SYNC_URLS = "sync_urls"
