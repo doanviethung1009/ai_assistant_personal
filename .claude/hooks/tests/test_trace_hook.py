@@ -346,6 +346,66 @@ class HookProcessTests(unittest.TestCase):
             self.assertEqual((r.returncode, r.stdout), (0, ""))
             self.assertFalse(self.trace.exists(), val)
 
+    def test_session_end_prunes_old_transcripts_only(self) -> None:
+        sess = self.trace / "sessions"
+        (sess / "old-sub").mkdir(parents=True)
+        old, fresh, idx = sess / "old.jsonl", sess / "fresh.jsonl", self.trace / "turns.jsonl"
+        old_sub = sess / "old-sub" / "subagent-x.jsonl"
+        for f in (old, fresh, idx, old_sub):
+            f.write_text("{}\n")
+        ancient = time.time() - 200 * 86400
+        for f in (old, idx, old_sub):
+            os.utime(f, (ancient, ancient))
+        ev = {"hook_event_name": "SessionEnd", "session_id": "sess-1", "transcript_path": str(self.transcript)}
+        self.run_hook(ev)
+        self.assertFalse(old.exists())
+        self.assertFalse(old_sub.exists())
+        self.assertFalse((sess / "old-sub").exists())  # thư mục rỗng cũng dọn
+        self.assertTrue(fresh.exists())
+        self.assertTrue(idx.exists())  # chỉ mục không bao giờ bị xoá
+        self.assertEqual(len(list(sess.glob("sess-1.*.jsonl"))), 1)  # bản mới vừa chép còn
+
+    def test_retention_zero_keeps_everything(self) -> None:
+        sess = self.trace / "sessions"
+        sess.mkdir(parents=True)
+        old = sess / "old.jsonl"
+        old.write_text("{}\n")
+        ancient = time.time() - 900 * 86400
+        os.utime(old, (ancient, ancient))
+        ev = {"hook_event_name": "SessionEnd", "session_id": "sess-1", "transcript_path": str(self.transcript)}
+        self.run_hook(ev, extra_env={"CLAUDE_TRACE_RETENTION_DAYS": "0"})
+        self.assertTrue(old.exists())
+
+    def test_prune_does_not_follow_symlinks(self) -> None:
+        outside = self.root / "outside.jsonl"
+        outside.write_text("giữ\n")
+        ancient = time.time() - 200 * 86400
+        os.utime(outside, (ancient, ancient))
+        sess = self.trace / "sessions"
+        sess.mkdir(parents=True)
+        (sess / "link.jsonl").symlink_to(outside)
+        ev = {"hook_event_name": "SessionEnd", "session_id": "sess-1", "transcript_path": str(self.transcript)}
+        self.run_hook(ev)
+        self.assertEqual(outside.read_text(), "giữ\n")
+
+    @unittest.skipUnless(os.environ.get("TRACE_SLOW_TESTS") == "1", "đặt TRACE_SLOW_TESTS=1 để đo transcript lớn")
+    def test_large_transcript_fits_in_session_end_budget(self) -> None:
+        line = json.dumps({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "văn bản thường lặp lại để giống transcript thật " * 40}]},
+            "usage": {"input_tokens": 1}}) + "\n"
+        with open(self.transcript, "w") as f:
+            for _ in range(30 * 1024 * 1024 // len(line.encode())):
+                f.write(line)
+        size_mb = self.transcript.stat().st_size / 1e6
+        ev = {"hook_event_name": "SessionEnd", "session_id": "sess-1", "transcript_path": str(self.transcript)}
+        t0 = time.time()
+        r = self.run_hook(ev)
+        took = time.time() - t0
+        print(f"\n[slow] {size_mb:.0f} MB transcript -> {took:.1f}s", file=sys.stderr)
+        self.assertEqual(r.returncode, 0)
+        self.assertEqual(len(list((self.trace / "sessions").glob("sess-1.*.jsonl"))), 1)
+        self.assertLess(took, 25)
+
     def test_broken_json(self) -> None:
         r = self.run_hook("{không phải json")
         self.assertEqual((r.returncode, r.stdout), (0, ""))
