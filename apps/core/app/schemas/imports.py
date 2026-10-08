@@ -25,11 +25,14 @@ from app.models.enums import (
     NoteSource,
     TaskEventType,
     TaskPriority,
+    TaskScope,
     TaskSource,
     TaskStatus,
 )
 
-SUPPORTED_DATAFILE_VERSION = 4
+# v5 thêm `tasks.scope` (spec task-scope S11). Web lên v5 mà backend chưa lên thì
+# mọi file mới xuất sẽ bị 422.
+SUPPORTED_DATAFILE_VERSION = 5
 SUPPORTED_AI_LOGS_VERSION = 1
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -128,6 +131,8 @@ class ImportTask(_Row):
     completed_at: datetime | None = None
     tags: list[str] | None = None
     source: TaskSource = TaskSource.MANUAL
+    # None/vắng (mọi file v1-v4) = suy từ source, xem _parse_task.
+    scope: TaskScope | None = None
     external_id: str | None = Field(default=None, max_length=255)
     external_url: str | None = None
     created_at: datetime | None = None
@@ -193,6 +198,8 @@ class EntityCounts(BaseModel):
     unchanged: int = 0
     skipped_trash: int = 0
     skipped_trash_in_db: int = 0
+    # Task cá nhân trong DB được bảo vệ, không bị file ghi đè (trừ include_personal).
+    skipped_personal: int = 0
     invalid: int = 0
 
 

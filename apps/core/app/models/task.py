@@ -21,7 +21,7 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, enum_column
-from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
+from app.models.enums import TaskEventType, TaskPriority, TaskScope, TaskSource, TaskStatus
 
 if TYPE_CHECKING:
     from app.models.project import Project
@@ -86,6 +86,14 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         server_default=TaskSource.MANUAL.value,
         index=True,
     )
+    # Việc công ty hay việc riêng. Khác `source`: sửa được, và quyết định rào chắn
+    # đồng bộ (tích hợp chỉ ghi đè task scope=work). Cố ý KHÔNG có `default=` phía
+    # Python: service phải tự suy từ source (default_scope_for). Nếu quên, DB rơi về
+    # 'personal' - an toàn hơn 'work' vì task không bị đồng bộ ghi đè.
+    scope: Mapped[TaskScope] = mapped_column(
+        enum_column(TaskScope, "task_scope"),
+        server_default=TaskScope.PERSONAL.value,
+    )
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     external_url: Mapped[str | None] = mapped_column(Text, default=None)
     # Payload thô từ nguồn ngoài, giữ để reconcile khi sync lệch.
@@ -121,6 +129,8 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             name="estimate_minutes_positive",
         ),
         CheckConstraint("length(btrim(title)) > 0", name="title_not_blank"),
+        # CHECK tường minh vì enum_column() không sinh CHECK ở DB.
+        CheckConstraint("scope IN ('work', 'personal')", name="scope_valid"),
         Index("ix_tasks_tags", "tags", postgresql_using="gin"),
         # Phủ đúng truy vấn của view agenda. Partial để index chỉ chứa task
         # còn sống, vốn là toàn bộ dữ liệu mà nghiệp vụ quan tâm.

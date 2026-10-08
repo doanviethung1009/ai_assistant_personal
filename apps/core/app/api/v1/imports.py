@@ -65,6 +65,15 @@ ExpectSha256Query = Annotated[
         ),
     ),
 ]
+IncludePersonalQuery = Annotated[
+    bool,
+    Query(
+        description=(
+            "false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè "
+            "(đếm `skipped_personal`). true: cho phép ghi đè cả task cá nhân."
+        )
+    ),
+]
 # Khai bằng Header(alias=...) để OpenAPI (và types sinh cho web) có header này.
 ImportSecretHeader = Annotated[
     str | None,
@@ -187,6 +196,7 @@ async def import_datafile(
     expect_replaced: ExpectReplacedQuery = None,
     expect_sha256: ExpectSha256Query = None,
     import_secret: ImportSecretHeader = None,
+    include_personal: IncludePersonalQuery = False,
 ) -> ImportReport:
     _guard_commit(request, dry_run, expect_replaced, expect_sha256, import_secret)
     body = await _read_body(request)
@@ -194,6 +204,7 @@ async def import_datafile(
     return await import_service.import_datafile(
         session,
         envelope,
+        include_personal=include_personal,
         dry_run=dry_run,
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,

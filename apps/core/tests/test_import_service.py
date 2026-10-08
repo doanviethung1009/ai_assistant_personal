@@ -60,11 +60,13 @@ async def _import(
     *,
     dry_run: bool = False,
     expect: int | None = 0,
+    include_personal: bool = False,
 ) -> ImportReport:
     envelope = DataFileEnvelope.model_validate(data if data is not None else _load())
     return await import_service.import_datafile(
         session,
         envelope,
+        include_personal=include_personal,
         dry_run=dry_run,
         expect_replaced=None if dry_run else expect,
         expect_sha256=None if dry_run else SHA,
@@ -189,7 +191,10 @@ async def test_import_is_idempotent(session: AsyncSession) -> None:
         assert second.counts[key].created == 0
         assert second.counts[key].replaced == 0
     assert second.counts["projects"].unchanged == 3
-    assert second.counts["tasks"].unchanged == 3
+    # T3 là task nhập tay => scope personal => được bảo vệ, tính skipped_personal
+    # chứ không phải unchanged (spec task-scope S8).
+    assert second.counts["tasks"].unchanged == 2
+    assert second.counts["tasks"].skipped_personal == 1
     assert second.counts["task_events"].created == 0
     assert second.counts["task_events"].unchanged == 2
     after = await _row_counts(session)
@@ -297,8 +302,8 @@ async def test_replace_matches_by_natural_key(session: AsyncSession) -> None:
     )
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, external_id) "
-            "VALUES (:i, 'Tieu de DB', 'jira', 'DEMO-2')"
+            "INSERT INTO tasks (id, title, source, scope, external_id) "
+            "VALUES (:i, 'Tieu de DB', 'jira', 'work', 'DEMO-2')"
         ),
         {"i": db_task},
     )
@@ -632,7 +637,8 @@ async def test_replace_keeps_project_when_file_cannot_map_it(session: AsyncSessi
     data = _load()
     data["tasks"][2]["project_id"] = str(uuid.uuid4())  # project không tồn tại ở đâu cả
     data["tasks"][2]["title"] = "Doi tieu de"
-    report = await _import(session, data, expect=1)
+    # T3 là task nhập tay (personal) nên phải bật include_personal mới ghi đè được.
+    report = await _import(session, data, expect=1, include_personal=True)
     assert report.committed, report.issues
     assert "project_unlinked" in {i.code for i in report.issues}
     assert {c.field for c in report.replacements[0].changes} == {"title"}
@@ -894,6 +900,163 @@ async def test_replace_audits_generated_events(session: AsyncSession) -> None:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  scope (epic task-scope)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def _scope(session: AsyncSession, task_id: uuid.UUID) -> str:
+    return str(await session.scalar(text("SELECT scope FROM tasks WHERE id = :i"), {"i": task_id}))
+
+
+async def _insert_personal_t1(session: AsyncSession, task_id: uuid.UUID = T1) -> None:
+    """Task DB `personal` có khoá tự nhiên (jira, DEMO-1) giống T1 trong fixture."""
+    await session.execute(
+        text(
+            "INSERT INTO tasks (id, title, source, scope, external_id) "
+            "VALUES (:i, 'Cua rieng User', 'jira', 'personal', 'DEMO-1')"
+        ),
+        {"i": task_id},
+    )
+    await session.commit()
+
+
+async def test_file_without_scope_derives_from_source(session: AsyncSession) -> None:
+    data = _load()
+    assert all("scope" not in t for t in data["tasks"])
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert await _scope(session, T1) == "work"
+    assert await _scope(session, T2) == "work"
+    assert await _scope(session, T3) == "personal"
+
+
+async def test_file_with_explicit_scope_is_respected_and_not_ignored(
+    session: AsyncSession,
+) -> None:
+    data = _load()
+    data["schema_version"] = 5
+    data["tasks"][0]["scope"] = "personal"
+    data["tasks"][2]["scope"] = "work"
+    data["tasks"][1]["scope"] = None  # null = file không nói gì => suy từ source
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert "scope" not in report.ignored_fields.get("task", [])
+    assert await _scope(session, T1) == "personal"
+    assert await _scope(session, T3) == "work"
+    assert await _scope(session, T2) == "work"
+
+
+async def test_unknown_scope_value_in_file_is_reported(session: AsyncSession) -> None:
+    data = _load()
+    data["tasks"][0]["scope"] = "team"
+    report = await _import(session, data, dry_run=True)
+    assert report.errors >= 1
+    assert "invalid_enum" in {i.code for i in report.issues}
+
+
+async def test_personal_task_in_db_is_protected_from_old_file(session: AsyncSession) -> None:
+    await _import(session)
+    await session.execute(
+        text("UPDATE tasks SET scope = 'personal', title = 'Sua tay' WHERE id = :i"), {"i": T1}
+    )
+    await session.commit()
+    events_before = await session.scalar(
+        text("SELECT count(*) FROM task_events WHERE task_id = :i"), {"i": T1}
+    )
+    before = await _task(session, T1)
+
+    # File v4 (không có scope) khớp T1 theo id. T3 (nhập tay) cũng là personal.
+    report = await _import(session, expect=0)
+    assert report.committed, report.issues
+    assert report.counts["tasks"].skipped_personal == 2
+    assert report.counts["tasks"].replaced == 0
+    assert "skipped_personal" in {i.code for i in report.issues}
+    assert await _task(session, T1) == before
+    assert (
+        await session.scalar(text("SELECT count(*) FROM task_events WHERE task_id = :i"), {"i": T1})
+        == events_before
+    )
+
+
+async def test_include_personal_overwrites_but_keeps_scope(session: AsyncSession) -> None:
+    await _import(session)
+    await session.execute(
+        text("UPDATE tasks SET scope = 'personal', title = 'Sua tay' WHERE id = :i"), {"i": T1}
+    )
+    await session.commit()
+
+    report = await _import(session, expect=1, include_personal=True)
+    assert report.committed, report.issues
+    assert report.counts["tasks"].skipped_personal == 0
+    assert {c.field for c in report.replacements[0].changes} == {"title"}
+    row = await _task(session, T1)
+    assert row["title"] == "Task tong hop 1"
+    # File thiếu scope => giá trị dự phòng, DB giữ lựa chọn của User.
+    assert row["scope"] == "personal"
+
+
+async def test_explicit_personal_in_file_overwrites_work_in_db(session: AsyncSession) -> None:
+    await _import(session)
+    data = _load()
+    data["schema_version"] = 5
+    data["tasks"][0]["scope"] = "personal"
+    report = await _import(session, data, expect=1)
+    assert report.committed, report.issues
+    change = report.replacements[0].changes[0]
+    assert (change.field, change.old, change.new) == ("scope", "work", "personal")
+    assert await _scope(session, T1) == "personal"
+
+
+async def test_natural_key_match_to_personal_task_is_skipped_without_duplicate(
+    session: AsyncSession,
+) -> None:
+    other_id = uuid.uuid4()
+    await _insert_personal_t1(session, other_id)
+
+    report = await _import(session)
+    assert report.committed, report.issues
+    assert report.counts["tasks"].skipped_personal == 1
+    assert report.counts["tasks"].created == 2  # T2 và T3; T1 bị bỏ qua
+    assert "db_constraint" not in {i.code for i in report.issues}
+    assert (
+        await session.scalar(text("SELECT count(*) FROM tasks WHERE external_id = 'DEMO-1'")) == 1
+    )
+    assert await session.scalar(text("SELECT count(*) FROM tasks WHERE id = :i"), {"i": T1}) == 0
+    assert (await _task(session, other_id))["title"] == "Cua rieng User"
+
+
+async def test_events_of_skipped_personal_task_are_not_inserted(session: AsyncSession) -> None:
+    await _insert_personal_t1(session)
+
+    report = await _import(session)
+    assert report.committed, report.issues
+    # T1 có 2 event trong file; cả hai bị bỏ cùng task.
+    assert report.counts["task_events"].skipped_personal == 2
+    assert (
+        await session.scalar(text("SELECT count(*) FROM task_events WHERE task_id = :i"), {"i": T1})
+        == 0
+    )
+
+
+async def test_include_personal_mismatch_between_dry_run_and_commit(
+    session: AsyncSession,
+) -> None:
+    await _import(session)
+    await session.execute(text("UPDATE tasks SET title = 'Sua tay' WHERE id = :i"), {"i": T3})
+    await session.commit()
+
+    dry = await _import(session, dry_run=True)  # không bật include_personal
+    assert dry.counts["tasks"].replaced == 0
+    assert dry.counts["tasks"].skipped_personal == 1
+
+    # Nhập thật bật include_personal: T3 sẽ bị ghi đè nên số lệch với dry-run => huỷ.
+    report = await _import(session, expect=dry.counts["tasks"].replaced, include_personal=True)
+    assert not report.committed
+    assert "replace_count_mismatch" in {i.code for i in report.issues}
+    assert (await _task(session, T3))["title"] == "Sua tay"
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  File thật của User (chỉ đọc, bỏ qua khi thiếu biến môi trường)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -909,7 +1072,7 @@ def _read_only_fingerprint(path: Path) -> tuple[str, float, bytes]:
 
 
 @pytest.mark.skipif(not REAL_DATAFILE, reason="cần IMPORT_REAL_DATAFILE")
-async def test_real_file_datafile(session: AsyncSession) -> None:
+async def test_real_file_datafile(session: AsyncSession, client: Any) -> None:
     assert REAL_DATAFILE
     path = Path(REAL_DATAFILE)
     sha_before, mtime_before, body = _read_only_fingerprint(path)
@@ -952,7 +1115,37 @@ async def test_real_file_datafile(session: AsyncSession) -> None:
     assert again.counts["projects"].created == again.counts["projects"].replaced == 0
     assert again.counts["tasks"].created == again.counts["tasks"].replaced == 0
     assert again.counts["projects"].unchanged == n_projects
-    assert again.counts["tasks"].unchanged == n_tasks
+    # Task cá nhân (nếu file có) được bảo vệ nên tính skipped_personal thay vì unchanged.
+    assert again.counts["tasks"].unchanged + again.counts["tasks"].skipped_personal == n_tasks
+
+    # scope: kỳ vọng tính từ nội dung file theo quy tắc nguồn (spec task-scope 6.1).
+    work_sources = {"jira", "github", "gitlab"}
+    live = [t for t in raw["tasks"] if t.get("deleted_at") is None]
+    n_work = sum(1 for t in live if t.get("source", "manual") in work_sources)
+    n_work_db = await session.scalar(text("SELECT count(*) FROM tasks WHERE scope = 'work'"))
+    n_personal_db = await session.scalar(
+        text("SELECT count(*) FROM tasks WHERE scope = 'personal'")
+    )
+    assert n_work_db == n_work
+    assert n_personal_db == len(live) - n_work
+    # Kết thúc transaction đọc của `session`: teardown của `client` TRUNCATE cần khoá
+    # độc quyền, nếu transaction này còn mở thì test treo.
+    await session.rollback()
+
+    # "Việc của tôi" theo QUY TẮC CŨ của web (isMyTask) viết lại trên JSON thô. Chỉ so
+    # được khi file không có task personal có assignee lạ (quy tắc cũ khác ở đúng chỗ đó).
+    users = raw.get("meta", {}).get("current_users") or []
+    expected_mine = sum(
+        1
+        for t in live
+        if (t.get("assignee") in users if t.get("assignee") else t.get("source") != "jira")
+    )
+    resp = await client.get(
+        "/api/v1/tasks/stats",
+        params={"view": "mine", "owner": users} if users else {"view": "mine"},
+    )
+    assert resp.status_code == 200
+    assert sum(resp.json()["by_status"].values()) == expected_mine
 
     sha_after, mtime_after, _ = _read_only_fingerprint(path)
     assert (sha_after, mtime_after) == (sha_before, mtime_before)

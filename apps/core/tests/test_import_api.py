@@ -222,6 +222,46 @@ async def test_unsupported_schema_version_is_422(client: httpx.AsyncClient) -> N
     assert resp.status_code == 422
 
 
+async def test_schema_version_5_accepted_and_6_rejected(client: httpx.AsyncClient) -> None:
+    data = json.loads(DATAFILE)
+    data["schema_version"] = 5
+    ok = await client.post("/api/v1/import/datafile", json=data)
+    assert ok.status_code == 200
+    assert ok.json()["schema_version"] == 5
+    data["schema_version"] = 6
+    assert (await client.post("/api/v1/import/datafile", json=data)).status_code == 422
+
+
+async def test_include_personal_query_param_reaches_service(client: httpx.AsyncClient) -> None:
+    """Tham số route từng bị khai mà không truyền xuống service (xem test_task_api)."""
+    async with SessionFactory() as s:
+        await s.execute(
+            text(
+                "INSERT INTO tasks (id, title, source, scope, external_id) VALUES "
+                "('aaaaaaa1-0000-4000-8000-000000000001', 'Cua rieng', "
+                "'jira', 'personal', 'DEMO-1')"
+            )
+        )
+        await s.commit()
+    blocked = (
+        await client.post("/api/v1/import/datafile", content=DATAFILE, headers=JSON_HEADERS)
+    ).json()
+    # Mặc định dry-run: chỉ báo cáo, không ghi. T3 chưa có trong DB nên chỉ DEMO-1 bị bảo vệ.
+    assert blocked["counts"]["tasks"]["skipped_personal"] == 1
+    assert blocked["counts"]["tasks"]["replaced"] == 0
+
+    allowed = (
+        await client.post(
+            "/api/v1/import/datafile",
+            params={"include_personal": "true"},
+            content=DATAFILE,
+            headers=JSON_HEADERS,
+        )
+    ).json()
+    assert allowed["counts"]["tasks"]["replaced"] == 1
+    assert allowed["counts"]["tasks"]["skipped_personal"] == 0
+
+
 @pytest.mark.parametrize("body", [b"[1, 2]", b'"abc"', b"khong phai json", b"null"])
 async def test_body_must_be_json_object(client: httpx.AsyncClient, body: bytes) -> None:
     resp = await client.post("/api/v1/import/datafile", content=body, headers=JSON_HEADERS)

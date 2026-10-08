@@ -2,15 +2,34 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from enum import StrEnum
 from math import ceil
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.core.config import settings
-from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
+from app.models.enums import TaskEventType, TaskPriority, TaskScope, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
+
+# Giới hạn tham số `owner` của view=mine (spec task-scope 3.1): chặn đầu vào
+# không đáng tin làm phình mệnh đề IN.
+MAX_OWNERS = 20
+MAX_OWNER_LEN = 200
+
+
+class TaskView(StrEnum):
+    """Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
+
+    `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
+    scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+    """
+
+    ALL = "all"
+    MINE = "mine"
+    PERSONAL = "personal"
+    WORK = "work"
 
 
 class TaskBase(BaseModel):
@@ -44,6 +63,8 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     # Integration và agent dùng cùng endpoint này. Web UI để mặc định MANUAL.
     source: TaskSource = TaskSource.MANUAL
+    # None = suy từ source (default_scope_for). Integration truyền tường minh "work".
+    scope: TaskScope | None = None
     external_id: str | None = Field(default=None, max_length=255)
     external_url: str | None = None
     raw_payload: dict[str, Any] | None = None
@@ -67,6 +88,15 @@ class TaskUpdate(BaseModel):
     estimate_minutes: int | None = Field(default=None, gt=0, le=60 * 24 * 30)
     spent_minutes: int | None = Field(default=None, ge=0)
     tags: list[str] | None = None
+    scope: TaskScope | None = None
+
+    @model_validator(mode="after")
+    def _scope_not_null(self) -> TaskUpdate:
+        # Cột scope NOT NULL: `null` tường minh phải bị từ chối ở đây (422) thay vì
+        # để Postgres ném IntegrityError (500). Vắng khoá thì không nằm trong fields_set.
+        if "scope" in self.model_fields_set and self.scope is None:
+            raise ValueError("scope không được null")
+        return self
 
     @field_validator("title")
     @classmethod
@@ -119,6 +149,8 @@ class TaskRead(BaseModel):
     completed_at: datetime | None
     tags: list[str]
     source: TaskSource
+    # Bắt buộc, không default: OpenAPI sinh field required cho web.
+    scope: TaskScope
     external_id: str | None
     external_url: str | None
     created_at: datetime
