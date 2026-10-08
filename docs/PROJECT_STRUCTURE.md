@@ -31,7 +31,7 @@ ai_assistant_personal/
 │   └── specs/         #    Spec của architect: _TEMPLATE.md và ví dụ EXAMPLE-*.md
 ├── infra/             # 🏗️ Cấu hình hạ tầng (postgres, litellm, monitoring)
 ├── scripts/           # 🛠️ Script vận hành
-│   ├── *.sh, *.js     #    Tiện ích đang dùng (release, bootstrap, add-ai-log...)
+│   ├── *.sh, *.js     #    Tiện ích đang dùng (release, bootstrap...)
 │   ├── checks/        #    Script kiểm thử chạy được nhiều lần (vault-crypto-check.ts)
 │   ├── git-hooks/     #    Hook kiểm tra commit message
 │   └── patches/       #    Script một lần, CHỈ khi thật cần; lịch sử đã chạy ở archive/

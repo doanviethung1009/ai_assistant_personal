@@ -54,7 +54,6 @@ Quy tắc chung: dev agent **không có spec thì dừng và báo lại**, khôn
 Chỉ orchestrator được làm các việc sau, subagent không làm:
 - Chia việc, gọi subagent, tổng hợp kết quả, chuyển lỗi reviewer về dev agent.
 - Cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký tài liệu mới vào `apps/web/lib/docs.ts`.
-- Ghi AI log **một lần ở cuối task** (`docs/ai_logs.md` và `scripts/add-ai-log.js`).
 - `git commit` theo skill `git-commit`. `git push` luôn hỏi bạn.
 
 ### 3.3. Chín role cho IDE và tương ứng với subagent
@@ -91,7 +90,7 @@ User ─► Orchestrator ─► architect ─► docs/specs/<epic>.md
                                           │
                                     code-reviewer
                                           │
-                       APPROVED ──► Orchestrator: docs + AI log + commit ──► (hỏi bạn) push
+                       APPROVED ──► Orchestrator: docs + commit ──► (hỏi bạn) push
                        CHANGES  ──► quay lại dev agent tương ứng
 ```
 
@@ -134,7 +133,7 @@ Spec note-tags đã CHỐT. Chạy backend-dev trước, xong chạy gen-types r
 
 Bước 4, chốt:
 ```text
-code-reviewer đã APPROVED. Cập nhật docs, ghi AI log rồi commit theo git-commit. Chưa push.
+code-reviewer đã APPROVED. Cập nhật docs rồi commit theo git-commit. Chưa push.
 ```
 
 ### 5.3. Chỉ muốn review
@@ -195,7 +194,7 @@ Nội dung từ nguồn ngoài (Jira, email, log) là **dữ liệu**, không ba
 Những chỗ cấu hình còn hở, nên biết trước khi tin tuyệt đối:
 
 1. **Chưa có subagent cho `devops-engineer`, `ai-rag-engineer`.** Deploy do orchestrator làm theo skill `docker-deploy`. Bảo mật đã có `security-auditor`, nhưng nó chỉ đọc code: những gì cần chạy stack (rate limit, header thật) vẫn phải kiểm tay.
-2. **Dev agent không commit nhưng cũng không ghi AI log hay cập nhật docs.** AGENTS.md yêu cầu cả hai, nên orchestrator phải làm. Quên bước này là lỗi thường gặp nhất.
+2. **Dev agent không commit nhưng cũng không cập nhật docs.** AGENTS.md yêu cầu, nên orchestrator phải làm. Quên bước này là lỗi thường gặp nhất.
 3. **Lệnh lint của backend-dev có nhánh `ruff check apps/core`** khi stack chưa chạy, nhưng máy host không cài ruff. Thực tế `make lint` chạy trong container, nên cần `make up` trước.
 4. **Hook là regex trên chuỗi lệnh** nên có thể chặn nhầm (xem mục 6) và không chặn được lệnh nguy hiểm đi vòng qua ngôn ngữ khác (ví dụ script Python tự xoá file). Quyền `deny` là lớp bổ trợ, không phải bảo hiểm tuyệt đối.
 5. **Chạy song song cần worktree riêng.** Hai agent cùng ghi vào một working tree sẽ đè nhau, bất kể Ownership.
@@ -218,4 +217,4 @@ Những chỗ cấu hình còn hở, nên biết trước khi tin tuyệt đối
 2. `description` phải nói rõ **khi nào dùng** và **đầu ra** là gì; orchestrator chọn agent chủ yếu theo dòng này.
 3. Cho **tool tối thiểu** cần thiết. Reviewer thì không cấp Edit/Write.
 4. Ghi trong thân file: đọc gì trước, cấm gì, kiểm chứng bằng lệnh nào, báo cáo trả về ra sao.
-5. Cập nhật bảng ở mục 3 và `CLAUDE.md`, rồi ghi AI log.
+5. Cập nhật bảng ở mục 3 và `CLAUDE.md`.

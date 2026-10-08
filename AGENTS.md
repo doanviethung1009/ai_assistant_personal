@@ -45,9 +45,9 @@ Nếu User yêu cầu một task phức tạp (như "Thêm bảng XYZ vào datab
 - **Đồng bộ Tài liệu:** Mỗi khi bạn tạo ra hoặc sửa đổi một App, Tool, Chức năng, hay API mới, bạn **PHẢI** chủ động cập nhật các file tài liệu liên quan trong thư mục `docs/` (Ví dụ: Cập nhật `API_REFERENCE.md` khi thêm API, cập nhật `PROJECT_STRUCTURE.md` khi thêm thư mục mới, cập nhật `AI_DATA_STORAGE.md` khi đổi flow dữ liệu).
 - **Đăng ký Tài liệu mới:** Bất kỳ file Markdown (`.md`) mới nào được sinh ra, bạn PHẢI tự động vào file `apps/web/lib/docs.ts` và khai báo nó vào mảng `DOCS` để file đó hiện lên UI Tab "Tài liệu" cho User. Không làm bước này bị coi là **Lỗi Nghiêm Trọng**.
 
-### 3.4. Nhật ký AI (AI Task Trace)
-- Trừ khi User chỉ hỏi một câu ngắn nghiệm thu, còn nếu User giao cho bạn một **nhiệm vụ lập trình/tạo tài liệu** (tạo app, fix bug, viết API), trước khi kết thúc lượt chat bạn **PHẢI** tự động append một Log báo cáo vào file `docs/ai_logs.md`.
-- Đọc kỹ rule `ai-logger.md` để biết cú pháp ghi log.
+### 3.4. Ghi vết phiên làm việc (đã thay AI log viết tay)
+- **Không còn ghi AI log bằng tay.** `docs/ai_logs.md`, `scripts/add-ai-log.js`, bảng `ai_logs`, API và trang `/ai-logs` đã gỡ (2026-10-08). Bản sao log cũ nằm ngoài repo: `~/.claude/trace/ai_assistant_personal/legacy-ai-logs/`.
+- Việc ghi vết do **hook của Claude Code** làm tự động, mặc định TẮT (bật bằng `CLAUDE_TRACE_ENABLED=1`): xem `docs/CLAUDE_TRACE_HOOKS.md`. Hướng dùng dữ liệu để training: `docs/LLM_TRAINING_DATA_PLAN.md`.
 
 ### 3.5. Dữ liệu và Phân trang (Pagination)
 - **Tuyệt đối tuân thủ Server-side Pagination:** NẾU User yêu cầu làm một danh sách (list, bảng, lưới) hiển thị dữ liệu nhiều, THÌ mặc định bạn phải triển khai phân trang từ Backend (limit/offset) tới Frontend (truyền tham số `?page=`), mặc định 50 items/trang. Không được phép load ALL dữ liệu 1 lần.

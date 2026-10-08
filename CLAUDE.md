@@ -36,5 +36,5 @@ khi chạy song song, dùng git worktree riêng cho từng agent.
 
 ## Chỉ orchestrator làm (subagent không làm)
 - Cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký docs mới vào `apps/web/lib/docs.ts`.
-- Ghi AI log (Rule 3.4) một lần ở cuối task, không ghi theo từng subagent.
+- Không ghi AI log tay (đã gỡ, xem mục 3.4 AGENTS.md); ghi vết do hook tự động.
 - `git commit` theo skill `git-commit`. `git push` luôn hỏi User trước (hook chặn sẵn).

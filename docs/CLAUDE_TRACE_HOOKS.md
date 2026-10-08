@@ -1,7 +1,7 @@
 # Hook ghi vết phiên Claude Code (Giai đoạn 1)
 
-> Cập nhật: 2026-10-08. Trạng thái: **giai đoạn 1, chỉ thêm**. AI log viết tay
-> (`docs/ai_logs.md`, `data/ai-logs.json`, bảng `ai_logs`, `/ai-logs`) vẫn giữ nguyên để so sánh.
+> Cập nhật: 2026-10-08. Trạng thái: **đã thay AI log viết tay** (giai đoạn 2). `docs/ai_logs.md`, `add-ai-log.js`,
+> bảng `ai_logs`, API và `/ai-logs` đã gỡ; bản sao log cũ: `~/.claude/trace/ai_assistant_personal/legacy-ai-logs/`.
 
 ## Mục đích (WHY)
 

@@ -32,7 +32,7 @@ Dự án là một Monorepo chia làm 2 ứng dụng độc lập:
 
 ## 3. Quản lý Lưu trữ (Data Storage)
 Hệ thống linh hoạt chuyển đổi qua biến môi trường `DATA_SOURCE`:
-1. **`file` (Local JSON - Đang dùng cho Phase 1):** Dữ liệu lưu tại `data/builder-data.json`. Sử dụng `SCHEMA_VERSION` (hiện là v4) để tự động Migrate dữ liệu cũ. Log của AI được tách riêng ra `ai-logs.json` để tránh giật lag khi đọc/ghi file chính.
+1. **`file` (Local JSON - Đang dùng cho Phase 1):** Dữ liệu lưu tại `data/builder-data.json`. Sử dụng `SCHEMA_VERSION` (hiện là v4) để tự động Migrate dữ liệu cũ.
 2. **`api` (Postgres - Dành cho Phase 2):** Sử dụng `pgvector` phục vụ RAG (tìm kiếm AI cho Notes). Bắt buộc dùng `scram-sha-256` để bảo mật.
 3. **`memory`:** Dùng chạy Smoke Test CI/CD.
 
@@ -44,7 +44,7 @@ Bất kỳ AI nào code trong dự án này BẮT BUỘC tuân thủ:
 2. **Backend:** Trả về JSON chuẩn hoá. Bắt buộc xử lý ngoại lệ an toàn, không Crash.
 3. **Quy trình Hoàn thiện (Rule 3.10):** Code -> Viết Docs -> Chạy kiểm thử (Skill `qc-uat`) -> Báo cáo.
 4. **Git Flow (Rule 3.11):** Không tự ý Push code nếu chưa xin phép. Push phải có `CHANGELOG.md`.
-5. **Nhật ký Trí tuệ (Dual Logging):** Code xong 1 tác vụ lớn phải gọi script `node scripts/add-ai-log.js` để lưu vào file JSON và tự động append vào `docs/ai_logs.md`.
+5. **Ghi vết phiên AI:** do hook Claude Code làm tự động (mặc định tắt), xem `docs/CLAUDE_TRACE_HOOKS.md`. AI log viết tay đã gỡ.
 
 ---
 *Nếu bạn là AI, sau khi đọc xong file này, bạn đã sở hữu 95% tri thức của hệ thống. Hãy bắt tay vào giải quyết yêu cầu của User ngay lập tức!*

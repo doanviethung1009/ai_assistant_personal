@@ -180,11 +180,11 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "rules", "comment-style.md"),
   },
   {
-    slug: "ai-logs",
-    title: "Quy tắc Nhật ký AI (Task Trace)",
-    description: "Cơ chế tự động lưu vết các quyết định, prompt và xử lý của Agent.",
-    category: "3. Quy ước Code & Rules",
-    file: path.join(".agents", "rules", "ai-logger.md"),
+    slug: "llm-training-data-plan",
+    title: "Đề xuất dữ liệu training LLM từ trace",
+    description: "Hướng dùng dữ liệu hook ghi vết để làm eval, few-shot và (sau cùng) fine-tune; điều kiện chặn là chính sách dữ liệu Jira.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "LLM_TRAINING_DATA_PLAN.md"),
   },
   {
     slug: "skill-git-commit",
@@ -244,7 +244,7 @@ export const DOCS: DocEntry[] = [
   {
     slug: "ai-data-storage",
     title: "Lưu trữ Dữ liệu AI",
-    description: "Kiến trúc lưu trữ 2 luồng: Trace Log (Markdown) và Entity (Database/JSON) dành cho AI.",
+    description: "Hai luồng dữ liệu AI: Trace ngoài repo (hook ghi vết) và Entity trong Database/JSON.",
     category: "5. Kiến trúc & Dữ liệu",
     file: path.join("docs", "AI_DATA_STORAGE.md"),
   },
@@ -283,6 +283,13 @@ export const DOCS: DocEntry[] = [
     description: "Spec do architect viết sau khi đối chiếu code thật (CHỐT), kèm phụ lục chỉ ra 14 chỗ sai của bản mẫu viết tay.",
     category: "6. Spec thiết kế",
     file: path.join("docs", "specs", "note-archive.md"),
+  },
+  {
+    slug: "spec-remove-ai-log",
+    title: "Spec: Gỡ hệ AI log viết tay",
+    description: "Phạm vi gỡ rule, script, bảng ai_logs, API, trang và import/export; thay bằng hook ghi vết (User đã duyệt).",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "remove-handwritten-ai-log.md"),
   },
   {
     slug: "spec-task-scope",

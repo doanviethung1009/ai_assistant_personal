@@ -1,7 +1,7 @@
 # Chuyển dữ liệu từ file JSON sang Postgres
 
 > Dành cho bạn đang dùng web ở chế độ `DATA_SOURCE=file` (dữ liệu ở `data/builder-data.json`) và muốn chuyển sang Postgres (`DATA_SOURCE=api`) mà không mất dữ liệu.
-> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI), **B2** (người dùng hiện tại, URL đồng bộ) và **B4** (kết nối Jira, upsert hàng loạt, sync Jira ở backend). Lịch sử Chrome (B3) đã gỡ hẳn, không còn chuyển (xem mục 6).
+> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note; nhật ký AI đã gỡ), **B2** (người dùng hiện tại, URL đồng bộ) và **B4** (kết nối Jira, upsert hàng loạt, sync Jira ở backend). Lịch sử Chrome (B3) đã gỡ hẳn, không còn chuyển (xem mục 6).
 
 ## 1. Cần biết trước khi làm
 
@@ -41,7 +41,7 @@
    curl -s http://localhost:8000/health/ready
    ```
    `health/ready` phải trả OK (Postgres và Redis sẵn sàng). Lỗi thì xem log: `make logs-api`. Quay về chế độ file bất cứ lúc nào: đặt `DATA_SOURCE=file` trong `.env` rồi `make up`; dữ liệu ở hai kho không bị xoá.
-5. **Lấy file dữ liệu để nhập.** Dùng thẳng `data/builder-data.json`, hoặc xuất từ web đang chạy chế độ file: trang Dữ liệu, tab **Xuất dữ liệu**, tải "JSON Toàn bộ Dữ liệu" (và "JSON Nhật ký AI" nếu muốn giữ log).
+5. **Lấy file dữ liệu để nhập.** Dùng thẳng `data/builder-data.json`, hoặc xuất từ web đang chạy chế độ file: trang Dữ liệu, tab **Xuất dữ liệu**, tải "JSON Toàn bộ Dữ liệu".
 6. **Nhập:** trang Dữ liệu, tab **Nhập dữ liệu**, mục "Chuyển dữ liệu JSON vào Postgres":
    1. Chọn loại file và file (tối đa 8 MB).
    2. Bấm **Kiểm tra**. Chưa ghi gì. Đọc báo cáo: số tạo mới, ghi đè, không đổi, bỏ qua, lỗi.
@@ -73,7 +73,6 @@
 |---|---|---|
 | Key project có khoảng trắng, dấu, chữ thường (`ONE NEXUS`, `SAO MỘC`, `KHÁC`) | `ONE_NEXUS`, `SAO_MOC`, `KHAC` (tên hiển thị giữ nguyên) | Backend chỉ nhận `A-Z`, `0-9`, `_`, bắt đầu bằng chữ |
 | Màu `hsl(...)` | Màu hex `#rrggbb` | Cột màu của backend chỉ nhận hex |
-| Category nhật ký AI lạ (`UI/UX`, `DOCS`) | `web` hoặc `other` | Backend chỉ có 5 loại |
 | `external_url` không phải http/https | Bỏ, kèm cảnh báo | Chặn `data:` và scheme lạ |
 | `raw_payload` | **Không nhận** | Là dữ liệu không đáng tin |
 | Task `done` thiếu `completed_at` | Điền từ `updated_at` | Để thống kê "hoàn thành 7 ngày" đúng |
@@ -99,8 +98,6 @@ curl -X POST -H "X-API-Key: $API_KEY" -H "X-Import-Secret: $IMPORT_COMMIT_SECRET
   "http://localhost:8000/api/v1/import/datafile?dry_run=false&expect_replaced=<N>&expect_sha256=<file_sha256>"
 ```
 
-Nhật ký AI: thay `/datafile` bằng `/ai-logs`. Tham chiếu: `docs/API_REFERENCE.md` mục 5.
-
 Lỗi thường gặp: `403` (sai mật khẩu hoặc chưa đặt `IMPORT_COMMIT_SECRET`), `409` (đang có lần nhập khác chạy), `413` (file lớn hơn 10 MB), `422` (thiếu `expect_*` khi nhập thật, hoặc JSON sai), và `committed=false` kèm `replace_count_mismatch` (dữ liệu đã đổi sau lần Kiểm tra) hoặc `file_changed_since_dry_run`.
 
 ## 5. Hoàn tác
@@ -119,19 +116,20 @@ Xem một lần nhập đã làm gì:
 SELECT entity, action, count(*) FROM import_audit WHERE import_id = :'import_id' GROUP BY 1, 2;
 ```
 
-Hoàn tác bản ghi **tạo mới**. Thứ tự quan trọng: xoá sự kiện trước (kể cả sự kiện được nhập vào task đã có sẵn, các sự kiện này không bị `CASCADE` vì task cha không bị xoá), rồi task, note, nhật ký AI, cuối cùng project:
+Hoàn tác bản ghi **tạo mới**. Thứ tự quan trọng: xoá sự kiện trước (kể cả sự kiện được nhập vào task đã có sẵn, các sự kiện này không bị `CASCADE` vì task cha không bị xoá), rồi task, note, cuối cùng project:
 
 ```sql
 BEGIN;
 DELETE FROM task_events WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'task_event' AND action = 'created');
 DELETE FROM tasks       WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'task'       AND action = 'created');
 DELETE FROM notes       WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'note'       AND action = 'created');
-DELETE FROM ai_logs     WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'ai_log'     AND action = 'created');
 DELETE FROM projects    WHERE id IN (SELECT entity_id FROM import_audit WHERE import_id = :'import_id' AND entity = 'project'    AND action = 'created');
 -- Kiểm tra nếu còn sót sự kiện do lần nhập sinh ra mà chưa có audit (lần nhập cũ):
 SELECT count(*) FROM task_events WHERE actor LIKE 'import:%' AND payload->>'import_id' = :'import_id';
 ROLLBACK;  -- đổi thành COMMIT khi đã kiểm tra số dòng
 ```
+
+Ghi chú về nhật ký AI (đã gỡ): hạ migration `f3a8c1d5e7b9` chỉ tạo lại bảng `ai_logs` RỖNG; dòng `import_audit` có `entity='ai_log'` của các lần nhập cũ trỏ tới id không còn, đó là dấu vết lịch sử, không cần dọn. Muốn giữ dữ liệu bảng trước khi `make migrate`: `\copy ai_logs TO 'ai_logs_backup.csv' CSV HEADER`. Triển khai code mới (đã bỏ route) TRƯỚC khi chạy migration để API cũ không trả 500 ở giữa hai bước.
 
 Hoàn tác bản ghi **bị ghi đè** (ví dụ trả lại `title` và `status` của task). Liệt kê đúng các cột cần trả, `before` chứa mọi cột:
 

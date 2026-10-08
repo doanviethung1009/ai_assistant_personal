@@ -28,7 +28,8 @@ Nhiều tài liệu nói về AI agent vì dự án dùng nhiều IDE và nhiề
 | Biết AI phải làm gì khi bắt đầu session | **`NEW_AGENT_ONBOARDING.md`** và `AI_HANDOFF_STATE.md` | |
 | Viết prompt giao việc | `AI_AGENT_GUIDE.md` mục 3 (một agent) | Prompt cho nhiều agent: `MULTI_AGENT_SYSTEM.md` mục 5 |
 | Tự tạo thêm rule, skill, hook | `CREATE_AI_CUSTOMIZATIONS.md` | |
-| Biết hook ghi vết phiên Claude Code ghi gì, ở đâu, tắt thế nào | `CLAUDE_TRACE_HOOKS.md` | Giai đoạn 1, AI log viết tay vẫn còn |
+| Biết hook ghi vết phiên Claude Code ghi gì, ở đâu, tắt thế nào | `CLAUDE_TRACE_HOOKS.md` | Thay AI log viết tay (đã gỡ) |
+| Hướng dùng dữ liệu trace làm tài liệu training LLM (đề xuất) | `LLM_TRAINING_DATA_PLAN.md` | Chờ User chốt chính sách dữ liệu |
 | Biết quy trình phát triển sản phẩm 6 bước | `PRODUCT_DEVELOPMENT_LIFECYCLE.md` | |
 | Biết luật code | `.agents/rules/*.md` (xem nhóm "Quy ước Code" trên tab Tài liệu) | `AGENTS.md` là luật chung cho mọi agent |
 
@@ -36,15 +37,14 @@ Nhiều tài liệu nói về AI agent vì dự án dùng nhiều IDE và nhiề
 
 1. **Bắt đầu:** hướng dẫn sử dụng, README, cấu trúc dự án, quy trình phát triển (PDLC).
 2. **Làm việc với AI Agent:** Quickstart, hệ thống multi-agent, ví dụ thực chiến, prompt mẫu, onboarding, cẩm nang Claude và Codex.
-3. **Quy ước Code & Rules:** luật backend, web, comment, nhật ký AI, bối cảnh dự án.
+3. **Quy ước Code & Rules:** luật backend, web, comment, bối cảnh dự án.
 4. **Kỹ năng AI (Skills):** commit, thêm entity, QC/UAT. Các skill khác nằm trong `.agents/skills/`.
 5. **Kiến trúc & Dữ liệu:** blueprint, kiến trúc mục tiêu, mẫu kiến trúc, lưu trữ dữ liệu, Vault, API, Jira.
-6. **Spec thiết kế:** spec thật `note-archive.md` và bản mẫu viết tay `EXAMPLE-note-archive.md`.
+6. **Spec thiết kế:** spec thật `note-archive.md` và bản mẫu viết tay `EXAMPLE-note-archive.md`; spec gỡ AI log viết tay `remove-handwritten-ai-log.md`.
 7. **DevOps & Triển khai:** Git flow, deploy, Docker, CI và test, vận hành.
 
 ## 4. Tài liệu không cần đọc (chỉ để tra cứu)
 
-- `ai_logs.md`: nhật ký các lần AI làm việc, chỉ thêm vào cuối, không đọc từ đầu.
 - `AI_HANDOFF_STATE.md`: AI đọc khi bắt đầu session; người đọc nếu cần biết trạng thái hiện tại.
 
 ## 5. Quy ước khi thêm tài liệu mới

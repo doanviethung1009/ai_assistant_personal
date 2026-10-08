@@ -46,7 +46,7 @@ Dưới đây là Vòng đời hoàn thiện một Epic (Ví dụ: Tính năng G
 
 ## 🤖 Biến thể cho Claude Code: orchestrator + subagent
 
-Năm bước trên dùng "đóng vai" (`@.agents/roles/*.md`), phù hợp IDE như Cursor hay Gemini. Với **Claude Code**, repo có sẵn subagent thật trong `.claude/agents/`, mỗi subagent chạy trong context riêng, có danh sách tool giới hạn. Session chính đóng vai **orchestrator**: chia việc, gọi subagent, tổng hợp, và là nơi duy nhất commit, cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts`, ghi AI log.
+Năm bước trên dùng "đóng vai" (`@.agents/roles/*.md`), phù hợp IDE như Cursor hay Gemini. Với **Claude Code**, repo có sẵn subagent thật trong `.claude/agents/`, mỗi subagent chạy trong context riêng, có danh sách tool giới hạn. Session chính đóng vai **orchestrator**: chia việc, gọi subagent, tổng hợp, và là nơi duy nhất commit, cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts`.
 
 ### Bảng tương ứng giữa hai cách
 
@@ -67,7 +67,7 @@ Năm bước trên dùng "đóng vai" (`@.agents/roles/*.md`), phù hợp IDE nh
 4. **backend-dev** làm trước (model, migration, API), chạy `make lint` và `make smoke`, rồi `make gen-types` để web có type mới.
 5. **frontend-dev** làm sau khi contract đã có. Chỉ chạy song song với backend khi spec đủ chi tiết, và mỗi agent dùng một git worktree riêng.
 6. **db-reviewer** (nếu có migration hoặc đổi model) rồi **code-reviewer** trên toàn bộ diff. Reviewer không sửa file; orchestrator chuyển lỗi về dev agent.
-7. **Orchestrator** cập nhật docs, ghi AI log, commit theo skill `git-commit`. `git push` luôn hỏi User.
+7. **Orchestrator** cập nhật docs, commit theo skill `git-commit`. `git push` luôn hỏi User.
 
 ### Prompt mẫu
 
