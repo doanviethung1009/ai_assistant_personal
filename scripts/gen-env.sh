@@ -47,6 +47,9 @@ set_var GRAFANA_ADMIN_PASSWORD "$(openssl rand -hex 12)"
 # Mật khẩu gõ tay mỗi lần "Nhập thật" JSON vào Postgres (ghi đè, không hoàn tác bằng UI).
 # Không có biến này thì core từ chối nhập thật. Xem docs/specs/import-json-to-postgres.md.
 set_var IMPORT_COMMIT_SECRET "$(openssl rand -hex 12)"
+# Khoá Fernet mã hoá token Jira trước khi lưu ở Postgres (base64 url-safe của 32 byte).
+# Không in ra màn hình: mất khoá thì phải nhập lại token, nên hãy sao lưu .env.
+set_var INTEGRATION_SECRET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
 
 chmod 600 .env
 
