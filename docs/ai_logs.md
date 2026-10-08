@@ -890,3 +890,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - backend-dev: `integration_connections`, `/integrations`, `/tasks/upsert-batch`, `/import/verify-secret`. frontend-dev: quản lý kết nối, chuyển localStorage một lần, Excel/URL sync qua upsert-batch.
   - Review (code, bảo mật, DB) hai lượt (backend rồi web). Lỗi đáng kể đã sửa: priority bị đặt lại về medium, tags/description bị ghi đè, thiếu completed_at/created_at, thiếu trần body, lọc raw_payload theo giá trị, ciphertext chưa gắn kết nối, race tạo project, JiraQuickSync ghi lại token vào localStorage, mật khẩu chỉ kiểm cú pháp trước khi tải URL. Xoá route GET /api/sync.
 - **Phản hồi:** B4a xong code và tài liệu; 597 test pass, tsc sạch. Chưa UAT, chưa `make smoke`. B4b (chạy sync) chưa làm.
+
+### [09-10-2026 02:00] | Category: [API]
+- **Prompt:** Gỡ hẳn tính năng lịch sử duyệt web (User xác nhận không cần nữa, cả Postgres lẫn file JSON), trên nhánh `chore/remove-browser-history` từ `main`.
+- **Xử lý:**
+  - Dùng git worktree riêng (`../ai_assistant_personal-rm-bh`) vì thư mục chính đang giữ thay đổi chưa commit của B4b; không đụng nhánh `feat/jira-sync-b4b`.
+  - Backend: xoá route/model/schema/service/test của browser_history, route `/import/browser-history`, đăng ký router/models, TRUNCATE trong conftest, hai tiền tố trong `_NO_ECHO_PREFIXES`. Giữ `guard_import_secret`, `ImportSecretHeader`. Migration mới `d7e2a9c4b1f6` (`op.drop_table`, downgrade tạo lại bảng); `pg_dump -s` sau downgrade giống hệt schema ở `c9d1e3f5a7b2`. Không sửa migration cũ.
+  - Web: xoá `/history`, `chrome-history.ts`, `actions-chrome.ts`, `chrome-history-manager.tsx`, mục menu, loại file trong panel Nhập, hàm/alias trong `api.ts`/`types.ts`, tuỳ chọn xoá và backup Chrome ở `store/engine.ts` (trước đây xoá toàn bộ sẽ xoá luôn `data/chrome-history.json`). `openapi.d.ts` sinh lại bằng openapi-typescript (chỉ có dòng bị xoá). `data/chrome-history.json` giữ nguyên.
+  - Docs: API_REFERENCE, DATA_MIGRATION_TO_POSTGRES, AI_HANDOFF_STATE (mục 9), ops.md, huong-dan-su-dung, PROJECT_STRUCTURE, spec (mục PHA B3 thành ghi chú đã gỡ). `docs.ts` không đăng ký gì liên quan.
+  - Khó khăn: máy không có Docker nên dựng Postgres tạm cổng 55433; hook chặn `drop database` qua psql nên không dọn DB so sánh bằng tay.
+- **Phản hồi:** Xong code và docs; ruff sạch, `alembic heads` một head, `alembic check` sạch, downgrade/upgrade ổn, 567 test pass, `tsc` sạch. Chưa commit.

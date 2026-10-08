@@ -46,9 +46,9 @@ Giao diện người dùng chính được xây dựng bằng Next.js App Router
 | `app/layout.tsx` | Root layout bọc toàn bộ ứng dụng, nạp CSS và Font. | |
 | `app/page.tsx` | Trang chủ (Dashboard chính). | |
 | `app/globals.css` | Chứa toàn bộ Design System, biến CSS (colors, spacing, animation). | Sửa theme ở đây. |
-| `app/[module]/page.tsx` | Các trang chức năng (history, tasks, notes, v.v.). | Ví dụ: `app/history/page.tsx` |
+| `app/[module]/page.tsx` | Các trang chức năng (tasks, notes, projects, v.v.). | Ví dụ: `app/tasks/page.tsx` |
 | `components/` | Các UI Components dùng chung (Button, Table, Markdown...). | Độc lập, tái sử dụng cao. |
-| `lib/` | Hàm tiện ích client/server, thao tác dữ liệu. | Chứa `chrome-history.ts`, `format.ts`. |
+| `lib/` | Hàm tiện ích client/server, thao tác dữ liệu. | Chứa `api.ts`, `format.ts`. |
 | `actions*.ts` | Các Server Actions (Next.js) thực thi logic phía server. | Gọi thẳng từ component thay cho API REST. |
 | `next.config.mjs` | Cấu hình webpack, env, routing cho Next.js. | |
 
@@ -67,7 +67,7 @@ API Server xử lý logic nghiệp vụ và tương tác Database.
 | `alembic/` | Thư mục quản lý phiên bản Database (Migrations). | Dùng lệnh `alembic upgrade head`. |
 
 ### Các thư mục hỗ trợ khác
-- **`data/`**: Chứa các file `*.json` sinh ra từ quá trình cào dữ liệu (như `chrome-history.json`).
+- **`data/`**: Chứa các file `*.json` sinh ra từ quá trình cào dữ liệu.
 - **`docs/`**: Toàn bộ tài liệu mô tả kiến trúc, hướng dẫn sử dụng và API.
 - **`scripts/`**: Script vận hành (như `release.sh`). `scripts/checks/` là script kiểm thử dùng lại được. `scripts/patches/` chỉ dành cho script một lần *thật sự* cần thiết; 71 script `patch_*`/`fix_*` cũ đã chạy xong nằm ở `scripts/patches/archive/` (không chạy lại). Claude Code bị hook chặn tạo `patch_*`/`fix_*` mới, hãy dùng Edit trực tiếp.
 
@@ -82,7 +82,7 @@ Trong hệ thống Antigravity (hoặc khi dùng AI IDE), các file **Steering /
 
 ## 📝 Tóm lược quy trình làm việc
 
-- **Phát triển UI/Tính năng web**: Làm việc chủ yếu trong `apps/web/app/` (các page/router), `apps/web/components/` (UI), và `apps/web/lib/` (logic như cào chrome history).
+- **Phát triển UI/Tính năng web**: Làm việc chủ yếu trong `apps/web/app/` (các page/router), `apps/web/components/` (UI), và `apps/web/lib/` (logic như gọi core API, định dạng ngày giờ).
 - **Phát triển Backend/API**: Làm việc trong `apps/core/`.
 - **Thao tác Dữ liệu**: Dữ liệu lấy về (từ file Excel, History) sẽ lưu ra JSON vào thư mục `data/` rồi frontend sẽ đọc.
 - **Tài liệu**: Mỗi khi làm xong chức năng lớn, AI sẽ tự cập nhật vào thư mục `docs/`.

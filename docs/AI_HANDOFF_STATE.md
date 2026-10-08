@@ -40,7 +40,7 @@
 - **Spec CHỐT:** `docs/specs/import-json-to-postgres.md` (User duyệt B1-B4, quyết định replace có rào chắn, Vault KHÔNG vào Postgres). Hướng dẫn dùng và hoàn tác: `docs/DATA_MIGRATION_TO_POSTGRES.md`.
 - **B1 đã code (nhánh `feat/import-b1`, chưa merge):** `POST /api/v1/import/datafile` và `/import/ai-logs`; migration `e5f1a3b7c9d2` (bảng `import_runs`, `import_audit`); panel nhập ở tab Nhập của trang Dữ liệu khi `DATA_SOURCE=api`. Rào chắn: `dry_run` mặc định, `expect_replaced`, `expect_sha256`, mật khẩu `IMPORT_COMMIT_SECRET` (header `X-Import-Secret`), advisory lock, khoá dòng, all-or-nothing, audit `before`.
 - **Việc cần làm khi bắt đầu dùng:** `.env` hiện có phải tự thêm `IMPORT_COMMIT_SECRET` (`make env` chỉ sinh khi tạo `.env` mới); thiếu thì core từ chối nhập thật.
-- **B2 (cài đặt người dùng, sync_urls), B3 (lịch sử Chrome), B4 (Jira sync ở backend) chưa làm.** Đến lúc đó chế độ `api` vẫn chưa có Jira sync, nhập Excel, lọc task cá nhân/team, nên chưa bỏ chế độ file.
+- **B2 (cài đặt người dùng, sync_urls) và B4 (Jira sync ở backend) chưa làm (B3 lịch sử Chrome đã bị gỡ, xem mục 9).** Đến lúc đó chế độ `api` vẫn chưa có Jira sync, nhập Excel, lọc task cá nhân/team, nên chưa bỏ chế độ file.
 - **Vault không nằm trong Postgres:** `pg_dump` không chứa nó; sao lưu riêng bằng `/api/export?entity=vault`.
 - **Rủi ro đã ghi nhận:** web không có đăng nhập; file cũ có thể ghi đè trạng thái mới hơn (đã có cờ "File cũ hơn" và xác nhận 2 lớp); `import_audit.before` giữ bản sao đầy đủ và chưa có chính sách xoá.
 - **`data/builder-data.json` là dữ liệu thật của User:** test chỉ mở chế độ đọc (kiểm sha256 không đổi); không bao giờ ghi hay chép vào repo.
@@ -63,17 +63,16 @@
 - **Đã review và sửa (vòng 1):** Drive chuyển hướng sang `drive.usercontent.google.com` (đã thêm); Kelvin `K` lọt Python (đã chặn bằng `re.ASCII`); `SYNC_URL_EXTRA_HOSTS` từ chối host không dấu chấm và hậu tố dùng chung; tải file theo stream có trần 20 MB; thêm/xoá URL không bị khoá bởi URL cũ; PUT settings dùng chung advisory lock với nhập. Parity TS/Python đối chiếu 225 URL + 33 cấu hình, 0 lệch.
 - **Rủi ro còn lại:** `*.sharepoint.com` và `*.googleusercontent.com` nhận mọi tenant (nội dung do bên khác kiểm soát được parse và nhập); chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền); `xlsx` 0.18.5 có CVE (việc riêng đã tách); OneDrive cá nhân chưa kiểm được; `jira-actions.ts` fetch `baseUrl` tuỳ ý kèm `Authorization` (SSRF có sẵn, để B4).
 - **Merge:** sau PR task-scope (#13) vì migration nối tiếp. `.env` hiện có không có `SYNC_URL_EXTRA_HOSTS` (tuỳ chọn); Jira on-prem cần thêm host vào biến này.
-- **Chưa làm:** pha B3 (lịch sử Chrome), B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
+- **Chưa làm:** pha B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
 
-## 9. Lịch sử Chrome vào Postgres (pha B3, đã merge vào `main`)
+## 9. Lịch sử Chrome: đã GỠ HẲN (nhánh `chore/remove-browser-history`, chưa merge)
 
-- **Đã code:** bảng `browser_history` (migration `b8c4d6e0f3a5`, nối sau `a7b3c5d9e2f4`; unique `(profile, url_hash)`, hai index `(last_visit_at DESC, id)` và `(profile, last_visit_at DESC, id)`, 4 CHECK), `POST /browser-history/batch`, `GET`, `DELETE` (cần `X-Import-Secret`), `POST /import/browser-history`. Web: `scrapeChromeHistory` có tham số `timeMode` (`local` cho file, `utc` cho api), `/history` phân trang server-side 50/trang, nút xoá theo profile kèm mật khẩu, loại file `chrome-history.json` trong panel Nhập.
-- **Bảo mật:** sửa lỗi nội suy shell (`execFile`, ép `limit` 1..10000, `customPath` phải là file `History` dưới thư mục Chrome, mở bằng `O_NOFOLLOW`); URL bỏ query/fragment/userinfo; lỗi không lộ đường dẫn máy; 422 của batch không trả lại URL gốc.
-- **Lỗi múi giờ đã tránh:** nhánh api gửi giờ UTC có `Z`, không dùng `localtime`, vì upsert GREATEST khiến giờ lệch lên trước không tự sửa được.
-- **Đã review (code, bảo mật, DB) và sửa một vòng:** DELETE đòi mật khẩu; index khớp truy vấn; sắp theo `url_hash` chống deadlock; giới hạn độ dài field.
-- **Rủi ro còn lại:** path URL có thể chứa token (đã bỏ query nhưng không cắt path); `q` tìm kiếm có thể nằm trong access log của uvicorn; `COUNT(*)` mỗi trang; web chưa có đăng nhập; chưa chạy UAT với Chrome và sqlite3 thật, chưa chạy `make smoke`; `smoke-test.sh` chưa có assertion cho B3; `customPath` ngoài thư mục Chrome mặc định (Chromium, Brave) bị từ chối.
-- **Merge:** sau B2 (đã merge). Migration `b8c4d6e0f3a5` là head mới.
-- **Chưa làm:** pha B4 (Jira sync ở backend).
+- **Quyết định (User xác nhận 08-10-2026):** không cần tính năng lịch sử duyệt web nữa, ở cả Postgres lẫn file JSON. Pha B3 từng làm xong rồi bị gỡ.
+- **Đã gỡ:** backend (`api/v1/browser_history.py`, model, schema, service, route `POST /import/browser-history`, test, mục TRUNCATE trong conftest); migration MỚI `d7e2a9c4b1f6` xoá bảng `browser_history` (down_revision `c9d1e3f5a7b2`; downgrade tạo lại bảng đúng như `b8c4d6e0f3a5`, đã so `pg_dump -s` giống hệt). Web: trang `/history`, `lib/chrome-history.ts`, `actions-chrome.ts`, `chrome-history-manager.tsx`, mục menu, loại file `chrome-history.json` ở panel Nhập, hàm trong `lib/api.ts`, alias trong `lib/types.ts`, tuỳ chọn xoá/backup Chrome ở chế độ file (`wipe-data-manager`, `store/engine.ts`). `openapi.d.ts` sinh lại.
+- **Giữ nguyên:** migration cũ `b8c4d6e0f3a5` (không sửa lịch sử Alembic); `guard_import_secret`, `ImportSecretHeader` (B4a/B4b dùng); phần che `input` của 422 trong `main.py` (chỉ bỏ hai tiền tố browser-history); file `data/chrome-history.json` của User (không xoá; trước đây `wipe_all_data` có thể xoá nó, nay thì không).
+- **Backup cũ:** vòng dọn `data/backups/` xoá mọi `*.json`, nên lần xoá dữ liệu đầu tiên sau thay đổi này cũng xoá các `chrome-history-backup-*.json` cũ (file gốc `data/chrome-history.json` vẫn giữ).
+- **Merge:** nên merge SAU B4b. Dễ xung đột: `app/api/deps.py`, `app/main.py`, `lib/generated/openapi.d.ts` (sinh lại sau merge, không sửa tay), các docs. Khi merge nhớ `alembic heads` còn đúng một head (nếu B4b thêm migration, đổi `down_revision` của `d7e2a9c4b1f6`).
+- **Bảng `browser_history` ở DB đang chạy sẽ bị xoá khi `make migrate`;** muốn giữ dữ liệu thì `pg_dump -t browser_history` trước.
 
 ## 10. Jira ở backend, phần B4a: kết nối mã hoá và upsert-batch (nhánh `feat/jira-sync-b4`, chưa merge)
 
