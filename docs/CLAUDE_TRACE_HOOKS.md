@@ -72,9 +72,9 @@ settings là 10/10/30 s, vì `SessionEnd` mặc định chỉ có 1,5 s), không
 cục bộ, timeout 3 s), không chặn tool, không ghi vào repo, ghi nối thêm bằng `O_APPEND` +
 `flock`, không bao giờ cắt/ghi đè file có sẵn.
 
-Hạn chế đã biết: mật khẩu chứa `/` hoặc `@` **thô** trong URL (không mã hoá %) không bị che hết; dạng mật khẩu đứng riêng không kèm từ khoá và không có tiền tố nhận dạng được (ví dụ chuỗi ngẫu nhiên ngắn) lọt; transcript lớn hơn ~40 MB có thể vượt báo thức 25 s của `SessionEnd` và không có bản sao (chỉ có dòng trong `errors.log`); transcript còn chứa kết quả `make psql` và nội dung Note (lệnh, SQL, cấu hình) ngoài các mẫu trên. Trên hệ file không hỗ trợ hard link (exFAT, SMB) hook dùng đổi tên thay cho link (race rất hẹp); bị SIGKILL giữa chừng có thể để lại `.tmp-*` (lần sau dọn bản cũ hơn 1 giờ).
+Hạn chế đã biết: mật khẩu chứa `/` hoặc `@` **thô** trong URL (không mã hoá %) không bị che hết; dạng mật khẩu đứng riêng không kèm từ khoá và không có tiền tố nhận dạng được (ví dụ chuỗi ngẫu nhiên ngắn) lọt; transcript lớn hơn ~100 MB có thể vượt báo thức 25 s của `SessionEnd` (đo: 31 MB mất 7,4 s) và không có bản sao (chỉ có dòng trong `errors.log`); transcript còn chứa kết quả `make psql` và nội dung Note (lệnh, SQL, cấu hình) ngoài các mẫu trên. Trên hệ file không hỗ trợ hard link (exFAT, SMB) hook dùng đổi tên thay cho link (race rất hẹp); bị SIGKILL giữa chừng có thể để lại `.tmp-*` (lần sau dọn bản cũ hơn 1 giờ).
 
-**Đã kiểm chứng (2026-10-08):** một phiên `claude -p` thật chạy Stop và SessionEnd qua harness, sinh `turns.jsonl` và `sessions/<sid>.<UTC>.jsonl` (quyền 600, thư mục 700, không có `errors.log`) với transcript nhỏ. **Chưa kiểm** với transcript hàng chục MB: nếu `SessionEnd` bị cắt vì timeout, đặt `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Giá trị trong `.env` là đường dẫn (bắt đầu bằng `/` hoặc `~`) không bị che, vì đường dẫn không phải secret.
+**Đã kiểm chứng (2026-10-08):** một phiên `claude -p` thật chạy Stop và SessionEnd qua harness, sinh `turns.jsonl` và `sessions/<sid>.<UTC>.jsonl` (quyền 600, thư mục 700, không có `errors.log`) với transcript nhỏ. Test hiệu năng transcript lớn (mặc định bỏ qua): `TRACE_SLOW_TESTS=1 python3 -m unittest discover -s .claude/hooks/tests -k large`. Nếu `SessionEnd` bị cắt vì timeout, đặt `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Giá trị trong `.env` là đường dẫn (bắt đầu bằng `/` hoặc `~`) không bị che, vì đường dẫn không phải secret.
 
 ## Bật hook (mặc định TẮT)
 
@@ -106,7 +106,7 @@ kết quả. Chưa có pipeline train; đó là việc giai đoạn sau.
   thì không). **Quyết định của User (2026-10-08): chưa rõ chính sách, chỉ lưu cục bộ, CHƯA
   được dùng để train** cho đến khi User xác nhận. Không sao chép, upload hay chia sẻ thư mục
   trace.
-- Trace tăng theo thời gian (transcript hàng MB mỗi phiên); chưa có xoay vòng/dọn tự động.
+- Trace tăng theo thời gian (transcript hàng MB mỗi phiên). Xoay vòng: mỗi lần `SessionEnd`, transcript trong `sessions/` cũ hơn `CLAUDE_TRACE_RETENTION_DAYS` (mặc định 90; `0` = giữ mãi) bị xoá. `turns.jsonl` không bị xoá, và dọn dẹp không theo symlink.
 - Khi đã bật, hook chạy trên mọi lượt của mọi session trong repo này, kể cả subagent.
 
 ## File liên quan

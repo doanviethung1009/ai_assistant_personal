@@ -103,6 +103,36 @@ def _append_line(path: Path, line: str) -> None:
         os.close(fd)  # đóng fd cũng nhả khoá
 
 
+def prune_old(base: Path) -> None:
+    """Xoá transcript trong sessions/ cũ hơn CLAUDE_TRACE_RETENTION_DAYS (mặc định 90, 0 = giữ mãi).
+
+    Transcript mới là phần phình to (MB mỗi phiên) và chứa dữ liệu nhạy cảm nhất, nên
+    không để tồn tại vô hạn. `turns.jsonl` (chỉ mục nhỏ) không bị đụng. Chỉ xoá file
+    thường nằm DƯỚI base/sessions (lstat: không theo symlink), tên .jsonl hoặc .tmp-*.
+    """
+    try:
+        days = int(os.environ.get("CLAUDE_TRACE_RETENTION_DAYS", "90"))
+    except ValueError:
+        days = 90
+    root = base / "sessions"
+    if days <= 0 or not root.is_dir() or root.is_symlink():
+        return
+    cutoff = time.time() - days * 86400
+    for path in root.rglob("*"):
+        try:
+            st = path.lstat()
+            if (stat.S_ISREG(st.st_mode) and st.st_mtime < cutoff
+                    and (path.suffix == ".jsonl" or path.name.startswith(".tmp-"))):
+                path.unlink()
+        except OSError:
+            continue
+    for d in sorted((p for p in root.rglob("*") if p.is_dir() and not p.is_symlink()), reverse=True):
+        try:
+            d.rmdir()  # chỉ thành công khi đã rỗng
+        except OSError:
+            pass
+
+
 def log_error(base: Path | None, where: str, exc: BaseException) -> None:
     """Ghi loại lỗi, KHÔNG ghi thông điệp: thông điệp exception có thể chứa dữ liệu."""
     msg = f"{datetime.now(timezone.utc).isoformat()} {where} {type(exc).__name__}"
@@ -360,6 +390,7 @@ def handle(ev: dict[str, Any], base: Path) -> None:
             stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
             # Resume ghi tiếp cùng session_id: mỗi lần kết thúc là một bản riêng.
             copy_redacted(tp, base / "sessions" / f"{safe_sid}.{stamp}.jsonl", counts)
+        prune_old(base)  # sau khi chép: dọn lỗi không được làm mất bản sao mới
     # Sự kiện khác: bỏ qua im lặng.
 
 
