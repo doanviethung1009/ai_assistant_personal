@@ -190,3 +190,9 @@ export type FieldChange = Schemas["FieldChange"];
 export type EntityCounts = Schemas["EntityCounts"];
 export type ImportIssue = Schemas["ImportIssue"];
 export type KeyChange = Schemas["KeyChange"];
+
+// ── Lịch sử duyệt web (B3) ─────────────────────────────────────────────
+export type BrowserHistoryRow = Schemas["BrowserHistoryRead"];
+export type BrowserHistoryBatchItem = Schemas["BrowserHistoryItem"];
+export type BrowserHistoryBatchResult = Schemas["BrowserHistoryBatchResult"];
+export type BrowserHistoryImportReport = Schemas["BrowserHistoryImportReport"];

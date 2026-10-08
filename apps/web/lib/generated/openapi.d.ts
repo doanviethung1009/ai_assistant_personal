@@ -583,6 +583,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/import/browser-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Nhập chrome-history.json (chỉ tăng, không ghi đè xuống, không xoá)
+         * @description Nhập lịch sử Chrome từ file.
+         *
+         *     Khác B1: upsert chỉ lấy số lớn hơn nên không có bản ghi bị ghi đè xuống, vì vậy không
+         *     đòi `expect_replaced`/`expect_sha256`. Nhập thật vẫn cần mật khẩu nhập (dữ liệu duyệt
+         *     web là nhạy cảm và web không có đăng nhập).
+         */
+        post: operations["import_browser_history_api_v1_import_browser_history_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/current-users": {
         parameters: {
             query?: never;
@@ -620,6 +644,44 @@ export interface paths {
         put: operations["put_sync_urls_api_v1_settings_sync_urls_put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-history/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Đẩy một lô lịch sử (upsert, chỉ tăng, idempotent) */
+        post: operations["push_batch_api_v1_browser_history_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/browser-history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Danh sách lịch sử, mới nhất trước */
+        get: operations["list_history_api_v1_browser_history_get"];
+        put?: never;
+        post?: never;
+        /**
+         * Xoá toàn bộ lịch sử của một profile (KHÔNG hoàn tác, cần X-Import-Secret)
+         * @description Web không có đăng nhập và xoá không hoàn tác, nên đòi cùng mật khẩu như nhập thật.
+         */
+        delete: operations["delete_history_api_v1_browser_history_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -699,6 +761,101 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** BrowserHistoryBatch */
+        BrowserHistoryBatch: {
+            /** Profile */
+            profile: string;
+            /** Items */
+            items: components["schemas"]["BrowserHistoryItem"][];
+        };
+        /** BrowserHistoryBatchResult */
+        BrowserHistoryBatchResult: {
+            /** Received */
+            received: number;
+            /** Created */
+            created: number;
+            /** Updated */
+            updated: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Invalid */
+            invalid: number;
+        };
+        /** BrowserHistoryDeleteResult */
+        BrowserHistoryDeleteResult: {
+            /** Deleted */
+            deleted: number;
+        };
+        /**
+         * BrowserHistoryImportReport
+         * @description Báo cáo nhập `chrome-history.json`; dry_run chỉ đếm, không ghi.
+         */
+        BrowserHistoryImportReport: {
+            /** Received */
+            received: number;
+            /** Created */
+            created: number;
+            /** Updated */
+            updated: number;
+            /** Unchanged */
+            unchanged: number;
+            /** Invalid */
+            invalid: number;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Committed */
+            committed: boolean;
+            /** Profile */
+            profile: string;
+            /** File Sha256 */
+            file_sha256: string;
+        };
+        /**
+         * BrowserHistoryItem
+         * @description Một dòng của batch. `last_visit_at` không múi giờ được hiểu là giờ display_timezone.
+         */
+        BrowserHistoryItem: {
+            /** Url */
+            url: string;
+            /** Title */
+            title?: string | null;
+            /**
+             * Visit Count
+             * @default 0
+             */
+            visit_count: number;
+            /**
+             * Last Visit At
+             * Format: date-time
+             */
+            last_visit_at: string;
+        };
+        /** BrowserHistoryRead */
+        BrowserHistoryRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Profile */
+            profile: string;
+            /** Url */
+            url: string;
+            /** Title */
+            title: string;
+            /** Visit Count */
+            visit_count: number;
+            /**
+             * Last Visit At
+             * Format: date-time
+             */
+            last_visit_at: string;
+            /**
+             * Synced At
+             * Format: date-time
+             */
+            synced_at: string;
         };
         /** ComponentHealth */
         ComponentHealth: {
@@ -1067,6 +1224,20 @@ export interface components {
         Page_AiLogRead_: {
             /** Items */
             items: components["schemas"]["AiLogRead"][];
+            /**
+             * Total
+             * @description Tổng số bản ghi khớp filter, không tính phân trang
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** Page[BrowserHistoryRead] */
+        Page_BrowserHistoryRead_: {
+            /** Items */
+            items: components["schemas"]["BrowserHistoryRead"][];
             /**
              * Total
              * @description Tổng số bản ghi khớp filter, không tính phân trang
@@ -2918,6 +3089,54 @@ export interface operations {
             };
         };
     };
+    import_browser_history_api_v1_import_browser_history_post: {
+        parameters: {
+            query?: {
+                /** @description true (mặc định): chạy thử rồi ROLLBACK, không ghi gì. */
+                dry_run?: boolean;
+                /** @description Tên thư mục profile, mặc định Default. */
+                profile?: string;
+            };
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Synced At */
+                    synced_at?: string | null;
+                    /** Items */
+                    items: {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserHistoryImportReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_current_users_api_v1_settings_current_users_get: {
         parameters: {
             query?: never;
@@ -3011,6 +3230,107 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncUrlsBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    push_batch_api_v1_browser_history_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BrowserHistoryBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserHistoryBatchResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_history_api_v1_browser_history_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                profile?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_BrowserHistoryRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_history_api_v1_browser_history_delete: {
+        parameters: {
+            query: {
+                profile: string;
+            };
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BrowserHistoryDeleteResult"];
                 };
             };
             /** @description Validation Error */

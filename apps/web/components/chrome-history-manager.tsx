@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useEffect } from "react";
-import { syncChromeHistoryAction, listChromeProfilesAction } from "@/app/actions-chrome";
+import { syncChromeHistoryAction, listChromeProfilesAction, deleteChromeHistoryAction } from "@/app/actions-chrome";
 
 interface ProfileInfo {
   folder: string;
@@ -49,7 +49,10 @@ export function ChromeHistoryManager() {
       const pathToUse = customPath.trim() || undefined;
       const res = await syncChromeHistoryAction(5000, pathToUse);
       if (res.ok) {
-        setResult({ ok: true, message: `Thành công! Đã trích xuất ${res.count} dòng lịch sử web. Lưu tại: ${res.path}` });
+        const where = res.pushed
+          ? `Đã đẩy lên Postgres (profile ${res.profile}): ${res.pushed.created} mới, ${res.pushed.updated} cập nhật, ${res.pushed.unchanged} không đổi, ${res.pushed.invalid} bỏ qua.`
+          : `Lưu tại: ${res.path}`;
+        setResult({ ok: true, message: `Thành công! Đã trích xuất ${res.count} dòng lịch sử web. ${where}` });
       } else {
         setResult({ ok: false, message: `Lỗi: ${res.error}` });
       }
@@ -60,7 +63,7 @@ export function ChromeHistoryManager() {
     <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 mt-6">
       <h2 className="text-sm font-semibold">Đồng bộ Lịch sử Google Chrome</h2>
       <p className="mt-1 text-xs text-[var(--color-ink-muted)] mb-3">
-        Tự động copy dữ liệu lịch sử duyệt web (Google Chrome) trên máy tính này và trích xuất thành file JSON độc lập <code>(data/chrome-history.json)</code> để phân tích sau.
+        Tự động copy dữ liệu lịch sử duyệt web (Google Chrome) trên máy tính này và trích xuất rồi lưu: ở chế độ file thành <code>data/chrome-history.json</code>, ở chế độ api đẩy lên Postgres theo từng profile.
       </p>
 
       {/* Chọn Chrome Profile */}
@@ -144,5 +147,70 @@ export function ChromeHistoryManager() {
         </p>
       )}
     </section>
+  );
+}
+
+/**
+ * Xoá toàn bộ lịch sử đã lưu của một profile trên Postgres (chỉ render ở chế độ api).
+ *
+ * Vì sao có confirm: DELETE không hoàn tác được và lịch sử là dữ liệu cá nhân. Mutation
+ * đi qua Server Action nên API key không xuống browser.
+ */
+export function ChromeHistoryDeleteForm({ defaultProfile }: { defaultProfile: string }) {
+  const [profile, setProfile] = useState(defaultProfile);
+  const [secret, setSecret] = useState("");
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const handleDelete = () => {
+    const name = profile.trim();
+    if (!name || !secret) return;
+    if (!window.confirm(`Xoá TOÀN BỘ lịch sử của profile "${name}" trong Postgres? Không thể hoàn tác.`)) return;
+    const sent = secret;
+    // Xoá mật khẩu khỏi state ngay sau khi lấy ra, dù thành công hay lỗi.
+    setSecret("");
+    setResult(null);
+    startTransition(async () => {
+      const res = await deleteChromeHistoryAction(name, sent);
+      setResult(
+        res.ok
+          ? { ok: true, message: `Đã xoá ${res.deleted ?? 0} dòng của profile ${name}.` }
+          : { ok: false, message: `Lỗi: ${res.error}` },
+      );
+    });
+  };
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
+      <span className="text-sm font-medium">Xoá theo profile:</span>
+      <input
+        type="text"
+        value={profile}
+        onChange={(e) => setProfile(e.target.value)}
+        placeholder="Default"
+        maxLength={200}
+        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm"
+      />
+      <input
+        type="password"
+        value={secret}
+        onChange={(e) => setSecret(e.target.value)}
+        placeholder="Mật khẩu nhập dữ liệu"
+        autoComplete="new-password"
+        maxLength={256}
+        className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm"
+      />
+      <button
+        type="button"
+        onClick={handleDelete}
+        disabled={pending || !profile.trim() || !secret}
+        className="rounded-md bg-[var(--color-danger)] px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+      >
+        {pending ? "Đang xoá..." : "Xoá"}
+      </button>
+      {result && (
+        <span className={`text-xs ${result.ok ? "text-green-500" : "text-[var(--color-danger)]"}`}>{result.message}</span>
+      )}
+    </div>
   );
 }
