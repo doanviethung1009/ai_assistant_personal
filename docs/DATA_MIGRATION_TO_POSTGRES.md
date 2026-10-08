@@ -1,7 +1,7 @@
 # Chuyển dữ liệu từ file JSON sang Postgres
 
 > Dành cho bạn đang dùng web ở chế độ `DATA_SOURCE=file` (dữ liệu ở `data/builder-data.json`) và muốn chuyển sang Postgres (`DATA_SOURCE=api`) mà không mất dữ liệu.
-> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI) và **B2** (người dùng hiện tại, URL đồng bộ). Các pha B3 và B4 chưa làm (xem mục 6).
+> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI) và **B2** (người dùng hiện tại, URL đồng bộ) và **B3** (lịch sử Chrome). Pha B4 chưa làm (xem mục 6).
 
 ## 1. Cần biết trước khi làm
 
@@ -131,10 +131,10 @@ TO STDOUT WITH CSV HEADER;
 | Thứ | Hiện tại | Kế hoạch |
 |---|---|---|
 | `current_users`, `sync_urls`, danh sách assignee | **Đã chuyển (B2):** lưu ở bảng `app_settings`, nhập từ `meta.current_users` và `sync_urls` của file | Xong |
-| Lịch sử Chrome | Kho file riêng | Pha B3 |
+| Lịch sử Chrome | **Đã chuyển (B3):** bảng `browser_history`; ở chế độ api web đẩy lên core, hoặc nhập `chrome-history.json` ở tab Nhập (chọn profile, mặc định `Default`). Xoá theo profile cần mật khẩu | Xong |
 | Jira sync, URL/Excel sync | Chỉ chạy ở chế độ file | Pha B4 |
 | **Vault** | **Cố ý KHÔNG chuyển.** Vẫn là file `data/vault.json`, độc lập với `DATA_SOURCE` | Không chuyển |
 
-**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Jira sync và nhập Excel/URL chưa hoạt động cho tới khi xong B4 ("người dùng hiện tại", lọc task cá nhân/công việc và danh sách URL đồng bộ đã chạy ở chế độ api). Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
+**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Jira sync và nhập Excel/URL chưa hoạt động cho tới khi xong B4 (lịch sử Chrome đã chạy ở chế độ api) ("người dùng hiện tại", lọc task cá nhân/công việc và danh sách URL đồng bộ đã chạy ở chế độ api). Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
 
 **Vault và sao lưu Postgres:** vì Vault nằm ngoài Postgres nên `pg_dump` **không** bao gồm nó. Hãy sao lưu riêng qua `/api/export?format=json&entity=vault` (tab Xuất dữ liệu, "JSON Két bảo mật").

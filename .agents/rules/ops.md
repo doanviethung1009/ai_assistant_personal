@@ -41,9 +41,11 @@ apps/core/app/
   models/task.py       Task, TaskEvent — nơi định nghĩa constraint và index
   models/project.py    Project
   models/note.py       Note — sổ tay command/SQL/cấu hình, có soft delete
+  models/browser_history.py  BrowserHistory — lịch sử Chrome, unique (profile, url_hash); URL đã bỏ query/fragment
   schemas/             Pydantic, TaskRead có computed field is_overdue
   schemas/common.py    Page[T], và normalize_tags() dùng chung Task với Note
   services/
+    browser_history_service.py  chuẩn hoá URL/profile, upsert GREATEST theo lô
     task_service.py    toàn bộ logic nghiệp vụ của task
     project_service.py logic project
     note_service.py    logic sổ tay, gồm soft delete và mark_used

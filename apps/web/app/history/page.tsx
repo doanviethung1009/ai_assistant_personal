@@ -1,5 +1,7 @@
 import fs from "fs";
 import path from "path";
+import { IS_LOCAL, listBrowserHistory } from "@/lib/api";
+import { ChromeHistoryDeleteForm } from "@/components/chrome-history-manager";
 import { formatDateTime } from "@/lib/format";
 import Link from "next/link";
 
@@ -10,11 +12,12 @@ interface ChromeHistoryEntry {
   title: string;
   visit_count: number;
   last_visit_time: string;
+  profile?: string;
 }
 
 const PAGE_SIZE = 50;
 
-export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; time?: string; from?: string; to?: string; sort?: string; page?: string }> }) {
+export default async function HistoryPage({ searchParams }: { searchParams: Promise<{ q?: string; profile?: string; time?: string; from?: string; to?: string; sort?: string; page?: string }> }) {
   const sp = await searchParams;
   const currentQ = sp.q || "";
   const currentTime = sp.time || "all";
@@ -23,21 +26,46 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   const currentSort = sp.sort === "asc" ? "asc" : "desc";
   const currentPage = Math.max(1, parseInt(sp.page || "1", 10) || 1);
   const dataPath = path.join(process.cwd(), "../../data/chrome-history.json");
-  let data: { synced_at: string; source_path?: string; items: ChromeHistoryEntry[] } | null = null;
+  // Chế độ api: lọc theo q/profile và phân trang ngay ở core; time/from/to/sort không có ở core.
+  const currentProfile = (sp.profile || "").trim();
+  let data: { synced_at: string | null; source_path?: string; items: ChromeHistoryEntry[] } | null = null;
   let errorMsg = "";
+  let apiTotal = 0;
 
-  try {
-    if (fs.existsSync(dataPath)) {
-      const raw = fs.readFileSync(dataPath, "utf8");
-      data = JSON.parse(raw);
+  if (IS_LOCAL) {
+    try {
+      if (fs.existsSync(dataPath)) {
+        const raw = fs.readFileSync(dataPath, "utf8");
+        data = JSON.parse(raw);
+      }
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : String(err);
     }
-  } catch (err: any) {
-    errorMsg = err.message;
+  } else {
+    try {
+      const toEntry = (r: { url: string; title: string; visit_count: number; last_visit_at: string; profile: string }): ChromeHistoryEntry => ({
+        url: r.url,
+        title: r.title,
+        visit_count: r.visit_count,
+        last_visit_time: formatDateTime(r.last_visit_at),
+        profile: r.profile,
+      });
+      let res = await listBrowserHistory({ q: currentQ, profile: currentProfile, limit: PAGE_SIZE, offset: (currentPage - 1) * PAGE_SIZE });
+      // Trang vượt cuối (xoá dữ liệu, đổi filter): lấy lại trang cuối thay vì hiện bảng rỗng.
+      if (res.items.length === 0 && res.total > 0) {
+        const lastPage = Math.ceil(res.total / PAGE_SIZE);
+        res = await listBrowserHistory({ q: currentQ, profile: currentProfile, limit: PAGE_SIZE, offset: (lastPage - 1) * PAGE_SIZE });
+      }
+      apiTotal = res.total;
+      data = { synced_at: null, items: res.items.map(toEntry) };
+    } catch (err) {
+      errorMsg = err instanceof Error ? err.message : String(err);
+    }
   }
 
 
   let filteredItems: ChromeHistoryEntry[] = [];
-  if (data) {
+  if (data && IS_LOCAL) {
     filteredItems = data.items;
     
     // 1. Lọc theo từ khóa
@@ -83,7 +111,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   }
 
   // Sắp xếp theo thời gian
-  if (filteredItems.length > 0) {
+  if (IS_LOCAL && filteredItems.length > 0) {
     filteredItems.sort((a, b) => {
       const timeA = a.last_visit_time || "";
       const timeB = b.last_visit_time || "";
@@ -92,15 +120,16 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
   }
 
   // Phân trang
-  const totalItems = filteredItems.length;
+  const totalItems = IS_LOCAL ? filteredItems.length : apiTotal;
   const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
   const safePage = Math.min(currentPage, totalPages);
   const startIdx = (safePage - 1) * PAGE_SIZE;
-  const pagedItems = filteredItems.slice(startIdx, startIdx + PAGE_SIZE);
+  const pagedItems = IS_LOCAL ? filteredItems.slice(startIdx, startIdx + PAGE_SIZE) : (data?.items ?? []);
 
   const makeLink = (updates: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
     if (currentQ) q.set("q", currentQ);
+    if (currentProfile) q.set("profile", currentProfile);
     if (currentTime !== "all") q.set("time", currentTime);
     if (currentFrom) q.set("from", currentFrom);
     if (currentTo) q.set("to", currentTo);
@@ -120,7 +149,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
       <div>
         <h1 className="text-xl font-semibold tracking-tight">Lịch sử duyệt web (Chrome)</h1>
         <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
-          Danh sách các trang web bạn đã truy cập, được trích xuất từ dữ liệu cục bộ của Chrome.
+          Danh sách các trang web bạn đã truy cập, được trích xuất từ dữ liệu cục bộ của Chrome{IS_LOCAL ? "" : " và lưu trong Postgres"}.
           {data?.source_path && (
             <span className="block mt-0.5 text-xs font-mono opacity-60">Nguồn: {data.source_path}</span>
           )}
@@ -146,6 +175,7 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             {currentTime !== "all" && <input type="hidden" name="time" value={currentTime} />}
             {currentFrom && <input type="hidden" name="from" value={currentFrom} />}
             {currentTo && <input type="hidden" name="to" value={currentTo} />}
+            {currentProfile && <input type="hidden" name="profile" value={currentProfile} />}
             <input
               type="search"
               name="q"
@@ -158,7 +188,26 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
             </button>
           </form>
 
-          {/* Filter thời gian preset */}
+          {!IS_LOCAL && (
+            <form method="get" className="flex flex-wrap items-center gap-2">
+              {currentQ && <input type="hidden" name="q" value={currentQ} />}
+              <span className="text-sm font-medium w-24">Profile:</span>
+              <input
+                type="text"
+                name="profile"
+                defaultValue={currentProfile}
+                placeholder="Tất cả profile (vd: Default)"
+                maxLength={200}
+                className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1 text-sm"
+              />
+              <button type="submit" className="rounded-md bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)]">
+                Lọc
+              </button>
+            </form>
+          )}
+
+          {/* Filter thời gian preset (chỉ chế độ file; core chưa hỗ trợ) */}
+          {IS_LOCAL && (<>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium w-24">Thời gian:</span>
             {[
@@ -216,31 +265,45 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
               </Link>
             )}
           </form>
+          </>)}
         </div>
       )}
+
+      {!IS_LOCAL && !errorMsg && <ChromeHistoryDeleteForm defaultProfile={currentProfile} />}
 
       {data && (
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">Tổng cộng: {totalItems} bản ghi</span>
-            <span className="text-xs text-[var(--color-ink-muted)]">
-              Đồng bộ lần cuối: {formatDateTime(data.synced_at)}
-            </span>
+            <span className="text-sm font-medium">Tổng: {totalItems} kết quả</span>
+            {data.synced_at && (
+              <span className="text-xs text-[var(--color-ink-muted)]">
+                Đồng bộ lần cuối: {formatDateTime(data.synced_at)}
+              </span>
+            )}
           </div>
 
+          {pagedItems.length === 0 ? (
+            <div className="rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-ink-muted)]">
+              {currentQ || currentProfile || (IS_LOCAL && (currentTime !== "all" || currentFrom || currentTo))
+                ? "Không có bản ghi nào khớp bộ lọc hiện tại."
+                : IS_LOCAL
+                  ? <>Chưa có dữ liệu lịch sử nào. Vui lòng sang tab <b>Dữ liệu</b> để trích xuất lần đầu!</>
+                  : <>Chưa có lịch sử duyệt web nào trong Postgres. Sang tab <b>Dữ liệu</b> để cào từ Chrome hoặc nhập file chrome-history.json.</>}
+            </div>
+          ) : (
           <div className="overflow-x-auto rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)]">
             <table className="w-full text-left text-sm">
               <thead className="border-b border-[var(--color-border)] bg-[var(--color-surface-raised)]">
                 <tr>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">
-                    <Link
+                    {!IS_LOCAL ? "Thời gian" : <Link
                       href={makeLink({ sort: currentSort === "desc" ? "asc" : undefined, page: "1" })}
                       className="inline-flex items-center gap-1 hover:text-[var(--color-accent)] transition-colors"
                       title={currentSort === "desc" ? "Đang: Mới nhất trước — Bấm để đổi" : "Đang: Cũ nhất trước — Bấm để đổi"}
                     >
                       Thời gian
                       <span className="text-xs">{currentSort === "desc" ? "↓" : "↑"}</span>
-                    </Link>
+                    </Link>}
                   </th>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)]">Tiêu đề & URL</th>
                   <th className="px-4 py-2 font-medium text-[var(--color-ink-muted)] text-right">Lượt truy cập</th>
@@ -248,9 +311,10 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
               </thead>
               <tbody className="divide-y divide-[var(--color-border)]">
                 {pagedItems.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-[var(--color-surface-hover)] transition-colors">
+                  <tr key={`${startIdx + idx}`} className="hover:bg-[var(--color-surface-hover)] transition-colors">
                     <td className="px-4 py-3 align-top whitespace-nowrap text-xs text-[var(--color-ink-muted)]">
                       {item.last_visit_time}
+                      {item.profile && <span className="block opacity-60">{item.profile}</span>}
                     </td>
                     <td className="px-4 py-3 align-top">
                       <div className="flex flex-col gap-1 max-w-xl">
@@ -276,12 +340,13 @@ export default async function HistoryPage({ searchParams }: { searchParams: Prom
               </tbody>
             </table>
           </div>
+          )}
 
           {/* Thanh phân trang */}
           {totalPages > 1 && (
             <div className="flex items-center justify-between rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-4 py-3">
               <span className="text-xs text-[var(--color-ink-muted)]">
-                Hiển thị {startIdx + 1}–{Math.min(startIdx + PAGE_SIZE, totalItems)} / {totalItems} bản ghi
+                Tổng: {totalItems} kết quả
               </span>
               <div className="flex items-center gap-2">
                 {safePage > 1 ? (

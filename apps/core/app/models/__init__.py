@@ -7,6 +7,7 @@ là có thể sinh migration DROP bảng đó.
 from app.db.base import Base
 from app.models.ai_log import AiLog
 from app.models.app_setting import AppSetting
+from app.models.browser_history import BrowserHistory
 from app.models.enums import (
     AiLogCategory,
     ImportAction,
@@ -30,6 +31,7 @@ __all__ = [
     "AiLogCategory",
     "AppSetting",
     "Base",
+    "BrowserHistory",
     "ImportAction",
     "ImportAudit",
     "ImportEntity",

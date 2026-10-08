@@ -70,17 +70,23 @@ async def handle_domain_error(request: Request, exc: DomainError) -> JSONRespons
 
 
 SETTINGS_PATH_PREFIX = "/api/v1/settings"
+# Các route có URL duyệt web (có thể mang token) trong body: 422 không được echo lại `input`.
+_NO_ECHO_PREFIXES = (
+    SETTINGS_PATH_PREFIX,
+    "/api/v1/browser-history",
+    "/api/v1/import/browser-history",
+)
 
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """Lỗi 422 mặc định; riêng /api/v1/settings bỏ `input` và `ctx` khỏi chi tiết lỗi.
+    """Lỗi 422 mặc định; riêng /settings và browser-history bỏ `input`, `ctx` khỏi chi tiết lỗi.
 
     Mặc định FastAPI echo lại giá trị đầu vào, mà ở đây đó là URL đồng bộ (link chia sẻ
     mang token trong query) hay tên người dùng, rồi đi vào log của proxy/client. Phạm vi
     CỐ Ý hẹp ở /settings để không đổi schema lỗi của các route khác.
     """
-    if not request.url.path.startswith(SETTINGS_PATH_PREFIX):
+    if not request.url.path.startswith(_NO_ECHO_PREFIXES):
         return await request_validation_exception_handler(request, exc)
     safe = [
         {"type": err.get("type"), "loc": err.get("loc"), "msg": err.get("msg")}
