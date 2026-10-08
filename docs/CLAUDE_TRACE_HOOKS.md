@@ -74,7 +74,7 @@ cục bộ, timeout 3 s), không chặn tool, không ghi vào repo, ghi nối th
 
 Hạn chế đã biết: mật khẩu chứa `/` hoặc `@` **thô** trong URL (không mã hoá %) không bị che hết; dạng mật khẩu đứng riêng không kèm từ khoá và không có tiền tố nhận dạng được (ví dụ chuỗi ngẫu nhiên ngắn) lọt; transcript lớn hơn ~40 MB có thể vượt báo thức 25 s của `SessionEnd` và không có bản sao (chỉ có dòng trong `errors.log`); transcript còn chứa kết quả `make psql` và nội dung Note (lệnh, SQL, cấu hình) ngoài các mẫu trên. Trên hệ file không hỗ trợ hard link (exFAT, SMB) hook dùng đổi tên thay cho link (race rất hẹp); bị SIGKILL giữa chừng có thể để lại `.tmp-*` (lần sau dọn bản cũ hơn 1 giờ).
 
-**Chưa kiểm chứng thực tế:** `timeout: 30` của `SessionEnd` có thực sự nâng giới hạn mặc định 1,5 s hay không. Tài liệu Claude Code nói có (tối đa 60 s) nhưng chưa thấy bằng một phiên thật kết thúc. Sau phiên đầu tiên, kiểm tra có `sessions/<sid>.<UTC>.jsonl` không; nếu không, đặt `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`.
+**Đã kiểm chứng (2026-10-08):** một phiên `claude -p` thật chạy Stop và SessionEnd qua harness, sinh `turns.jsonl` và `sessions/<sid>.<UTC>.jsonl` (quyền 600, thư mục 700, không có `errors.log`) với transcript nhỏ. **Chưa kiểm** với transcript hàng chục MB: nếu `SessionEnd` bị cắt vì timeout, đặt `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Giá trị trong `.env` là đường dẫn (bắt đầu bằng `/` hoặc `~`) không bị che, vì đường dẫn không phải secret.
 
 ## Tắt hook
 

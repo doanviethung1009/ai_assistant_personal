@@ -97,6 +97,23 @@ class RedactTests(unittest.TestCase):
                     os.environ["CLAUDE_PROJECT_DIR"] = old
                 R.reset_cache()
 
+    def test_dotenv_path_values_not_redacted(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / ".env").write_text("REPO_DIR=/Users/fake/some/repo\nSOME_VAL=plainfakeval-88\n")
+            old = os.environ.get("CLAUDE_PROJECT_DIR")
+            os.environ["CLAUDE_PROJECT_DIR"] = d
+            try:
+                R.reset_cache()
+                out = self.red("cwd /Users/fake/some/repo và plainfakeval-88")
+                self.assertIn("/Users/fake/some/repo", out)
+                self.assertNotIn("plainfakeval-88", out)
+            finally:
+                if old is None:
+                    del os.environ["CLAUDE_PROJECT_DIR"]
+                else:
+                    os.environ["CLAUDE_PROJECT_DIR"] = old
+                R.reset_cache()
+
     def test_keeps_token_counts_and_benign(self) -> None:
         obj = {"usage": {"input_tokens": 12, "output_tokens": 3}, "note": "TOKEN=$TOKEN", "x": "plain text"}
         out = R.redact_obj(obj, Counter())

@@ -170,6 +170,9 @@ def literal_secrets() -> list[str]:
     for name, val in os.environ.items():
         if _ENV_NAME_SENSITIVE.search(name) and len(val) >= _MIN_LITERAL_LEN:
             found.add(val)
+    # Đường dẫn không phải secret; che chúng làm mất cwd/transcript_path và mọi chỗ nhắc file
+    # (đã gặp thật: cwd của repo bị che vì một biến trong .env chứa đúng đường dẫn đó).
+    found = {v for v in found if not v.startswith(("/", "~", "./", "../"))}
     _literal_cache = sorted(found, key=len, reverse=True)
     return _literal_cache
 
