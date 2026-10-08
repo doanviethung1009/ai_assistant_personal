@@ -1,6 +1,6 @@
 # Spec: Tách task công việc (Jira) và task cá nhân bằng cột `tasks.scope`
 
-- Trạng thái: DRAFT (chờ User chốt các quyết định S1-S15 ở mục 7)
+- Trạng thái: **CHỐT** (User duyệt S1-S15 theo đề xuất của architect, 08-10-2026, trả lời 'hãy làm đi' cho câu hỏi 'nếu bạn đồng ý các đề xuất S1 đến S15 ... đánh dấu CHỐT')
 - Tác giả: architect
 - Ngày: 2026-10-08
 - Nhánh lúc viết: `feat/import-b1` (pha B1 đã code, chưa merge vào `main`)
