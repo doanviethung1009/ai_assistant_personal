@@ -4,12 +4,25 @@ import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { syncJiraAction } from "@/app/jira-actions";
 import { useRouter } from "next/navigation";
+import { STORAGE_KEY } from "@/lib/jira-storage";
 
-const STORAGE_KEY = "builder_jira_configs_v2";
+
+
+/** Hình dạng tối thiểu của cấu hình trong localStorage (chế độ file). */
+interface JiraLocalConfig {
+  id: string;
+  url: string;
+  email: string;
+  token: string;
+  jql: string;
+  projectKey?: string;
+  projectName?: string;
+  lastSyncAt?: string;
+}
 
 export function JiraQuickSync() {
   const router = useRouter();
-  const [configs, setConfigs] = useState<any[]>([]);
+  const [configs, setConfigs] = useState<JiraLocalConfig[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "error">("idle");
   const [lastSyncText, setLastSyncText] = useState<string>("");
@@ -59,17 +72,27 @@ export function JiraQuickSync() {
       if (response.ok) {
         syncedCount++;
         if ("skipped_personal" in response) skippedPersonal += response.skipped_personal ?? 0;
-        const idx = newConfigs.findIndex(c => c.id === config.id);
-        if (idx !== -1) {
-          newConfigs[idx].lastSyncAt = nowIso;
-        }
+        const target = newConfigs.find(c => c.id === config.id);
+        if (target) target.lastSyncAt = nowIso;
       } else {
         hasError = true;
       }
     }
     
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfigs));
-    setConfigs(newConfigs);
+    // Đọc lại localStorage và chỉ cập nhật mốc đồng bộ của mục còn tồn tại: trong lúc sync
+    // (có thể vài phút) trang Dữ liệu có thể đã xoá/sửa cấu hình, ghi đè cả mảng sẽ làm
+    // sống lại mục đã xoá hoặc mất mục mới thêm.
+    let latest: JiraLocalConfig[] = [];
+    try {
+      const parsed: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
+      if (Array.isArray(parsed)) latest = parsed as JiraLocalConfig[];
+    } catch {
+      latest = [];
+    }
+    const syncedAt = new Map(newConfigs.filter((c) => c.lastSyncAt === nowIso).map((c) => [c.id, nowIso]));
+    latest = latest.map((c) => (syncedAt.has(c.id) ? { ...c, lastSyncAt: nowIso } : c));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(latest));
+    setConfigs(latest);
     
     const d = new Date(nowIso);
     setLastSyncText(d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }));

@@ -2,7 +2,7 @@ import { ApiErrorPanel } from "@/components/api-error";
 import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { ProjectForm } from "@/components/project-form";
 import { ProjectItem } from "@/components/project-item";
-import { listProjects } from "@/lib/api";
+import { listProjects, IS_LOCAL } from "@/lib/api";
 import type { Project } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -36,7 +36,8 @@ export default async function ProjectsPage() {
           </p>
         </div>
         <div className="relative z-10">
-          <JiraQuickSync />
+          {/* Chế độ api: sync Jira từ kết nối đã lưu cần B4b; cấu hình nằm ở trang Dữ liệu. */}
+          {IS_LOCAL && <JiraQuickSync />}
         </div>
       </div>
 

@@ -12,6 +12,9 @@ import type {
   BrowserHistoryRow,
   HealthResponse,
   ImportReport,
+  IntegrationConnection,
+  IntegrationCreateBody,
+  IntegrationUpdateBody,
   Note,
   NoteKind,
   NoteSortField,
@@ -25,6 +28,8 @@ import type {
   TaskDetail,
   TaskScope,
   TaskStatus,
+  TaskUpsertItem,
+  TaskUpsertResult,
   TaskView,
   TrashResponse,
 } from "./types";
@@ -974,3 +979,149 @@ export async function createAiLog(input: any): Promise<any> {
   });
 }
 
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Tích hợp và upsert hàng loạt (B4a) — chỉ chế độ api
+// ═══════════════════════════════════════════════════════════════════════
+
+function requireApiMode(): void {
+  if (IS_LOCAL) {
+    throw new CoreApiError("Chỉ dùng được ở chế độ DATA_SOURCE=api", 501);
+  }
+}
+
+/**
+ * Danh sách kết nối. Core không bao giờ trả token, chỉ has_secret + secret_last4.
+ * Giới hạn 100 (trần của core): số kết nối Jira của một người rất nhỏ nên không phân trang.
+ */
+export function listIntegrations(): Promise<Paged<IntegrationConnection>> {
+  requireApiMode();
+  return coreFetch<Paged<IntegrationConnection>>("/api/v1/integrations?limit=100");
+}
+
+/** Tạo kết nối. `token` là write-only; không log và không đưa vào thông báo lỗi. */
+export function createIntegration(body: IntegrationCreateBody): Promise<IntegrationConnection> {
+  requireApiMode();
+  return coreFetch<IntegrationConnection>("/api/v1/integrations", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+/** Sửa kết nối. Không gửi `token` = giữ token cũ; `clear_token: true` để xoá. */
+export function patchIntegration(id: string, body: IntegrationUpdateBody): Promise<IntegrationConnection> {
+  requireApiMode();
+  return coreFetch<IntegrationConnection>(`/api/v1/integrations/${pathId(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteIntegration(id: string): Promise<void> {
+  requireApiMode();
+  await coreFetch<void>(`/api/v1/integrations/${pathId(id)}`, { method: "DELETE" });
+}
+
+/**
+ * Kiểm mật khẩu nhập (IMPORT_COMMIT_SECRET) mà KHÔNG ghi gì. Gọi trước các việc tốn kém
+ * (fetch URL, đọc/parse file) để request sai mật khẩu bị từ chối sớm, không biến server
+ * thành công cụ tải URL hay parse file cho người chưa xác thực. Core trả 204 nếu đúng,
+ * 403 nếu sai/thiếu/chưa cấu hình (ném CoreApiError status 403).
+ */
+export async function verifyImportSecret(secret: string): Promise<void> {
+  requireApiMode();
+  await coreFetch<void>("/api/v1/import/verify-secret", {
+    method: "POST",
+    headers: { "X-Import-Secret": secret },
+  });
+}
+
+/** Trần số item mỗi lô của core (TaskUpsertBatch.items). */
+const UPSERT_BATCH_SIZE = 1000;
+/** Trần kích thước JSON mỗi lô: dưới nhiều so với trần body 20 MB của core. */
+const UPSERT_BATCH_MAX_BYTES = 8 * 1024 * 1024;
+
+/** Kết quả upsert kèm số lô đã ghi, để báo cáo khi lô sau thất bại. */
+export class UpsertBatchError extends CoreApiError {
+  constructor(
+    message: string,
+    status: number,
+    readonly batchesDone: number,
+    readonly batchesTotal: number,
+  ) {
+    super(message, status);
+    this.name = "UpsertBatchError";
+  }
+}
+
+/**
+ * Chia item thành lô theo CẢ số item (<= 1000) lẫn kích thước JSON (< 8 MB) để không vượt
+ * trần body 20 MB của core. Một item đơn lẻ lớn hơn trần vẫn thành lô riêng (core sẽ trả
+ * 413/lỗi cho lô đó).
+ */
+function splitBatches(items: TaskUpsertItem[]): TaskUpsertItem[][] {
+  const batches: TaskUpsertItem[][] = [];
+  let current: TaskUpsertItem[] = [];
+  let bytes = 0;
+  for (const item of items) {
+    const size = Buffer.byteLength(JSON.stringify(item), "utf8") + 1;
+    if (current.length > 0 && (current.length >= UPSERT_BATCH_SIZE || bytes + size > UPSERT_BATCH_MAX_BYTES)) {
+      batches.push(current);
+      current = [];
+      bytes = 0;
+    }
+    current.push(item);
+    bytes += size;
+  }
+  if (current.length > 0) batches.push(current);
+  return batches;
+}
+
+/**
+ * Upsert task theo `(source, external_id)`, tự chia lô và cộng dồn kết quả.
+ *
+ * Mật khẩu IMPORT_COMMIT_SECRET chỉ đi qua header X-Import-Secret. Chỉ số `index` trong
+ * errors/warnings được quy đổi về vị trí trong MẢNG GỐC (cộng offset lô). Mỗi lô là một
+ * giao dịch riêng: nếu lô sau thất bại thì các lô trước ĐÃ ghi; lỗi ném ra là
+ * UpsertBatchError (mang số lô đã xong) và chạy lại an toàn vì upsert idempotent.
+ */
+export async function upsertTasksBatch(
+  source: "jira",
+  items: TaskUpsertItem[],
+  secret: string,
+): Promise<TaskUpsertResult> {
+  requireApiMode();
+  const total: TaskUpsertResult = {
+    added: 0,
+    updated: 0,
+    unchanged: 0,
+    skipped_personal: 0,
+    errors: [],
+    warnings: [],
+  };
+  const batches = splitBatches(items);
+  let offset = 0;
+  for (const [i, chunk] of batches.entries()) {
+    let res: TaskUpsertResult;
+    try {
+      res = await coreFetch<TaskUpsertResult>("/api/v1/tasks/upsert-batch", {
+        method: "POST",
+        body: JSON.stringify({ source, items: chunk }),
+        headers: { "X-Import-Secret": secret },
+      });
+    } catch (error) {
+      if (i > 0 && error instanceof CoreApiError) {
+        throw new UpsertBatchError(error.message, error.status, i, batches.length);
+      }
+      throw error;
+    }
+    total.added += res.added;
+    total.updated += res.updated;
+    total.unchanged += res.unchanged;
+    total.skipped_personal += res.skipped_personal;
+    for (const e of res.errors ?? []) total.errors?.push({ ...e, index: e.index + offset });
+    for (const w of res.warnings ?? []) total.warnings?.push({ ...w, index: w.index + offset });
+    offset += chunk.length;
+  }
+  return total;
+}

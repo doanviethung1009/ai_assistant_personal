@@ -4,7 +4,7 @@ import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { ApiErrorPanel } from "@/components/api-error";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { TaskItem } from "@/components/task-item";
-import { listProjects, listTasks } from "@/lib/api";
+import { listProjects, listTasks, IS_LOCAL } from "@/lib/api";
 import { TASK_VIEWS, parseView } from "@/lib/task-scope";
 import {
   OPEN_STATUSES,
@@ -94,7 +94,8 @@ export default async function TasksPage({
           </p>
         </div>
         <div className="relative z-10">
-          <JiraQuickSync />
+          {/* Chế độ api: sync Jira từ kết nối đã lưu cần B4b; cấu hình nằm ở trang Dữ liệu. */}
+          {IS_LOCAL && <JiraQuickSync />}
         </div>
       </div>
 

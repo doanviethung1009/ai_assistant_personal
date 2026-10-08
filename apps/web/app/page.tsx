@@ -3,7 +3,7 @@ import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { StatsStrip } from "@/components/stats-strip";
 import { TaskSection } from "@/components/task-section";
-import { getAgenda, getStats, listProjects } from "@/lib/api";
+import { getAgenda, getStats, listProjects, IS_LOCAL } from "@/lib/api";
 import { formatFullPlainDate } from "@/lib/format";
 import type { Agenda, Project, Stats } from "@/lib/types";
 import { CalendarDays } from "lucide-react";
@@ -50,7 +50,8 @@ export default async function TodayPage() {
           </p>
         </div>
         <div className="relative z-10">
-          <JiraQuickSync />
+          {/* Chế độ api: sync Jira từ kết nối đã lưu cần B4b; cấu hình nằm ở trang Dữ liệu. */}
+          {IS_LOCAL && <JiraQuickSync />}
         </div>
       </div>
 

@@ -1,4 +1,4 @@
-import { listTasks } from "@/lib/api";
+import { listTasks, IS_LOCAL } from "@/lib/api";
 import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
@@ -205,7 +205,8 @@ export default async function TeamPage({
             </p>
           </div>
           <div className="relative z-10">
-            <JiraQuickSync />
+            {/* Chế độ api: sync Jira từ kết nối đã lưu cần B4b; cấu hình nằm ở trang Dữ liệu. */}
+            {IS_LOCAL && <JiraQuickSync />}
           </div>
         </div>
 

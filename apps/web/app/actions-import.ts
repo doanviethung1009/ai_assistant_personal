@@ -4,10 +4,15 @@ import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso, MAX_SYNC_URLS } from "@/lib/store/engine";
+
+/** Trần số dòng đọc từ sheet, cùng giá trị với đường cào URL trong actions.ts. */
+const MAX_SYNC_ROWS = 50_000;
 import { migrate } from "@/lib/store/json-file";
 import type { DataFile } from "@/lib/store/types";
 import { syncUrlError } from "@/lib/sync-url-policy";
 import { scopeOf } from "@/lib/task-scope";
+import { authorizeImport, pushRowsToCore } from "@/lib/excel-upsert";
+import type { UpsertSummary } from "@/lib/types";
 import * as XLSX from "xlsx";
 
 const PALETTE = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#d946ef'];
@@ -184,15 +189,37 @@ export async function importBulkTasksAction(rows: any[]) {
   return { ok: true, added, updated, skipped_personal: skippedPersonal };
 }
 
-export async function importBulkFileAction(formData: FormData) {
-  if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
+/** Kết quả nhập Excel: chế độ file trả đếm đơn giản, chế độ api trả `summary` đầy đủ từ core. */
+export type BulkFileResult =
+  | { ok: true; added: number; updated: number; skipped_personal: number; summary?: UpsertSummary }
+  | { ok: false; error: string };
 
+/**
+ * Đọc file Excel/CSV người dùng tải lên rồi nhập task.
+ *
+ * Chế độ file: engine như cũ. Chế độ api: web vẫn đọc file, ánh xạ dòng sang TaskUpsert và
+ * đẩy qua `upsert-batch` của core với `source` CỐ ĐỊNH `jira` (khớp chế độ file, KHÔNG nhận
+ * từ client). Cần mật khẩu `import_secret` vì đây là thao tác ghi đè hàng loạt.
+ */
+export async function importBulkFileAction(formData: FormData): Promise<BulkFileResult> {
   try {
-    const file = formData.get("file") as File;
-    if (!file) return { ok: false, error: "Không tìm thấy file" };
+    const file = formData.get("file");
+    if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Không tìm thấy file" };
+    // Cùng trần 20 MB với đường URL (B2) và body tối đa của upsert-batch.
+    if (file.size > 20 * 1024 * 1024) return { ok: false, error: "File vượt quá 20 MB" };
+
+    // Chế độ api: xác thực mật khẩu với core NGAY, trước khi đọc file hay XLSX.read (tốn
+    // CPU/RAM), để request sai mật khẩu bị từ chối sớm.
+    let secret = "";
+    if (!IS_LOCAL) {
+      const auth = await authorizeImport(formData.get("import_secret"));
+      if (!auth.ok) return { ok: false, error: auth.error };
+      secret = auth.secret;
+    }
 
     const buffer = await file.arrayBuffer();
-    const wb = XLSX.read(buffer, { type: "array" });
+    // sheetRows chặn sheet khổng lồ làm phình RAM khi parse, như đường URL (MAX_SYNC_ROWS).
+    const wb = XLSX.read(buffer, { type: "array", sheetRows: MAX_SYNC_ROWS });
     const wsname = wb.SheetNames[0];
     if (!wsname) return { ok: false, error: "File Excel không hợp lệ" };
     
@@ -202,9 +229,25 @@ export async function importBulkFileAction(formData: FormData) {
     const rows = XLSX.utils.sheet_to_json(ws);
     if (!rows || rows.length === 0) return { ok: false, error: "Sheet rỗng" };
 
-    return await importBulkTasksAction(rows);
-  } catch (error: any) {
-    return { ok: false, error: error.message || String(error) };
+    if (!IS_LOCAL) {
+      const out = await pushRowsToCore(rows, secret);
+      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại" };
+      revalidatePath("/", "layout");
+      return {
+        ok: true,
+        added: out.summary.added,
+        updated: out.summary.updated,
+        skipped_personal: out.summary.skipped_personal,
+        summary: out.summary,
+      };
+    }
+
+    const res = await importBulkTasksAction(rows);
+    return { ok: true, added: res.added, updated: res.updated, skipped_personal: res.skipped_personal };
+  } catch (error) {
+    // Lỗi parse XLSX có thể chứa chi tiết nội dung file; chỉ báo chung.
+    console.error("nhập Excel thất bại", error instanceof Error ? error.name : "unknown");
+    return { ok: false, error: "Không đọc được file (không phải Excel/CSV hợp lệ?)." };
   }
 }
 
