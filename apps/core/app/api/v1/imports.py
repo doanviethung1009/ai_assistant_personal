@@ -20,17 +20,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-import secrets
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
-from app.api.deps import SessionDep
-from app.core.config import settings
+from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
+from app.schemas.browser_history import BrowserHistoryImportReport, ChromeHistoryFile
 from app.schemas.imports import AiLogsEnvelope, DataFileEnvelope, ImportReport
-from app.services import import_service
+from app.services import browser_history_service, import_service
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +71,6 @@ IncludePersonalQuery = Annotated[
             "false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè "
             "(đếm `skipped_personal`). true: cho phép ghi đè cả task cá nhân."
         )
-    ),
-]
-# Khai bằng Header(alias=...) để OpenAPI (và types sinh cho web) có header này.
-ImportSecretHeader = Annotated[
-    str | None,
-    Header(
-        alias="X-Import-Secret",
-        description="Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET).",
     ),
 ]
 
@@ -153,34 +144,7 @@ def _guard_commit(
             status_code=422,
             detail="dry_run=false bắt buộc có expect_replaced và expect_sha256.",
         )
-    configured = settings.import_commit_secret
-    # Nguồn của request để điều tra dò mật khẩu; TUYỆT ĐỐI không log giá trị secret.
-    client = request.client.host if request.client else "không rõ"
-    if configured is None:
-        logger.warning(
-            "nhập thật bị từ chối: chưa cấu hình IMPORT_COMMIT_SECRET (client=%s)", client
-        )
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Nhập thật đang bị tắt: server chưa cấu hình IMPORT_COMMIT_SECRET. "
-                "Đặt biến môi trường này (tối thiểu 16 ký tự) rồi khởi động lại core."
-            ),
-        )
-    # compare_digest trên bytes: chống đoán bí mật qua thời gian so sánh, và không
-    # văng TypeError với ký tự ngoài ASCII. Giá trị KHÔNG được log hay echo lại.
-    if secret is None or not secrets.compare_digest(
-        secret.encode("utf-8"), configured.get_secret_value().encode("utf-8")
-    ):
-        logger.warning(
-            "nhập thật bị từ chối: %s mật khẩu nhập (client=%s)",
-            "thiếu" if secret is None else "sai",
-            client,
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Thiếu hoặc sai mật khẩu nhập dữ liệu (header X-Import-Secret).",
-        )
+    guard_import_secret(request, secret)
 
 
 @router.post(
@@ -236,4 +200,40 @@ async def import_ai_logs(
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,
         file_sha256=hashlib.sha256(body).hexdigest(),
+    )
+
+
+@router.post(
+    "/browser-history",
+    response_model=BrowserHistoryImportReport,
+    summary="Nhập chrome-history.json (chỉ tăng, không ghi đè xuống, không xoá)",
+    openapi_extra=_body_schema(ChromeHistoryFile),
+)
+async def import_browser_history(
+    request: Request,
+    session: SessionDep,
+    dry_run: DryRunQuery = True,
+    profile: Annotated[
+        str, Query(max_length=200, description="Tên thư mục profile, mặc định Default.")
+    ] = "Default",
+    import_secret: ImportSecretHeader = None,
+) -> BrowserHistoryImportReport:
+    """Nhập lịch sử Chrome từ file.
+
+    Khác B1: upsert chỉ lấy số lớn hơn nên không có bản ghi bị ghi đè xuống, vì vậy không
+    đòi `expect_replaced`/`expect_sha256`. Nhập thật vẫn cần mật khẩu nhập (dữ liệu duyệt
+    web là nhạy cảm và web không có đăng nhập).
+    """
+    if not dry_run:
+        guard_import_secret(request, import_secret)
+    clean = browser_history_service.normalize_profile(profile)
+    body = await _read_body(request)
+    envelope = _parse(body, ChromeHistoryFile)
+    return await browser_history_service.import_chrome_history(
+        session,
+        envelope,
+        profile=clean,
+        dry_run=dry_run,
+        file_sha256=hashlib.sha256(body).hexdigest(),
+        client_ip=request.client.host if request.client else None,
     )
