@@ -68,6 +68,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "CLAUDE_CLI_QUICKSTART.md"),
   },
   {
+    slug: "claude-trace-hooks",
+    title: "Hook ghi vết phiên Claude Code",
+    description: "Hook Stop/SubagentStop/SessionEnd ghi vết tự động ngoài repo, có lọc secret; nơi lưu, cách tắt, rủi ro dữ liệu.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "CLAUDE_TRACE_HOOKS.md"),
+  },
+  {
     slug: "multi-agent-system",
     title: "Hệ thống Multi-Agent: cách hoạt động & cách dùng",
     description: "Một file duy nhất: ai làm gì, luồng phối hợp, prompt mẫu cho từng tình huống, hàng rào an toàn và các giới hạn hiện tại.",

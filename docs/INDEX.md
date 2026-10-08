@@ -28,6 +28,7 @@ Nhiều tài liệu nói về AI agent vì dự án dùng nhiều IDE và nhiề
 | Biết AI phải làm gì khi bắt đầu session | **`NEW_AGENT_ONBOARDING.md`** và `AI_HANDOFF_STATE.md` | |
 | Viết prompt giao việc | `AI_AGENT_GUIDE.md` mục 3 (một agent) | Prompt cho nhiều agent: `MULTI_AGENT_SYSTEM.md` mục 5 |
 | Tự tạo thêm rule, skill, hook | `CREATE_AI_CUSTOMIZATIONS.md` | |
+| Biết hook ghi vết phiên Claude Code ghi gì, ở đâu, tắt thế nào | `CLAUDE_TRACE_HOOKS.md` | Giai đoạn 1, AI log viết tay vẫn còn |
 | Biết quy trình phát triển sản phẩm 6 bước | `PRODUCT_DEVELOPMENT_LIFECYCLE.md` | |
 | Biết luật code | `.agents/rules/*.md` (xem nhóm "Quy ước Code" trên tab Tài liệu) | `AGENTS.md` là luật chung cho mọi agent |
 

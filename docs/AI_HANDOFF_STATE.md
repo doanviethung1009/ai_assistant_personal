@@ -94,4 +94,9 @@
 - **Phát hiện hạ tầng test:** assert "token không có trong caplog" ở các test cũ (B3, B4a) có thể vô nghĩa vì fixture migrate tắt logger của app; đã tách thành việc riêng (chip chore/fix-caplog-tests). `test_jira_sync_api.py` đã bật lại logger.
 - **Chuỗi B1-B4 đã xong về code.** Việc còn lại ngoài B4b: gỡ tính năng lịch sử duyệt web (User không cần nữa, session riêng), nâng `xlsx` (2 CVE), UAT ở máy có Docker.
 
+## 12. Hook ghi vết Claude Code (nhánh `feat/claude-trace-hooks`, giai đoạn 1, chưa merge)
+
+- Hook `Stop`/`SubagentStop`/`SessionEnd` (`.claude/hooks/trace-hook.py` + `trace_redact.py`) ghi vết ngoài repo (`~/.claude/trace/ai_assistant_personal/`), lọc secret trước khi ghi. Chỉ THÊM; AI log viết tay, bảng `ai_logs`, `/ai-logs` giữ nguyên để so sánh. **Mặc định TẮT**, bật bằng `CLAUDE_TRACE_ENABLED=1` trong `.claude/settings.local.json` (gitignore). Chi tiết: `docs/CLAUDE_TRACE_HOOKS.md`.
+- **User chốt (2026-10-08):** lưu tóm tắt từng lượt + transcript đã lọc; dữ liệu Jira công ty **chưa được dùng để train** (chưa rõ chính sách). Giai đoạn sau (gỡ quy tắc ghi tay, số phận bảng/API/trang) chưa làm.
+
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

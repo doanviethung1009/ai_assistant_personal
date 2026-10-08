@@ -923,3 +923,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Sửa gốc: `disable_existing_loggers=False`. Thêm `tests/test_logging_capture.py` (mọi logger `app.*` không bị tắt và bắt được log). Thêm assert đối chứng dương tính vào 3 test (`test_import_api`, `test_task_upsert`, `test_integrations`). Bỏ fixture `_live_loggers` trong `test_jira_sync_api.py` vì nó che mất lỗi nếu bản sửa gốc bị lùi.
   - Phép thử đột biến: bỏ bản sửa gốc thì 3 test fail; có bản sửa thì 781 pass.
 - **Phản hồi:** Bật logger lên, toàn bộ assert "không lộ token" hiện có vẫn pass, nghĩa là không phát hiện rò thật. Lưới bảo vệ ngăn lỗi quay lại.
+
+### [08-10-2026 23:11] | Category: [TOOL]
+- **Prompt:** Giai đoạn 1 hook ghi vết Claude Code (nhánh `feat/claude-trace-hooks`): ghi vết tự động ngoài repo, lọc secret, chỉ thêm, giữ nguyên AI log cũ.
+- **Xử lý:**
+  - Hỏi User 3 câu: nơi lưu mặc định `~/.claude/trace/ai_assistant_personal/`; lưu tóm tắt từng lượt + transcript đã lọc; dữ liệu Jira công ty chưa được dùng train.
+  - Tra tài liệu hooks chính thức (subagent claude-code-guide) và xem transcript thật để suy ra định dạng (tài liệu không mô tả). Chỉ cần 3 hook: Stop, SubagentStop, SessionEnd.
+  - Tạo `.claude/hooks/trace-hook.py`, `trace_redact.py`, `tests/test_trace_hook.py` (35 test, dữ liệu giả), `docs/CLAUDE_TRACE_HOOKS.md` (đăng ký `docs.ts`, `INDEX.md`, `AI_HANDOFF_STATE.md` mục 12); thêm 3 khối hook vào `.claude/settings.json`, giữ nguyên PreToolUse.
+  - code-reviewer và security-auditor: sửa lỗi lấy nhầm prompt (thông báo tác vụ nền), thư mục rỗng khi thiếu transcript subagent, cắt trước lọc, hiệu năng regex bậc hai, các dạng secret lọt (JSON escape, CLI, URL, cookie, tiếng Việt, Fernet), symlink/quyền, git fsmonitor.
+  - Khó khăn: script vá bằng chuỗi bị lỗi escape nên chuyển sang Edit; hook bật ngay trong session nên trace thật của chính session này được dùng để kiểm chứng.
+- **Phản hồi:** Xong code, test, docs. Còn mở: User quyết định opt-in cho hook dùng chung (M2), kiểm `SessionEnd` timeout bằng phiên thật, chưa commit/push.
