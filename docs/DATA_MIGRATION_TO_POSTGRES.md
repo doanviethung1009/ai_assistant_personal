@@ -15,27 +15,57 @@
 
 ## 2. Các bước
 
-1. **Sao lưu Postgres** (đặc biệt nếu đã có dữ liệu trong đó):
+**Chạy theo đúng thứ tự.** Lần đầu sau khi kéo code mới nhất (B1 đến B4) có hai bẫy: image Docker phải build lại, và `.env` cũ không tự có biến mới.
+
+0. **Điều kiện: cần Docker** (Postgres, Redis, api chạy trong container). Máy không có Docker thì **chỉ dùng được chế độ file** (`make web-local`): vẫn dùng bình thường, nhưng không có Postgres, không có kết nối Jira mã hoá, không có "Cào ngay" ở backend. Kiểm tra: `docker --version`.
+1. **Sao lưu thư mục `data/` ra nơi khác trước khi bật web mới.** Lần nạp đầu của web mới sẽ ghi lại `data/builder-data.json` lên phiên bản mới (một chiều, bản cũ hơn không đọc lại được):
+   ```bash
+   cp -R data "data.bak-$(date +%Y%m%d)"
+   ```
+   Nếu đã có dữ liệu trong Postgres thì sao lưu luôn (sau khi stack đã chạy ở bước 4):
    ```bash
    make backup
    ```
-2. **Đặt mật khẩu nhập** trong `.env` của core. Chạy `make env` **ở thư mục gốc repo** (không phải `apps/web`, vì `Makefile` nằm ở gốc); lệnh sinh `.env` mới, đã tự thêm sẵn biến này và in giá trị ra màn hình, không ghi đè nếu `.env` đã có; nếu `.env` có từ trước thì tự thêm một dòng rồi khởi động lại api:
-   ```text
-   IMPORT_COMMIT_SECRET=<chuỗi ngẫu nhiên, tối thiểu 16 ký tự>
+2. **Build lại image.** Code mới thêm thư viện Python (`cryptography`, `httpcore`). `make up` **không** build lại, nên bỏ bước này thì api báo lỗi import và không khởi động:
+   ```bash
+   make build
    ```
-   Chưa đặt thì core từ chối nhập thật với thông báo hướng dẫn.
-3. **Xuất file từ web đang chạy chế độ file:** trang Dữ liệu, tab **Xuất dữ liệu**, tải "JSON Toàn bộ Dữ liệu" (và "JSON Nhật ký AI" nếu muốn giữ log).
-4. **Đổi sang Postgres:**
+3. **Tạo hoặc bổ sung `.env`** (chạy **ở thư mục gốc repo**, không phải `apps/web`, vì `Makefile` nằm ở gốc):
+   - Chưa có `.env`: `make env` sinh đủ khoá ngẫu nhiên và in `API_KEY` cùng `IMPORT_COMMIT_SECRET` ra màn hình (mật khẩu bạn sẽ gõ ở bước Nhập thật). `INTEGRATION_SECRET_KEY` **không** được in.
+   - Đã có `.env` từ trước: `make env-fill` chỉ thêm `IMPORT_COMMIT_SECRET` và `INTEGRATION_SECRET_KEY` nếu còn thiếu hoặc rỗng, **không đổi** biến đã có, và chỉ in tên biến. Muốn xem `IMPORT_COMMIT_SECRET` thì mở `.env` (quyền 600).
+   - **Sao lưu `.env`.** Mất `INTEGRATION_SECRET_KEY` thì mọi token Jira đã lưu mất, phải nhập lại. Chưa có `IMPORT_COMMIT_SECRET` thì core từ chối nhập thật.
+4. **Bật stack và đổi sang Postgres.** Api tự chạy migration khi khởi động:
    ```bash
    make up
    make use-db
+   curl -s http://localhost:8000/health/ready
    ```
-5. **Nhập:** trang Dữ liệu, tab **Nhập dữ liệu**, mục "Chuyển dữ liệu JSON vào Postgres":
+   `health/ready` phải trả OK (Postgres và Redis sẵn sàng). Lỗi thì xem log: `make logs-api`. Quay về chế độ file bất cứ lúc nào: đặt `DATA_SOURCE=file` trong `.env` rồi `make up`; dữ liệu ở hai kho không bị xoá.
+5. **Lấy file dữ liệu để nhập.** Dùng thẳng `data/builder-data.json`, hoặc xuất từ web đang chạy chế độ file: trang Dữ liệu, tab **Xuất dữ liệu**, tải "JSON Toàn bộ Dữ liệu" (và "JSON Nhật ký AI" nếu muốn giữ log).
+6. **Nhập:** trang Dữ liệu, tab **Nhập dữ liệu**, mục "Chuyển dữ liệu JSON vào Postgres":
    1. Chọn loại file và file (tối đa 8 MB).
    2. Bấm **Kiểm tra**. Chưa ghi gì. Đọc báo cáo: số tạo mới, ghi đè, không đổi, bỏ qua, lỗi.
    3. Nếu có **khung đỏ "bản ghi sẽ bị GHI ĐÈ"**: mở danh sách, xem diff từng bản ghi, tích các ô xác nhận.
    4. Gõ mật khẩu, bấm **Nhập thật**. Toàn bộ chạy trong một transaction (all-or-nothing).
-6. **Kiểm tra lại:** bấm Kiểm tra với cùng file, kết quả phải là 0 tạo mới, 0 ghi đè (nhập lặp lại là an toàn).
+7. **Kiểm tra lại:** bấm Kiểm tra với cùng file, kết quả phải là 0 tạo mới, 0 ghi đè (nhập lặp lại là an toàn).
+
+8. **Jira (tuỳ chọn, chỉ Jira Cloud `*.atlassian.net`):** trang Dữ liệu, tab **Đồng bộ**, mục kết nối Jira.
+   1. Nếu trình duyệt còn cấu hình Jira cũ (lưu ở `localStorage`), bấm **Chuyển các kết nối này lên server**. Chỉ mục nào server nhận thành công mới bị xoá khỏi trình duyệt; mục lỗi hiện nút **Bỏ khỏi trình duyệt**. Hoặc tạo kết nối mới bằng form (token chỉ ghi, không bao giờ hiện lại, chỉ thấy 4 ký tự cuối).
+   2. Bấm **Cào ngay** ở kết nối, gõ mật khẩu nhập (`IMPORT_COMMIT_SECRET`). Lần đầu nên chạy không điền "Từ ngày"; về sau điền ngày để chỉ lấy phần thay đổi.
+   3. Task đã có trong Postgres giữ nguyên priority, hạn, người giao và project bạn đã sửa; chỉ task **mới** nhận các giá trị đó từ Jira. Task Jira bạn đã chuyển sang `personal` không bị đụng.
+   4. Báo "chạm trần 100 trang": thu hẹp JQL (cấu hình kết nối) hoặc dùng "Từ ngày".
+
+### Lỗi thường gặp ở lần chạy đầu
+
+| Triệu chứng | Nguyên nhân | Cách xử lý |
+|---|---|---|
+| `make: *** No rule to make target 'env'` | Đang đứng ở `apps/web`, không phải thư mục gốc | `cd` về thư mục gốc repo |
+| api không khởi động, log có `ModuleNotFoundError` (`cryptography`, `httpcore`) | Image chưa build lại sau khi kéo code | `make build` rồi `make up` |
+| Tạo kết nối Jira báo 503 "thiếu khoá" | `.env` cũ không có `INTEGRATION_SECRET_KEY` | `make env-fill` rồi `make up` |
+| Nhập thật báo 403 | Sai mật khẩu, hoặc `.env` cũ chưa có `IMPORT_COMMIT_SECRET` | `make env-fill`, mở `.env` lấy mật khẩu |
+| "Cào ngay" báo 503 "nhập lại token" | `INTEGRATION_SECRET_KEY` đã đổi hoặc mất so với lúc lưu token | Nhập lại token của kết nối |
+| "Cào ngay" báo 409 | Đang có lần sync khác của kết nối này, hoặc kết nối chưa có token | Chờ lần kia xong; nhập token |
+| Kết nối Jira bị từ chối khi lưu | `base_url` không phải `https://<tên>.atlassian.net` (IP, cổng lạ, host khác) | Dùng đúng địa chỉ Jira Cloud; Jira tự cài đặt chưa hỗ trợ |
 
 ## 3. Core tự chuẩn hoá gì (có cảnh báo trong báo cáo)
 
