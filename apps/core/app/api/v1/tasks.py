@@ -4,9 +4,10 @@ import uuid
 from datetime import date, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.api.deps import SessionDep
+from app.api.capped import CappedBodyRoute
+from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
 from app.core.config import settings
 from app.models.enums import TaskPriority, TaskSource, TaskStatus
 from app.schemas.common import Page
@@ -22,7 +23,8 @@ from app.schemas.task import (
     TimeLogRequest,
     TrashResponse,
 )
-from app.services import settings_service, task_service
+from app.schemas.task_upsert import TaskUpsertBatch, TaskUpsertResult
+from app.services import settings_service, task_service, task_sync_service
 from app.services.task_service import SortField, TaskFilters
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
@@ -80,6 +82,39 @@ async def get_stats(
     owners = task_service.validate_view_params(view, owner)
     data = await task_service.get_stats(session, reference_date, view=view, owners=owners)
     return TaskStatsResponse.model_validate(data)
+
+
+def _require_import_secret(request: Request, import_secret: ImportSecretHeader = None) -> None:
+    """Lớp chặn thứ hai: web không có đăng nhập và API key nằm trong server env của web.
+
+    Chỉ áp cho route HTTP này. Connector B4b chạy TRONG core nên gọi service trực tiếp.
+    Là dependency (không phải tham số handler) để 403 đến trước lỗi validate body 422.
+    """
+    guard_import_secret(request, import_secret)
+
+
+async def upsert_batch(session: SessionDep, payload: TaskUpsertBatch) -> TaskUpsertResult:
+    return await task_sync_service.upsert_batch(session, payload.source, payload.items)
+
+
+# add_api_route (không phải decorator) vì cần route_class_override: trần body 20 MB đọc
+# theo luồng, trả 413. Khai báo trước `/{task_id}` như mọi route tĩnh khác.
+router.add_api_route(
+    "/upsert-batch",
+    upsert_batch,
+    methods=["POST"],
+    response_model=TaskUpsertResult,
+    route_class_override=CappedBodyRoute,
+    dependencies=[Depends(_require_import_secret)],
+    summary="Upsert hàng loạt task từ nguồn tích hợp (idempotent)",
+    description=(
+        "Khớp theo (source, external_id) trên task còn sống; chỉ ghi scope=work, task "
+        "personal trùng khoá bị bỏ qua (skipped_personal). Tối đa 1000 item, body tối đa "
+        "20 MB (413). Đòi header X-Import-Secret (403). `tags` được gộp, `description` chỉ "
+        "điền khi task đang rỗng. "
+        "`source` không được là `manual`."
+    ),
+)
 
 
 @router.get(

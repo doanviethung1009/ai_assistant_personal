@@ -52,6 +52,9 @@ os.environ["RATE_LIMIT_ENABLED"] = "false"
 # Mật khẩu nhập dữ liệu thật: test API nhập thật gửi đúng giá trị này.
 IMPORT_SECRET = "test-import-secret-0123456789"  # noqa: S105
 os.environ["IMPORT_COMMIT_SECRET"] = IMPORT_SECRET
+# Khoá Fernet cố định CHỈ cho test (đủ 32 byte base64 url-safe). Test thiếu khoá tự xoá
+# bằng monkeypatch.
+os.environ["INTEGRATION_SECRET_KEY"] = "aW50ZWdyYXRpb24tdGVzdC1rZXktMDEyMzQ1Njc4OTA="  # noqa: S105
 
 API_KEY = os.environ["API_KEY"]
 
@@ -59,7 +62,7 @@ API_KEY = os.environ["API_KEY"]
 # của test này rò sang test sau. import_audit/import_runs là sổ cái của chức năng nhập.
 _TRUNCATE_SQL = (
     "TRUNCATE ai_logs, task_events, tasks, notes, projects, import_audit, import_runs, "
-    "app_settings, browser_history "
+    "app_settings, browser_history, integration_connections "
     "RESTART IDENTITY CASCADE"
 )
 ROOT = Path(__file__).resolve().parents[1]

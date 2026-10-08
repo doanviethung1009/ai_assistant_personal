@@ -75,12 +75,16 @@ _NO_ECHO_PREFIXES = (
     SETTINGS_PATH_PREFIX,
     "/api/v1/browser-history",
     "/api/v1/import/browser-history",
+    # Body có API token của integration: 422 mà echo `input` là lộ token.
+    "/api/v1/integrations",
+    # raw_payload của nguồn ngoài có thể mang token/cookie: không echo lại trong 422.
+    "/api/v1/tasks/upsert-batch",
 )
 
 
 @app.exception_handler(RequestValidationError)
 async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
-    """Lỗi 422 mặc định; riêng /settings và browser-history bỏ `input`, `ctx` khỏi chi tiết lỗi.
+    """Lỗi 422 mặc định; riêng các route nhạy cảm (xem _NO_ECHO_PREFIXES) bỏ `input`, `ctx`.
 
     Mặc định FastAPI echo lại giá trị đầu vào, mà ở đây đó là URL đồng bộ (link chia sẻ
     mang token trong query) hay tên người dùng, rồi đi vào log của proxy/client. Phạm vi

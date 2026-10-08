@@ -4,7 +4,6 @@ import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from enum import Enum
 from typing import Any, Literal
 
 from sqlalchemy import ColumnElement, Integer, Select, and_, case, cast, delete, func, or_, select
@@ -26,6 +25,10 @@ from app.models.task import Task, TaskEvent
 from app.schemas.task import MAX_OWNER_LEN, MAX_OWNERS, TaskCreate, TaskUpdate, TaskView
 from app.services.clock import local_day_bounds_utc, local_today, now_utc
 from app.services.errors import ConflictError, NotFoundError, ValidationError
+from app.services.jsonable import jsonable
+
+# Tên cũ, giữ để quy ước "payload event qua _jsonable()" trong tài liệu vẫn đúng.
+_jsonable = jsonable
 
 CLOSED_STATUSES = (TaskStatus.DONE, TaskStatus.CANCELLED)
 
@@ -188,26 +191,6 @@ async def _ensure_project_exists(session: AsyncSession, project_id: uuid.UUID | 
         raise ValidationError(f"project_id {project_id} không tồn tại")
 
 
-def _jsonable(value: Any) -> Any:
-    """Chuyển giá trị Python sang dạng json.dumps xử lý được.
-
-    Cần thiết vì payload của task_events là JSONB, mà diff có thể chứa
-    UUID (project_id), datetime (due_at), date (scheduled_for) và Enum.
-    Không chuyển thì SQLAlchemy sẽ ném TypeError khi serialize.
-    """
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, uuid.UUID):
-        return str(value)
-    if isinstance(value, datetime | date):
-        return value.isoformat()
-    if isinstance(value, list | tuple | set):
-        return [_jsonable(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _jsonable(item) for key, item in value.items()}
-    return value
-
-
 def _record_event(
     session: AsyncSession,
     task: Task,
@@ -220,7 +203,7 @@ def _record_event(
             task_id=task.id,
             event_type=event_type,
             actor=actor,
-            payload=_jsonable(payload) if payload is not None else None,
+            payload=jsonable(payload) if payload is not None else None,
         )
     )
 

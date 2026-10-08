@@ -13,6 +13,7 @@ from app.models.enums import (
     ImportAction,
     ImportEntity,
     ImportKind,
+    IntegrationKind,
     NoteKind,
     NoteSource,
     SettingKey,
@@ -22,6 +23,7 @@ from app.models.enums import (
     TaskStatus,
 )
 from app.models.import_audit import ImportAudit, ImportRun
+from app.models.integration import IntegrationConnection
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
@@ -37,6 +39,8 @@ __all__ = [
     "ImportEntity",
     "ImportKind",
     "ImportRun",
+    "IntegrationConnection",
+    "IntegrationKind",
     "Note",
     "NoteKind",
     "NoteSource",
