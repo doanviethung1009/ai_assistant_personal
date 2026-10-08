@@ -824,3 +824,17 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Gộp 6 lời gọi dữ liệu vào một `Promise.all` (trước đó 3 lời gọi tuần tự).
   - Kiểm trên web đang chạy (không mở thêm server): 4 tab đúng nội dung, không lỗi console, tsc xanh. Chưa kiểm thông báo ở chế độ api vì không có core API chạy.
 - **Phản hồi:** Đã xong A; chưa push.
+
+---
+
+### [08-10-2026 20:00] | Category: [API]
+- **Prompt:** "làm đi bạn" (tiếp tục pha B1: nhập JSON vào Postgres, sau khi duyệt spec B1-B4)
+- **Xử lý:**
+  - Chạy đúng luồng: architect (spec v2.1 CHỐT) → backend-dev → sinh lại openapi.d.ts → frontend-dev → db-reviewer, code-reviewer, security-auditor song song → gộp 15 mục sửa cho backend-dev → hoàn thiện panel web → soát lại.
+  - Reviewer bắt được: ReDoS ở regex hsl (đã tự đo 0,4 giây với 8000 dấu cách, tăng bậc hai), `expect_replaced` chỉ là con số, ghi đè không cần xác thực khi LAN, giá trị dự phòng ghi đè dữ liệu thật khi replace, lost update, thiếu CHECK constraint.
+  - Quyết định của User: replace khi trùng, làm cả B2-B4, Vault không vào Postgres, yêu cầu mật khẩu `IMPORT_COMMIT_SECRET` khi nhập thật.
+  - frontend-dev bị User dừng giữa chừng; orchestrator hoàn thiện panel trực tiếp sau khi hỏi lại.
+  - Hạ tầng: `docker-compose.yml` truyền `IMPORT_COMMIT_SECRET`; `scripts/gen-env.sh` sinh mật khẩu và `set_var` nay nối biến vào `.env` khi thiếu.
+  - Tài liệu: `DATA_MIGRATION_TO_POSTGRES.md` (kèm SQL hoàn tác CHƯA chạy thử vì hook chặn DELETE qua psql), API_REFERENCE mục 5, HANDOFF mục 6, INDEX, sửa comment sai ở `lib/store/types.ts` và `transfer.ts`.
+  - Sự cố: một lệnh bọc `bash -c` bị công cụ an toàn chặn (không xoá gì); chạy lại không bọc.
+- **Phản hồi:** B1 xong code và docs, 122 test pass, 2 test file thật pass (dữ liệu thật không đổi hash). Chưa push; đang soát lại.

@@ -49,8 +49,18 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://test:test@localhost:
 os.environ.setdefault("API_KEY", "test-api-key-0123456789")
 # Test không có Redis; rate limit fail-open nhưng chờ timeout 3s mỗi request.
 os.environ["RATE_LIMIT_ENABLED"] = "false"
+# Mật khẩu nhập dữ liệu thật: test API nhập thật gửi đúng giá trị này.
+IMPORT_SECRET = "test-import-secret-0123456789"  # noqa: S105
+os.environ["IMPORT_COMMIT_SECRET"] = IMPORT_SECRET
 
 API_KEY = os.environ["API_KEY"]
+
+# Danh sách bảng cố định: thêm bảng mới thì phải thêm vào đây, nếu không dữ liệu
+# của test này rò sang test sau. import_audit/import_runs là sổ cái của chức năng nhập.
+_TRUNCATE_SQL = (
+    "TRUNCATE ai_logs, task_events, tasks, notes, projects, import_audit, import_runs "
+    "RESTART IDENTITY CASCADE"
+)
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -84,9 +94,7 @@ async def session(migrated_db: None) -> AsyncIterator[object]:
     async with SessionFactory() as s:
         yield s
         await s.rollback()
-        await s.execute(
-            text("TRUNCATE ai_logs, task_events, tasks, notes, projects RESTART IDENTITY CASCADE")
-        )
+        await s.execute(text(_TRUNCATE_SQL))
         await s.commit()
 
 
@@ -106,7 +114,5 @@ async def client(migrated_db: None) -> AsyncIterator[object]:
         yield c
 
     async with SessionFactory() as s:
-        await s.execute(
-            text("TRUNCATE ai_logs, task_events, tasks, notes, projects RESTART IDENTITY CASCADE")
-        )
+        await s.execute(text(_TRUNCATE_SQL))
         await s.commit()

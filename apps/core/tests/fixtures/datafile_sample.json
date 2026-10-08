@@ -1,0 +1,169 @@
+{
+  "schema_version": 4,
+  "exported_at": "2026-10-01T00:00:00.000Z",
+  "unknown_top_level": true,
+  "projects": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "key": "PROJ ALPHA",
+      "name": "Du an Mot",
+      "description": "Project tong hop 1",
+      "color": "hsl(253, 70%, 65%)",
+      "is_archived": false,
+      "created_at": "2026-09-01T08:00:00.000Z",
+      "updated_at": "2026-09-01T08:00:00.000Z"
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "key": "ĐỀ TÀI MỚI",
+      "name": "Du an Hai",
+      "description": null,
+      "color": "#2563EB",
+      "is_archived": true,
+      "created_at": "2026-09-02T08:00:00.000Z",
+      "updated_at": "2026-09-02T08:00:00.000Z"
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "key": "beta",
+      "name": "Du an Ba",
+      "description": null,
+      "color": "red",
+      "is_archived": false,
+      "created_at": "2026-09-03T08:00:00.000Z",
+      "updated_at": "2026-09-03T08:00:00.000Z"
+    }
+  ],
+  "tasks": [
+    {
+      "id": "aaaaaaa1-0000-4000-8000-000000000001",
+      "title": "Task tong hop 1",
+      "description": "Mo ta 1",
+      "status": "done",
+      "priority": "high",
+      "project_id": "11111111-1111-4111-8111-111111111111",
+      "project": {"id": "11111111-1111-4111-8111-111111111111", "key": "PROJ ALPHA", "name": "Du an Mot"},
+      "due_at": "2026-10-08T00:00:00.000Z",
+      "scheduled_for": null,
+      "estimate_minutes": null,
+      "spent_minutes": 30,
+      "completed_at": null,
+      "tags": ["Backend", "api"],
+      "source": "jira",
+      "external_id": "DEMO-1",
+      "external_url": "https://example.invalid/browse/DEMO-1",
+      "assignee": "Nguoi Mot",
+      "created_at": "2026-09-10T09:00:00.000Z",
+      "updated_at": "2026-09-20T09:00:00.000Z",
+      "deleted_at": null,
+      "is_overdue": false,
+      "raw_payload": {"should": "be ignored"},
+      "events": [
+        {
+          "id": "eeeeeee1-0000-4000-8000-000000000001",
+          "event_type": "created",
+          "actor": "user",
+          "payload": {"note": "tao"},
+          "created_at": "2026-09-10T09:00:00.000Z"
+        },
+        {
+          "id": "eeeeeee2-0000-4000-8000-000000000002",
+          "event_type": "status_changed",
+          "actor": "user",
+          "payload": {"from": "todo", "to": "done"},
+          "created_at": "2026-09-20T09:00:00.000Z"
+        }
+      ]
+    },
+    {
+      "id": "aaaaaaa2-0000-4000-8000-000000000002",
+      "title": "Task tong hop 2",
+      "description": null,
+      "status": "todo",
+      "priority": "medium",
+      "project_id": null,
+      "project": {"key": "beta"},
+      "due_at": null,
+      "scheduled_for": "2026-10-09",
+      "estimate_minutes": 45,
+      "spent_minutes": 0,
+      "completed_at": null,
+      "tags": [],
+      "source": "jira",
+      "external_id": "DEMO-2",
+      "external_url": null,
+      "assignee": null,
+      "created_at": "2026-09-11T09:00:00.000Z",
+      "updated_at": "2026-09-21T09:00:00.000Z",
+      "deleted_at": null,
+      "events": []
+    },
+    {
+      "id": "aaaaaaa3-0000-4000-8000-000000000003",
+      "title": "Task nhap tay",
+      "description": null,
+      "status": "in_progress",
+      "priority": "low",
+      "project_id": "22222222-2222-4222-8222-222222222222",
+      "spent_minutes": 5,
+      "tags": ["tay"],
+      "source": "manual",
+      "external_id": null,
+      "created_at": "2026-09-12T09:00:00.000Z",
+      "updated_at": "2026-09-22T09:00:00.000Z",
+      "deleted_at": null,
+      "events": []
+    },
+    {
+      "id": "aaaaaaa4-0000-4000-8000-000000000004",
+      "title": "Task o thung rac cua file",
+      "status": "todo",
+      "priority": "medium",
+      "source": "jira",
+      "external_id": "DEMO-TRASH",
+      "created_at": "2026-09-13T09:00:00.000Z",
+      "updated_at": "2026-09-23T09:00:00.000Z",
+      "deleted_at": "2026-09-24T09:00:00.000Z",
+      "events": [
+        {
+          "id": "eeeeeee3-0000-4000-8000-000000000003",
+          "event_type": "created",
+          "actor": "user",
+          "created_at": "2026-09-13T09:00:00.000Z"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "id": "bbbbbbb1-0000-4000-8000-000000000001",
+      "title": "Ghi chu lenh",
+      "kind": "command",
+      "content": "echo xin-chao",
+      "description": "Lenh vi du",
+      "context": "local",
+      "project_id": "11111111-1111-4111-8111-111111111111",
+      "tags": ["Shell"],
+      "is_pinned": true,
+      "is_dangerous": false,
+      "use_count": 2,
+      "last_used_at": "2026-09-25T09:00:00.000Z",
+      "source": "manual",
+      "external_id": null,
+      "archived_at": null,
+      "created_at": "2026-09-14T09:00:00.000Z",
+      "updated_at": "2026-09-25T09:00:00.000Z",
+      "deleted_at": null
+    },
+    {
+      "id": "bbbbbbb2-0000-4000-8000-000000000002",
+      "title": "Ghi chu o thung rac",
+      "kind": "text",
+      "content": "da xoa",
+      "deleted_at": "2026-09-26T09:00:00.000Z",
+      "created_at": "2026-09-14T09:00:00.000Z",
+      "updated_at": "2026-09-26T09:00:00.000Z"
+    }
+  ],
+  "meta": {"current_users": ["Nguoi Tong Hop"]}
+}

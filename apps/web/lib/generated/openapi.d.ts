@@ -529,6 +529,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/import/datafile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá) */
+        post: operations["import_datafile_api_v1_import_datafile_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/import/ai-logs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Nhập ai-logs.json (GHI ĐÈ bản ghi đã có, không xoá) */
+        post: operations["import_ai_logs_api_v1_import_ai_logs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -616,6 +650,58 @@ export interface components {
             /** Error */
             error?: string | null;
         };
+        /** EntityCounts */
+        EntityCounts: {
+            /**
+             * Received
+             * @default 0
+             */
+            received: number;
+            /**
+             * Created
+             * @default 0
+             */
+            created: number;
+            /**
+             * Replaced
+             * @default 0
+             */
+            replaced: number;
+            /**
+             * Replaced Older
+             * @default 0
+             */
+            replaced_older: number;
+            /**
+             * Unchanged
+             * @default 0
+             */
+            unchanged: number;
+            /**
+             * Skipped Trash
+             * @default 0
+             */
+            skipped_trash: number;
+            /**
+             * Skipped Trash In Db
+             * @default 0
+             */
+            skipped_trash_in_db: number;
+            /**
+             * Invalid
+             * @default 0
+             */
+            invalid: number;
+        };
+        /** FieldChange */
+        FieldChange: {
+            /** Field */
+            field: string;
+            /** Old */
+            old?: unknown;
+            /** New */
+            new?: unknown;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -636,6 +722,72 @@ export interface components {
             components: {
                 [key: string]: components["schemas"]["ComponentHealth"];
             };
+        };
+        /** ImportIssue */
+        ImportIssue: {
+            /**
+             * Level
+             * @enum {string}
+             */
+            level: "error" | "warning";
+            /**
+             * Entity
+             * @enum {string}
+             */
+            entity: "file" | "project" | "task" | "task_event" | "note" | "ai_log";
+            /** Index */
+            index?: number | null;
+            /** Id */
+            id?: string | null;
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** ImportReport */
+        ImportReport: {
+            /**
+             * Import Id
+             * Format: uuid
+             */
+            import_id: string;
+            /** Dry Run */
+            dry_run: boolean;
+            /** Committed */
+            committed: boolean;
+            /** Schema Version */
+            schema_version: number;
+            /** File Sha256 */
+            file_sha256: string;
+            /** Counts */
+            counts: {
+                [key: string]: components["schemas"]["EntityCounts"];
+            };
+            /** Errors */
+            errors: number;
+            /** Warnings */
+            warnings: number;
+            /** Issues */
+            issues: components["schemas"]["ImportIssue"][];
+            /** Issues Truncated */
+            issues_truncated: boolean;
+            /** Replacements */
+            replacements: components["schemas"]["Replacement"][];
+            /** Replacements Truncated */
+            replacements_truncated: boolean;
+            /** Project Key Changes */
+            project_key_changes: components["schemas"]["KeyChange"][];
+            /** Ignored Fields */
+            ignored_fields: {
+                [key: string]: string[];
+            };
+        };
+        /** KeyChange */
+        KeyChange: {
+            /** Original */
+            original: string;
+            /** Normalized */
+            normalized: string;
         };
         /** NoteCreate */
         NoteCreate: {
@@ -964,6 +1116,35 @@ export interface components {
             purged: number;
             /** Retention Days */
             retention_days: number;
+        };
+        /** Replacement */
+        Replacement: {
+            /**
+             * Entity
+             * @enum {string}
+             */
+            entity: "project" | "task" | "note" | "ai_log";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * File Id
+             * Format: uuid
+             */
+            file_id: string;
+            /** Label */
+            label: string;
+            /**
+             * Matched By
+             * @enum {string}
+             */
+            matched_by: "id" | "natural_key";
+            /** File Older Than Db */
+            file_older_than_db: boolean;
+            /** Changes */
+            changes: components["schemas"]["FieldChange"][];
         };
         /**
          * SystemInfo
@@ -2454,6 +2635,132 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiLogRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_datafile_api_v1_import_datafile_post: {
+        parameters: {
+            query?: {
+                /** @description true (mặc định): chạy thử rồi ROLLBACK, không ghi gì. */
+                dry_run?: boolean;
+                /** @description Bắt buộc khi dry_run=false: số bản ghi sẽ bị ghi đè, lấy từ báo cáo dry-run. Lệch số thực tế thì huỷ. */
+                expect_replaced?: number | null;
+                /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
+                expect_sha256?: string | null;
+            };
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Schema Version
+                     * @default 1
+                     */
+                    schema_version?: number;
+                    /** Exported At */
+                    exported_at?: string | null;
+                    /** Projects */
+                    projects: {
+                        [key: string]: unknown;
+                    }[];
+                    /** Tasks */
+                    tasks: {
+                        [key: string]: unknown;
+                    }[];
+                    /** Notes */
+                    notes?: {
+                        [key: string]: unknown;
+                    }[];
+                    /** Meta */
+                    meta?: {
+                        [key: string]: unknown;
+                    } | null;
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_ai_logs_api_v1_import_ai_logs_post: {
+        parameters: {
+            query?: {
+                /** @description true (mặc định): chạy thử rồi ROLLBACK, không ghi gì. */
+                dry_run?: boolean;
+                /** @description Bắt buộc khi dry_run=false: số bản ghi sẽ bị ghi đè, lấy từ báo cáo dry-run. Lệch số thực tế thì huỷ. */
+                expect_replaced?: number | null;
+                /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
+                expect_sha256?: string | null;
+            };
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /**
+                     * Schema Version
+                     * @default 1
+                     */
+                    schema_version?: number;
+                    /** Exported At */
+                    exported_at?: string | null;
+                    /** Ai Logs */
+                    ai_logs: {
+                        [key: string]: unknown;
+                    }[];
+                } & {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImportReport"];
                 };
             };
             /** @description Validation Error */

@@ -168,3 +168,11 @@ export const OPEN_STATUSES: TaskStatus[] = [
   "in_progress",
   "blocked",
 ];
+
+// ── Nhập hàng loạt vào Postgres (B1) ───────────────────────────────────
+export type ImportReport = Schemas["ImportReport"];
+export type Replacement = Schemas["Replacement"];
+export type FieldChange = Schemas["FieldChange"];
+export type EntityCounts = Schemas["EntityCounts"];
+export type ImportIssue = Schemas["ImportIssue"];
+export type KeyChange = Schemas["KeyChange"];

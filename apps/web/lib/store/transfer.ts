@@ -3,9 +3,11 @@ import "server-only";
 /**
  * Xuất và nhập dữ liệu dạng JSON và CSV.
  *
- * Hoạt động ở cả ba chế độ DATA_SOURCE. Đây là cầu nối để sau này chuyển
- * dữ liệu từ file lên Postgres: cùng một file JSON, chỉ cần đổi
- * DATA_SOURCE=api rồi nhập lại.
+ * Xuất hoạt động ở cả ba chế độ DATA_SOURCE; nhập CSV và nhập JSON kiểu cũ chỉ ở file/memory.
+ * Chuyển dữ liệu từ file lên Postgres KHÔNG đi qua đây: dùng endpoint
+ * POST /api/v1/import/datafile (xem lib/api.ts importDataFile và
+ * docs/DATA_MIGRATION_TO_POSTGRES.md). Ở chế độ api, importJson/importAiLogsJson ném lỗi
+ * chỉ về hướng đó vì đường POST từng bản ghi cũ làm hỏng dữ liệu.
  *
  * Ràng buộc quan trọng khi nhập từ instance khác: `project_id` trong file là
  * UUID của nơi xuất, không có ý nghĩa ở nơi nhập. Vì vậy project luôn được
@@ -131,6 +133,9 @@ function emptySummary(): ImportSummary {
     warnings: [],
   };
 }
+
+const API_IMPORT_REDIRECT =
+  "Ở chế độ Core API, dùng mục 'Chuyển dữ liệu JSON vào Postgres' (có bước Kiểm tra trước khi nhập).";
 
 function assertReplaceAllowed(mode: ImportMode): void {
   if (mode === "replace" && !IS_LOCAL) {
@@ -516,6 +521,8 @@ export async function importJson(
   text: string,
   mode: ImportMode,
 ): Promise<ImportSummary> {
+  // Ở chế độ api, nhập JSON phải đi qua endpoint có dry-run, báo cáo ghi đè và audit.
+  if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   const data = parseDataFile(text);
   return apply(data.projects, data.tasks, data.notes, mode);
 }
@@ -620,8 +627,9 @@ export async function importAiLogsJson(
   text: string,
   mode: ImportMode,
 ): Promise<ImportSummary> {
+  if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   assertReplaceAllowed(mode);
-  
+
   let parsed: any;
   try {
     parsed = JSON.parse(text);

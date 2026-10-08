@@ -35,4 +35,14 @@
 - **Bảo mật web:** mọi route trong `lib/api.ts` có `id` đều đi qua `pathId()` (chỉ nhận UUID) để chặn path injection qua Server Action; route mới có `id` phải dùng helper này.
 - **Chưa làm / cần chú ý:** `npm audit` còn 4 lỗ hổng high; web chưa có đăng nhập; chưa chạy `make smoke` và chưa xem giao diện Lưu trữ trên trình duyệt (máy dev không có Docker).
 
+## 6. Chuyển dữ liệu từ file JSON sang Postgres (đang làm, 4 pha)
+
+- **Spec CHỐT:** `docs/specs/import-json-to-postgres.md` (User duyệt B1-B4, quyết định replace có rào chắn, Vault KHÔNG vào Postgres). Hướng dẫn dùng và hoàn tác: `docs/DATA_MIGRATION_TO_POSTGRES.md`.
+- **B1 đã code (nhánh `feat/import-b1`, chưa merge):** `POST /api/v1/import/datafile` và `/import/ai-logs`; migration `e5f1a3b7c9d2` (bảng `import_runs`, `import_audit`); panel nhập ở tab Nhập của trang Dữ liệu khi `DATA_SOURCE=api`. Rào chắn: `dry_run` mặc định, `expect_replaced`, `expect_sha256`, mật khẩu `IMPORT_COMMIT_SECRET` (header `X-Import-Secret`), advisory lock, khoá dòng, all-or-nothing, audit `before`.
+- **Việc cần làm khi bắt đầu dùng:** `.env` hiện có phải tự thêm `IMPORT_COMMIT_SECRET` (`make env` chỉ sinh khi tạo `.env` mới); thiếu thì core từ chối nhập thật.
+- **B2 (cài đặt người dùng, sync_urls), B3 (lịch sử Chrome), B4 (Jira sync ở backend) chưa làm.** Đến lúc đó chế độ `api` vẫn chưa có Jira sync, nhập Excel, lọc task cá nhân/team, nên chưa bỏ chế độ file.
+- **Vault không nằm trong Postgres:** `pg_dump` không chứa nó; sao lưu riêng bằng `/api/export?entity=vault`.
+- **Rủi ro đã ghi nhận:** web không có đăng nhập; file cũ có thể ghi đè trạng thái mới hơn (đã có cờ "File cũ hơn" và xác nhận 2 lớp); `import_audit.before` giữ bản sao đầy đủ và chưa có chính sách xoá.
+- **`data/builder-data.json` là dữ liệu thật của User:** test chỉ mở chế độ đọc (kiểm sha256 không đổi); không bao giờ ghi hay chép vào repo.
+
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

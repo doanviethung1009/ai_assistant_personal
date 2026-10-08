@@ -34,7 +34,7 @@ import {
   type ImportMode,
   type ImportSummary,
 } from "@/lib/store/transfer";
-import type { NoteKind, TaskPriority, TaskStatus } from "@/lib/types";
+import type { ImportReport, NoteKind, TaskPriority, TaskStatus } from "@/lib/types";
 
 export interface ActionResult {
   ok: boolean;
@@ -610,4 +610,106 @@ export async function renameTagAction(oldName: string, newName: string) {
 export async function deleteTagAction(name: string) {
   await deleteGlobalTagApi(name);
   revalidateAll();
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Nhập hàng loạt vào Postgres qua core API (B1)
+// ═══════════════════════════════════════════════════════════════════════
+
+export interface CoreImportResult extends ActionResult {
+  report?: ImportReport;
+  /** Mã HTTP của lỗi từ core, để UI phân biệt 409 (đang có lần nhập khác) và 413. */
+  status?: number;
+}
+
+/**
+ * Kiểm tra (dry_run) hoặc nhập thật một file JSON vào Postgres.
+ *
+ * ══════════════════════════════════════════════════════════════════════
+ *  ĐÂY LÀ THAO TÁC GHI ĐÈ. Bản ghi đã có trong Postgres bị thay bằng nội
+ *  dung file. Server Action là endpoint HTTP công khai nên KHÔNG tin UI đã
+ *  bắt người dùng Kiểm tra trước: nhập thật vẫn bị từ chối nếu thiếu
+ *  `expect_replaced` hợp lệ (core cũng kiểm lại và đối chiếu số thực tế).
+ * ══════════════════════════════════════════════════════════════════════
+ *
+ * Nội dung file là dữ liệu không đáng tin: web không parse, chỉ chuyển nguyên
+ * văn cho core validate. API key chỉ nằm ở server (lib/api.ts).
+ */
+export async function importToCoreAction(formData: FormData): Promise<CoreImportResult> {
+  if (api.IS_LOCAL) {
+    return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api", status: 501 };
+  }
+
+  const file = formData.get("file");
+  const kind = String(formData.get("kind") ?? "");
+  const dryRun = String(formData.get("dry_run") ?? "1") !== "0";
+
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Chưa chọn file" };
+  }
+  if (file.size > MAX_UPLOAD_BYTES) {
+    return { ok: false, error: "File vượt quá 8 MB", status: 413 };
+  }
+  if (kind !== "datafile" && kind !== "ai-logs") {
+    return { ok: false, error: `Loại file không hợp lệ: ${kind}` };
+  }
+
+  let expectReplaced: number | undefined;
+  let expectSha256: string | undefined;
+  let secret: string | undefined;
+  if (!dryRun) {
+    const raw = String(formData.get("expect_replaced") ?? "");
+    // Chỉ nhận số nguyên không âm ở dạng chữ số thuần, không để "1e3" hay " 5" lọt qua.
+    if (!/^\d{1,9}$/.test(raw)) {
+      return { ok: false, error: "Thiếu hoặc sai số bản ghi dự kiến bị ghi đè. Hãy bấm Kiểm tra trước." };
+    }
+    expectReplaced = Number(raw);
+
+    const sha = String(formData.get("expect_sha256") ?? "");
+    if (!/^[0-9a-f]{64}$/i.test(sha)) {
+      return { ok: false, error: "Thiếu mã băm file của lần Kiểm tra. Hãy bấm Kiểm tra trước." };
+    }
+    expectSha256 = sha.toLowerCase();
+
+    const rawSecret = formData.get("import_secret");
+    // ASCII in được: giá trị đi vào header HTTP, ký tự lạ làm fetch ném lỗi chứa giá trị.
+    if (typeof rawSecret !== "string" || !/^[\x20-\x7e]{1,256}$/.test(rawSecret)) {
+      return { ok: false, error: "Chưa nhập mật khẩu nhập dữ liệu (hoặc chứa ký tự không hợp lệ)." };
+    }
+    secret = rawSecret;
+  }
+
+  let text: string;
+  try {
+    text = await file.text();
+  } catch {
+    return { ok: false, error: "Không đọc được nội dung file" };
+  }
+
+  try {
+    const options = { dryRun, expectReplaced, expectSha256, secret };
+    const report =
+      kind === "datafile"
+        ? await api.importDataFile(text, options)
+        : await api.importAiLogsFile(text, options);
+    // Chỉ làm mới cache khi dữ liệu thật sự đổi.
+    if (report.committed) revalidateAll();
+    return { ok: true, report };
+  } catch (error) {
+    if (error instanceof CoreApiError) {
+      if (error.status === 403) {
+        // Thông điệp tự viết, không chuyển tiếp detail của core và không nhắc lại giá trị đã gõ.
+        return {
+          ok: false,
+          status: 403,
+          error:
+            "Mật khẩu nhập sai, hoặc core chưa cấu hình IMPORT_COMMIT_SECRET (đặt biến này trong .env của core rồi khởi động lại api).",
+        };
+      }
+      return { ok: false, error: error.message, status: error.status };
+    }
+    // Chỉ log tên lỗi, không log cả object: tránh vô tình ghi header chứa mật khẩu.
+    console.error("nhập vào Postgres thất bại", error instanceof Error ? error.name : "unknown");
+    return { ok: false, error: "Không gọi được core API. Kiểm tra service api." };
+  }
 }

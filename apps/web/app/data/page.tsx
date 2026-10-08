@@ -3,6 +3,7 @@ import { Settings2 } from "lucide-react";
 import { ApiErrorPanel } from "@/components/api-error";
 import { ChromeHistoryManager } from "@/components/chrome-history-manager";
 import { CurrentUserManager } from "@/components/current-user-manager";
+import { CoreImportPanel } from "@/components/core-import-panel";
 import { DataExportGrid } from "@/components/data-export-grid";
 import { DataImport } from "@/components/data-import";
 import { DataSourceCard } from "@/components/data-source-card";
@@ -110,7 +111,14 @@ export default async function DataPage({
               {DIVIDER}
             </>
           ) : (
-            <LocalOnlyNotice feature="Nhập JSON, nhập file và khôi phục từ bản sao lưu" />
+            <>
+              {/* Chế độ api: JSON đi qua panel có Kiểm tra (dry-run) trước khi ghi đè. */}
+              <CoreImportPanel />
+              {DIVIDER}
+              <DataImport allowReplace={false} kinds={["tasks-csv", "projects-csv", "notes-csv"]} />
+              {DIVIDER}
+              <LocalOnlyNotice feature="Nhập file Excel Jira và khôi phục từ bản sao lưu cục bộ" />
+            </>
           )}
           {/* Chrome và Vault dùng kho riêng, không phụ thuộc DATA_SOURCE nên luôn hiện. */}
           <ChromeHistoryManager />
