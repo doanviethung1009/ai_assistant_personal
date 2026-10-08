@@ -92,6 +92,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/assignees": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Danh sách assignee của task công việc
+         * @description DISTINCT assignee của task còn sống VÀ scope=work (tối đa 500, sắp theo chữ cái). Dùng cho chọn 'tôi là ai'; task cá nhân và task trong thùng rác không góp tên.
+         */
+        get: operations["list_assignees_api_v1_tasks_assignees_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/trash": {
         parameters: {
             query?: never;
@@ -563,6 +583,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/current-users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Tên của User (dùng cho view=mine) */
+        get: operations["get_current_users_api_v1_settings_current_users_get"];
+        /**
+         * Ghi đè danh sách tên của User
+         * @description Tối đa 20 tên, mỗi tên 1..200 ký tự sau khi strip, loại trùng.
+         */
+        put: operations["put_current_users_api_v1_settings_current_users_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/sync-urls": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** URL file đồng bộ đã lưu */
+        get: operations["get_sync_urls_api_v1_settings_sync_urls_get"];
+        /**
+         * Ghi đè danh sách URL đồng bộ
+         * @description Tối đa 50 URL, chỉ https, host thuộc allowlist (Google Docs/Sheets/Drive, SharePoint/OneDrive + SYNC_URL_EXTRA_HOSTS). Chống SSRF: server sẽ fetch các URL này.
+         */
+        put: operations["put_sync_urls_api_v1_settings_sync_urls_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -649,6 +711,14 @@ export interface components {
             latency_ms?: number | null;
             /** Error */
             error?: string | null;
+        };
+        /**
+         * CurrentUsersBody
+         * @description Danh sách tên của chính User, dùng để lọc `view=mine`/`owner`.
+         */
+        CurrentUsersBody: {
+            /** Names */
+            names: string[];
         };
         /** EntityCounts */
         EntityCounts: {
@@ -739,7 +809,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "file" | "project" | "task" | "task_event" | "note" | "ai_log";
+            entity: "file" | "project" | "task" | "task_event" | "note" | "ai_log" | "setting";
             /** Index */
             index?: number | null;
             /** Id */
@@ -1128,7 +1198,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "project" | "task" | "note" | "ai_log";
+            entity: "project" | "task" | "note" | "ai_log" | "setting";
             /**
              * Id
              * Format: uuid
@@ -1150,6 +1220,14 @@ export interface components {
             file_older_than_db: boolean;
             /** Changes */
             changes: components["schemas"]["FieldChange"][];
+        };
+        /**
+         * SyncUrlsBody
+         * @description Danh sách URL file đồng bộ (Google Sheets, SharePoint...).
+         */
+        SyncUrlsBody: {
+            /** Urls */
+            urls: string[];
         };
         /**
          * SystemInfo
@@ -1658,6 +1736,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_assignees_api_v1_tasks_assignees_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
         };
@@ -2735,6 +2833,8 @@ export interface operations {
                     meta?: {
                         [key: string]: unknown;
                     } | null;
+                    /** Sync Urls */
+                    sync_urls?: unknown;
                 } & {
                     [key: string]: unknown;
                 };
@@ -2805,6 +2905,112 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_current_users_api_v1_settings_current_users_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUsersBody"];
+                };
+            };
+        };
+    };
+    put_current_users_api_v1_settings_current_users_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CurrentUsersBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentUsersBody"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sync_urls_api_v1_settings_sync_urls_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncUrlsBody"];
+                };
+            };
+        };
+    };
+    put_sync_urls_api_v1_settings_sync_urls_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncUrlsBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncUrlsBody"];
                 };
             };
             /** @description Validation Error */
