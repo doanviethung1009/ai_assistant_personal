@@ -200,6 +200,7 @@ class HookProcessTests(unittest.TestCase):
     def run_hook(self, event: dict | str, trace: Path | None = None, extra_env: dict | None = None):
         env = {k: v for k, v in os.environ.items() if k != "CLAUDE_TRACE_DIR"}
         env.update(HOME=str(self.home), CLAUDE_TRACE_DIR=str(trace or self.trace),
+                   CLAUDE_TRACE_ENABLED="1",
                    CLAUDE_PROJECT_DIR=str(self.repo))
         env.update(extra_env or {})
         data = event if isinstance(event, str) else json.dumps(event)
@@ -339,6 +340,12 @@ class HookProcessTests(unittest.TestCase):
         self.assertFalse(inside.exists())
 
     # ── Lỗi không được làm hook thoát khác 0 ──────────────────────────
+    def test_disabled_by_default(self) -> None:
+        for val in ("", "0", "true"):
+            r = self.run_hook(self.stop_event(), extra_env={"CLAUDE_TRACE_ENABLED": val})
+            self.assertEqual((r.returncode, r.stdout), (0, ""))
+            self.assertFalse(self.trace.exists(), val)
+
     def test_broken_json(self) -> None:
         r = self.run_hook("{không phải json")
         self.assertEqual((r.returncode, r.stdout), (0, ""))

@@ -76,10 +76,22 @@ Hạn chế đã biết: mật khẩu chứa `/` hoặc `@` **thô** trong URL (
 
 **Đã kiểm chứng (2026-10-08):** một phiên `claude -p` thật chạy Stop và SessionEnd qua harness, sinh `turns.jsonl` và `sessions/<sid>.<UTC>.jsonl` (quyền 600, thư mục 700, không có `errors.log`) với transcript nhỏ. **Chưa kiểm** với transcript hàng chục MB: nếu `SessionEnd` bị cắt vì timeout, đặt `CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS`. Giá trị trong `.env` là đường dẫn (bắt đầu bằng `/` hoặc `~`) không bị che, vì đường dẫn không phải secret.
 
+## Bật hook (mặc định TẮT)
+
+Hook nằm trong `.claude/settings.json` dùng chung nhưng **chỉ ghi khi `CLAUDE_TRACE_ENABLED=1`**,
+để người clone repo không bị lưu transcript (có thể chứa dữ liệu Jira công ty) khi chưa biết.
+Bật ở máy mình, trong `.claude/settings.local.json` (đã gitignore):
+
+```json
+{ "env": { "CLAUDE_TRACE_ENABLED": "1" } }
+```
+
+Khi thêm khoá `env` vào file này, giữ nguyên khoá `permissions` có sẵn. Chưa bật thì hook thoát
+ngay, không đọc stdin, không tạo thư mục.
+
 ## Tắt hook
 
-Xoá 3 khối `Stop`, `SubagentStop`, `SessionEnd` trong `.claude/settings.json`; hoặc đặt
-chúng vào `.claude/settings.local.json` của riêng bạn thay vì file chung. Dữ liệu cũ nằm
+Bỏ biến `CLAUDE_TRACE_ENABLED` (hoặc đặt khác `1`) trong `.claude/settings.local.json`. Dữ liệu cũ nằm
 nguyên ở thư mục trace; xoá bằng `rm -r ~/.claude/trace/ai_assistant_personal`.
 
 ## Dùng dữ liệu để train
@@ -95,7 +107,7 @@ kết quả. Chưa có pipeline train; đó là việc giai đoạn sau.
   được dùng để train** cho đến khi User xác nhận. Không sao chép, upload hay chia sẻ thư mục
   trace.
 - Trace tăng theo thời gian (transcript hàng MB mỗi phiên); chưa có xoay vòng/dọn tự động.
-- Hook chạy trên mọi lượt của mọi session trong repo này, kể cả subagent.
+- Khi đã bật, hook chạy trên mọi lượt của mọi session trong repo này, kể cả subagent.
 
 ## File liên quan
 

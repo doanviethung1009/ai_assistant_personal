@@ -13,6 +13,7 @@ CLAUDE_TRACE_DIR):
   errors.log             lỗi của chính hook (chỉ loại lỗi, không có nội dung).
 
 ══════════════════════════════════════════════════════════════════════
+  MẶC ĐỊNH TẮT: chỉ chạy khi CLAUDE_TRACE_ENABLED=1.
   HOOK NÀY KHÔNG ĐƯỢC LÀM HỎNG PHIÊN LÀM VIỆC.
   Luôn exit 0, không in gì ra stdout, không gọi mạng, không chặn tool,
   không ghi vào repo, có báo thức tự ngắt. Mọi dữ liệu qua trace_redact
@@ -363,6 +364,11 @@ def handle(ev: dict[str, Any], base: Path) -> None:
 
 
 def main() -> int:
+    # Cổng opt-in: hook nằm trong settings.json dùng chung nên chạy trên máy mọi người
+    # clone repo, mà transcript có thể chứa dữ liệu Jira công ty. Mặc định TẮT; ai muốn
+    # ghi vết tự bật ở .claude/settings.local.json (gitignore): {"env": {"CLAUDE_TRACE_ENABLED": "1"}}.
+    if os.environ.get("CLAUDE_TRACE_ENABLED") != "1":
+        return 0
     base: Path | None = None
     signal.signal(signal.SIGALRM, _on_alarm)
     signal.alarm(ALARM_SECONDS["SessionEnd"])  # trần cho cả việc đọc stdin; thu hẹp sau khi biết sự kiện
