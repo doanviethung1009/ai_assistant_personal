@@ -75,7 +75,7 @@
 - **Merge:** sau B2 (đã merge). Migration `b8c4d6e0f3a5` là head mới.
 - **Chưa làm:** pha B4 (Jira sync ở backend).
 
-## 10. Jira ở backend, phần B4a: kết nối mã hoá và upsert-batch (nhánh `feat/jira-sync-b4`, chưa merge)
+## 10. Jira ở backend, phần B4a: kết nối mã hoá và upsert-batch (đã merge vào `main`)
 
 - **Đã code:** bảng `integration_connections` (migration `c9d1e3f5a7b2`, nối sau `b8c4d6e0f3a5`), `/api/v1/integrations` (token chỉ ghi, mã hoá Fernet, gắn với `connection_id` + `base_url` nên chép ciphertext sang kết nối khác sẽ không giải mã được), `POST /tasks/upsert-batch` (cần `X-Import-Secret`, chỉ ghi `scope=work`, tags gộp, description chỉ điền khi rỗng, lọc `raw_payload`), `POST /import/verify-secret`. Thêm gói `cryptography` (uv.lock chỉ thêm 3 gói). Web: `jira-connections-manager` (quản lý kết nối, chuyển cấu hình từ localStorage một lần), Excel/URL sync ở chế độ api đẩy lên upsert-batch, `lib/excel-upsert.ts`.
 - **Biến môi trường mới:** `INTEGRATION_SECRET_KEY` (khoá Fernet; `make env` tự sinh, **.env có từ trước phải tự thêm**; mất khoá = nhập lại mọi token), `INTEGRATION_SECRET_KEY_OLD` (tuỳ chọn, khi xoay khoá).
@@ -83,5 +83,16 @@
 - **Lệch spec cần nhớ:** actor event là `integration:<source>` (B4b nên đổi thành tên kết nối); `GET /integrations` trả `Page`; `TaskSource` không có `url_sync`/`excel` nên web gửi `source=jira` cố định ở server; tạo kết nối không có token vẫn được khi thiếu khoá (chỉ token mới cần khoá).
 - **Rủi ro còn lại:** `base_url` mới chỉ chặn theo tên host literal, **chưa phân giải DNS** (`127.0.0.1.nip.io`, DNS rebinding): B4b phải phân giải, chặn IP private, ghim IP, tắt redirect, không gửi `Authorization` sang host khác; `syncJiraAction` ở chế độ file vẫn gửi `Authorization` tới `baseUrl` tuỳ ý (SSRF có sẵn, vá ở B4b); tạo/xoá kết nối chưa đòi mật khẩu (web không có đăng nhập); audit kết nối chỉ là log có cấu trúc, chưa có bảng; `external_url` hardcode `onemount.atlassian.net`; chưa chạy UAT, `make smoke` (không có Docker).
 - **Chưa làm (B4b):** `POST /integrations/{id}/sync` (connector Python trong core, mặc định chặn IP private, mở bằng biến môi trường), JQL mặc định dùng `current_users`, bật nút "Cào ngay" ở chế độ api.
+
+## 11. Chạy sync Jira ở backend, phần B4b (nhánh `feat/jira-sync-b4b`, chưa merge)
+
+- **Đã code:** `POST /api/v1/integrations/{id}/sync` (cần `X-Import-Secret`). Connector Python trong core: `services/jira_client.py` (phân trang, JQL, giới hạn), `jira_mapping.py` (ánh xạ issue sang task, khớp `syncJiraAction` chế độ file), `ssrf_guard.py` (phân giải DNS, chặn IP riêng, ghim IP), `integration_sync_service.py` (khoá advisory theo kết nối, ghi từng lô ngắn, không giữ transaction lúc gọi Jira). Web: nút "Cào ngay" ở chế độ api (mật khẩu, "Từ ngày", kết quả chi tiết).
+- **Chỉ Jira Cloud** (`*.atlassian.net`, User chốt). Không có cờ cho phép IP riêng/Jira on-prem (đã bỏ có chủ đích). Mọi dải riêng, loopback, link-local, metadata cloud luôn bị chặn.
+- **Vá SSRF có sẵn:** `syncJiraAction` (chế độ file) trước đây gửi `Authorization` tới `baseUrl` tuỳ ý và trả body lỗi của Jira. Nay chỉ nhận `https://<nhãn>.atlassian.net`, không theo redirect, không trả/log body Jira, có trần tổng 100 MB, hạn chót 5 phút, chống chạy song song, kiểm `issue.key`, escape JQL. **Thay đổi hành vi:** chế độ file không còn nhận host khác.
+- **Parity chế độ file:** `priority`, `due_at`, `assignee`, project chỉ ghi khi tạo task; task cũ giữ giá trị User sửa tay.
+- **Thêm gói:** `httpcore` khai báo tường minh (chốt SSRF dùng trực tiếp).
+- **Rủi ro còn lại:** chưa UAT với Jira Cloud thật, chưa `make smoke` (không có Docker); chế độ file không đòi mật khẩu cho Jira sync (chế độ một máy, web chưa có đăng nhập) và token Jira vẫn ở `localStorage` ở chế độ file; cờ chống chạy song song của chế độ file chỉ có tác dụng trong một process; ánh xạ priority Jira chưa dùng khi cập nhật; `external_url` ở `excel-upsert.ts` còn hardcode `onemount.atlassian.net`; `_ORDER_BY_RE` cắt cả chữ "order by" nằm trong chuỗi JQL; còn vài `any` cũ trong `syncJiraAction`; JiraQuickSync vẫn ẩn ở chế độ api.
+- **Phát hiện hạ tầng test:** assert "token không có trong caplog" ở các test cũ (B3, B4a) có thể vô nghĩa vì fixture migrate tắt logger của app; đã tách thành việc riêng (chip chore/fix-caplog-tests). `test_jira_sync_api.py` đã bật lại logger.
+- **Chuỗi B1-B4 đã xong về code.** Việc còn lại ngoài B4b: gỡ tính năng lịch sử duyệt web (User không cần nữa, session riêng), nâng `xlsx` (2 CVE), UAT ở máy có Docker.
 
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*
