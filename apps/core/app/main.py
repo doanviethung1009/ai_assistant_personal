@@ -5,6 +5,9 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -64,6 +67,26 @@ setup_rate_limit(app)
 @app.exception_handler(DomainError)
 async def handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
     return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+
+SETTINGS_PATH_PREFIX = "/api/v1/settings"
+
+
+@app.exception_handler(RequestValidationError)
+async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Lỗi 422 mặc định; riêng /api/v1/settings bỏ `input` và `ctx` khỏi chi tiết lỗi.
+
+    Mặc định FastAPI echo lại giá trị đầu vào, mà ở đây đó là URL đồng bộ (link chia sẻ
+    mang token trong query) hay tên người dùng, rồi đi vào log của proxy/client. Phạm vi
+    CỐ Ý hẹp ở /settings để không đổi schema lỗi của các route khác.
+    """
+    if not request.url.path.startswith(SETTINGS_PATH_PREFIX):
+        return await request_validation_exception_handler(request, exc)
+    safe = [
+        {"type": err.get("type"), "loc": err.get("loc"), "msg": err.get("msg")}
+        for err in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(safe)})
 
 
 app.include_router(health.router)

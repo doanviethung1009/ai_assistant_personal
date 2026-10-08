@@ -160,6 +160,8 @@ export function snapshot(): DataFile {
     projects: structuredClone(store.projects),
     tasks: structuredClone(store.tasks),
     notes: structuredClone(store.notes),
+    // Trước v6 trường này bị bỏ sót nên danh sách URL mất sau mỗi lần khởi động lại.
+    sync_urls: [...(store.sync_urls ?? [])],
     meta: {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
@@ -199,7 +201,8 @@ export function restore(data: DataFile): void {
   // `?? []` là lớp bảo vệ thứ hai sau bước migrate v2→v3. File v2 đọc trực
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
-  
+  store.sync_urls = Array.isArray(data.sync_urls) ? [...data.sync_urls] : [];
+
   // Tương thích ngược: Nếu file cũ v4 có chứa ai_logs (trước khi tách), ta nạp nó vào RAM tạm.
   if ("ai_logs" in data && Array.isArray((data as any).ai_logs)) {
     store.ai_logs = (data as any).ai_logs;
@@ -1100,7 +1103,17 @@ export interface ListNotesOptions {
 }
 
 export function getSyncUrls(): string[] { return state().sync_urls || []; }
-export function addSyncUrl(url: string) { const s = state(); if (!s.sync_urls) s.sync_urls = []; if (!s.sync_urls.includes(url)) s.sync_urls.push(url); touched(); }
+/** Trần số URL đồng bộ, khớp backend (PUT /settings/sync-urls tối đa 50). */
+export const MAX_SYNC_URLS = 50;
+
+export function addSyncUrl(url: string) {
+  const s = state();
+  if (!s.sync_urls) s.sync_urls = [];
+  if (s.sync_urls.includes(url)) return;
+  if (s.sync_urls.length >= MAX_SYNC_URLS) throw new Error(`Tối đa ${MAX_SYNC_URLS} link đồng bộ`);
+  s.sync_urls.push(url);
+  touched();
+}
 export function removeSyncUrl(url: string) { const s = state(); if (s.sync_urls) s.sync_urls = s.sync_urls.filter((u: string) => u !== url); touched(); }
 export function listNotes(options: ListNotesOptions = {}): Paged<Note> {
   let result = aliveNotes();

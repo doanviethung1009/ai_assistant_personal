@@ -97,7 +97,18 @@ Tham số của cả hai endpoint:
 | `include_personal` | query, bool, mặc định `false` (chỉ `/datafile`) | Mặc định nhập **bỏ qua** task `personal` đang có trong Postgres (đếm `skipped_personal`, không ghi đè). `true` cho phép ghi đè cả task cá nhân |
 | `X-Import-Secret` | header | **Bắt buộc khi nhập thật.** Giá trị biến `IMPORT_COMMIT_SECRET` của core (tối thiểu 16 ký tự). Chưa cấu hình hoặc sai: `403`. Dry-run không cần |
 
-Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`.
+Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`. File phiên bản 5 hoặc 6 đều được nhận; `meta.current_users` và `sync_urls` trong file cũng được nhập (thực thể `setting` trong báo cáo, `counts.settings`).
+
+## 6. API Cài đặt (Settings) và danh sách người giao việc
+Base path: `/api/v1`. Cài đặt **không bí mật** của người dùng, lưu ở bảng `app_settings` (khoá khai báo cứng, khoá lạ bị từ chối).
+
+| Phương thức | Endpoint | Body / Trả về | Ràng buộc |
+|-------------|----------|---------------|-----------|
+| `GET`, `PUT` | `/settings/current-users` | `{"names": [...]}` | Tối đa 20 tên, mỗi tên 1 đến 200 ký tự (cắt khoảng trắng, loại trùng). Web truyền danh sách này làm `owner` cho `view=mine` |
+| `GET`, `PUT` | `/settings/sync-urls` | `{"urls": [...]}` | Tối đa 50 URL, **chỉ `https`**, host thuộc allowlist: `docs.google.com`, `drive.google.com`, `drive.usercontent.google.com`, `*.googleusercontent.com`, `*.sharepoint.com`, `onedrive.live.com`, `1drv.ms`; thêm host qua biến `SYNC_URL_EXTRA_HOSTS` (host phải có dấu chấm; wildcard `*.X` bị từ chối nếu X là hậu tố dùng chung như `github.io`, `nip.io`, `herokuapp.com`, `co.uk`). Từ chối `user:pass@`, cổng lạ, IP, scheme khác |
+| `GET` | `/tasks/assignees` | `["Tên", ...]` | Chỉ task còn sống và `scope=work`, tối đa 500 tên, sắp theo chữ cái |
+
+Allowlist được kiểm **hai lần**: backend khi lưu, web khi fetch (kiểm lại URL ở mỗi bước chuyển hướng, tối đa 5 bước). `GET /settings/sync-urls` trả nguyên dữ liệu đã lưu, không kiểm lại. Chạy đồng bộ từ URL ở chế độ api cần pha B4.
 
 ---
 

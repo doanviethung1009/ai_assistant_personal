@@ -383,4 +383,4 @@ Nằm ở tab **Vùng nguy hiểm** của trang **Dữ liệu** ("Danger Zone"),
   - Để tiết kiệm dung lượng, hệ thống luôn tự động dọn rác và **chỉ giữ lại duy nhất 1 bản backup gần nhất**.
 - Nếu bạn lỡ tay xóa nhầm, chỉ cần lấy file backup đó và tải lên ở khung **Khôi phục dữ liệu từ Backup (JSON)** (Màu cam) là mọi thứ sẽ phục hồi nguyên trạng 100%.
 
-> **Lưu ý khi dùng nguồn dữ liệu Core API (Postgres):** các phần Nhập JSON, Nhập file, Khôi phục, Jira, URL đồng bộ và Người dùng hiện tại chỉ chạy ở chế độ file/memory. Ở chế độ Core API trang sẽ hiện thông báo thay vì cho bấm rồi từ chối.
+> **Lưu ý khi dùng nguồn dữ liệu Core API (Postgres):** các phần Nhập file Excel, Khôi phục bản sao lưu và Jira chỉ chạy ở chế độ file/memory (Nhập JSON vào Postgres có panel riêng; Người dùng hiện tại và URL đồng bộ dùng được ở cả hai chế độ, URL chỉ nhận link Google/SharePoint/OneDrive). Ở chế độ Core API trang sẽ hiện thông báo thay vì cho bấm rồi từ chối.

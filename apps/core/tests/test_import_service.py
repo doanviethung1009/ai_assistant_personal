@@ -112,7 +112,9 @@ async def test_import_into_empty_db(session: AsyncSession) -> None:
     assert "raw_payload" in report.ignored_fields["task"]
     assert "project" in report.ignored_fields["task"]
     assert "is_overdue" in report.ignored_fields["task"]
-    assert {"unknown_top_level", "meta"} <= set(report.ignored_fields["file"])
+    assert set(report.ignored_fields["file"]) == {"unknown_top_level"}
+    # B2: meta.current_users được nhập, "meta" không còn bị bỏ nguyên khối.
+    assert c["settings"].created == 1
 
     # Project: id giữ nguyên, key và màu được chuẩn hoá.
     row = (
@@ -160,12 +162,12 @@ async def test_import_into_empty_db(session: AsyncSession) -> None:
 
     counts = await _row_counts(session)
     assert counts["import_runs"] == 1
-    # 3 project + 3 task + 2 event từ file + 3 event `synced` do lần nhập sinh + 1 note
-    assert counts["import_audit"] == 12
+    # 3 project + 3 task + 2 event từ file + 3 event `synced` do lần nhập sinh + 1 note + 1 setting
+    assert counts["import_audit"] == 13
     actions = await session.scalar(
         text("SELECT count(*) FROM import_audit WHERE action = 'created'")
     )
-    assert actions == 12
+    assert actions == 13
     # Mọi event có import_id trong payload đều phải có dòng audit tương ứng.
     orphan = await session.scalar(
         text(

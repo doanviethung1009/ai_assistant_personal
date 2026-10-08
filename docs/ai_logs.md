@@ -850,3 +850,27 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Review: code-reviewer APPROVED; security-auditor 🟡 (file v5 không kiểm scope; SSRF có sẵn để B2); db-reviewer không critical (chuẩn hoá assignee, ghi audit include_personal, lock_timeout migration). Gộp một vòng sửa.
   - An toàn dữ liệu thật: sao lưu `data/` ra scratchpad và DỪNG server web cổng 3000 trong lúc sửa (hot-reload có thể ghi file thật ở trạng thái nửa vời khi code đổi lên v5).
 - **Phản hồi:** Code + docs xong, đang vòng sửa sau review. Chưa push; migration chỉ merge sau PR nhập B1 (#12).
+
+---
+
+### [08-10-2026 23:30] | Category: [API]
+- **Prompt:** "làm b2 đi" (pha B2: cài đặt người dùng và URL đồng bộ vào Postgres)
+- **Xử lý:**
+  - backend-dev: bảng `app_settings` (key khai báo cứng), `GET/PUT /settings/current-users` và `/sync-urls`, `GET /tasks/assignees` (chỉ work), nhập `meta.current_users`/`sync_urls` (thực thể `setting`), file phiên bản 6, allowlist URL (`url_allowlist.py`), `SYNC_URL_EXTRA_HOSTS`. 397 test pass, 400 trên file thật chỉ đọc.
+  - frontend-dev: nhánh api cho 4 hàm cài đặt, `SCHEMA_VERSION` 6 + lưu `sync_urls` (sửa lỗi `snapshot()` bỏ sót), `lib/url-allowlist.ts` (cùng luật backend), `fetchAllowlisted` (redirect manual, 5 bước, kiểm lại mỗi bước) sửa SSRF ở `syncFromUrlAction`. Đã chạy thật migrate v4/v5→v6 trên BẢN SAO.
+  - Orchestrator: `SYNC_URL_EXTRA_HOSTS` trong compose (api và web), API_REFERENCE mục 6, DATA_MIGRATION, HANDOFF mục 8, hướng dẫn sử dụng.
+  - Lệch spec cần User biết: allowlist áp cả chế độ file (trước đây lưu URL bất kỳ).
+  - Server web cổng 3000 vẫn dừng để bảo vệ dữ liệu thật; dữ liệu thật không đổi hash.
+- **Phản hồi:** B2 xong code và docs, đang review. Chưa push; migration chỉ merge sau PR task-scope (#13).
+
+---
+
+### [09-10-2026 00:30] | Category: [API]
+- **Prompt:** (tiếp nối "làm b2 đi") xử lý kết quả review B2 của db-reviewer, code-reviewer, security-auditor.
+- **Xử lý:**
+  - code-reviewer kiểm trên mạng thật: Google Drive chuyển hướng 303 sang `drive.usercontent.google.com` (ngoài allowlist) nên link Drive hỏng; đã thêm host chính xác. OneDrive cá nhân chưa kiểm được nên KHÔNG thêm host, ghi vào tài liệu cần `SYNC_URL_EXTRA_HOSTS`.
+  - security-auditor: tải file không giới hạn bộ nhớ (đã stream có trần 20 MB + identity + kiểm content-type); Kelvin lọt Python (re.ASCII); host bổ sung nhận host một nhãn và hậu tố dùng chung (đã từ chối); báo cáo nhập che query của URL; handler 422 cho /settings bỏ input. `xlsx` 0.18.5 CVE tách thành chip riêng.
+  - db-reviewer: race PUT settings với nhập (PUT nay lấy advisory lock chung), `lock_timeout` cho migration, test so CHECK với enum.
+  - code-reviewer: thêm/xoá URL bị khoá bởi URL cũ không còn hợp lệ (đã lọc và báo số link bị bỏ).
+  - Tự kiểm chứng: 449 test pass (452 trên file thật), parity allowlist TS/Python 225 URL + 33 cấu hình, 0 lệch; dữ liệu thật không đổi hash.
+- **Phản hồi:** B2 xong vòng sửa; chưa push; migration chỉ merge sau PR task-scope (#13).

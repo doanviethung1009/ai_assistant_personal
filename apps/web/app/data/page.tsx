@@ -127,19 +127,22 @@ export default async function DataPage({
         </div>
       )}
 
-      {tab === "dong-bo" &&
-        (IS_LOCAL ? (
-          <div className="flex flex-col gap-8">
-            <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
+      {tab === "dong-bo" && (
+        // Người dùng hiện tại và danh sách URL dùng được ở cả hai chế độ (B2, lưu ở Postgres
+        // khi DATA_SOURCE=api). Jira sync và nút cào URL cần backend upsert của B4.
+        <div className="flex flex-col gap-8">
+          <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
+          {IS_LOCAL ? (
             <JiraSyncManager
               taskCount={taskCount}
               projects={projectList.map((p) => ({ id: p.id, key: p.key, name: p.name }))}
             />
-            <UrlSyncManager initialUrls={syncUrls} />
-          </div>
-        ) : (
-          <LocalOnlyNotice feature="Đồng bộ Jira, URL đồng bộ và cấu hình người dùng hiện tại" />
-        ))}
+          ) : (
+            <LocalOnlyNotice feature="Đồng bộ Jira" />
+          )}
+          <UrlSyncManager initialUrls={syncUrls} canSync={IS_LOCAL} />
+        </div>
+      )}
 
       {tab === "nguy-hiem" &&
         (IS_LOCAL ? (

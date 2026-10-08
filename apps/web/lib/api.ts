@@ -2,6 +2,7 @@ import "server-only";
 
 import * as engine from "./store/engine";
 import { ensureLoaded, reloadAiLogsFromDisk } from "./store/json-file";
+import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
@@ -274,16 +275,22 @@ export function importAiLogsFile(text: string, options: ImportCallOptions): Prom
 
 export async function getCurrentUsersApi(): Promise<string[]> {
   if (IS_LOCAL) return local(() => engine.getCurrentUsers());
-  return [];
+  const body = await coreFetch<{ names: string[] }>("/api/v1/settings/current-users");
+  return body.names;
 }
 
+/** Gợi ý tên cho ô "tôi là ai": chế độ api chỉ lấy assignee của task công việc còn sống. */
 export async function getAssigneesApi(): Promise<string[]> {
   if (IS_LOCAL) return local(() => engine.getAssignees());
-  return []; // Tương lai: gọi API lấy ds assignees từ Postgres nếu chạy thật
+  return coreFetch<string[]>("/api/v1/tasks/assignees");
 }
 
 export async function setCurrentUsersApi(names: string[]): Promise<void> {
   if (IS_LOCAL) return local(() => { engine.setCurrentUsers(names); return undefined as any; });
+  await coreFetch<{ names: string[] }>("/api/v1/settings/current-users", {
+    method: "PUT",
+    body: JSON.stringify({ names }),
+  });
 }
 
 // ── Đọc ────────────────────────────────────────────────────────────────
@@ -754,13 +761,50 @@ export function emptyNoteTrash(): Promise<PurgeResponse> {
 
 export async function getSyncUrlsApi(): Promise<string[]> {
   if (IS_LOCAL) return local(() => engine.getSyncUrls());
-  return []; // Not implemented for core API yet
+  const body = await coreFetch<{ urls: string[] }>("/api/v1/settings/sync-urls");
+  return body.urls;
 }
-export async function addSyncUrlApi(url: string): Promise<void> {
-  if (IS_LOCAL) return local(() => engine.addSyncUrl(url));
+
+async function putSyncUrls(urls: string[]): Promise<void> {
+  await coreFetch<{ urls: string[] }>("/api/v1/settings/sync-urls", {
+    method: "PUT",
+    body: JSON.stringify({ urls }),
+  });
 }
-export async function removeSyncUrlApi(url: string): Promise<void> {
-  if (IS_LOCAL) return local(() => engine.removeSyncUrl(url));
+
+/**
+ * Lưu URL đồng bộ. URL là thứ server SẼ FETCH nên phải qua allowlist (https + host
+ * cho phép) ở CẢ hai tầng: ở đây để báo lỗi rõ và không phụ thuộc vào core, và core
+ * kiểm lại khi PUT. Thông báo lỗi không chứa URL (link chia sẻ thường mang token).
+ */
+export interface SyncUrlChange {
+  /** Số link cũ không còn qua allowlist bị bỏ khỏi danh sách trong lần lưu này. */
+  dropped: number;
+}
+
+/**
+ * PUT kiểm lại MỌI phần tử, nên một link cũ không còn hợp lệ (đổi allowlist sau khi lưu)
+ * sẽ khóa cả việc thêm lẫn xoá. Lọc chúng ra trước khi PUT và báo số lượng để UI nói
+ * rõ với người dùng thay vì lặng lẽ làm mất link.
+ */
+async function putFilteredSyncUrls(urls: string[]): Promise<SyncUrlChange> {
+  const valid = urls.filter((u) => syncUrlError(u) === null);
+  await putSyncUrls(valid);
+  return { dropped: urls.length - valid.length };
+}
+
+export async function addSyncUrlApi(url: string): Promise<SyncUrlChange> {
+  const rejected = syncUrlError(url);
+  if (rejected !== null) throw new CoreApiError(rejected, 400);
+  if (IS_LOCAL) return local(() => { engine.addSyncUrl(url); return { dropped: 0 }; });
+  const current = await getSyncUrlsApi();
+  if (current.includes(url)) return { dropped: 0 };
+  return putFilteredSyncUrls([...current, url]);
+}
+export async function removeSyncUrlApi(url: string): Promise<SyncUrlChange> {
+  if (IS_LOCAL) return local(() => { engine.removeSyncUrl(url); return { dropped: 0 }; });
+  const current = await getSyncUrlsApi();
+  return putFilteredSyncUrls(current.filter((u) => u !== url));
 }
 
 // ── Tags Management ──────────────────────────────────────────────────────

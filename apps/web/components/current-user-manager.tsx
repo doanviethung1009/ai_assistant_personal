@@ -14,10 +14,14 @@ export function CurrentUserManager({ initialUsers, assignees = [] }: { initialUs
     setMessage(null);
     try {
       const names = userText.split(",").map(n => n.trim()).filter(Boolean);
-      await setCurrentUserAction(names);
-      setMessage({ text: "Đã lưu thành công. Bảng Hôm nay và Tất cả Task sẽ chỉ hiện task của các thành viên này.", type: "success" });
-    } catch (error) {
-      setMessage({ text: "Lỗi: " + String(error), type: "error" });
+      const result = await setCurrentUserAction(names);
+      if (result.ok) {
+        setMessage({ text: "Đã lưu thành công. Bảng Hôm nay và Tất cả Task sẽ chỉ hiện task của các thành viên này.", type: "success" });
+      } else {
+        setMessage({ text: "Lỗi: " + (result.error ?? "không lưu được"), type: "error" });
+      }
+    } catch {
+      setMessage({ text: "Lỗi: không gọi được máy chủ", type: "error" });
     } finally {
       setLoading(false);
     }

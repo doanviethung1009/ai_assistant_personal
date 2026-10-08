@@ -31,9 +31,10 @@ from app.models.enums import (
 )
 from app.schemas.task import clean_assignee
 
-# v5 thêm `tasks.scope` (spec task-scope S11). Web lên v5 mà backend chưa lên thì
-# mọi file mới xuất sẽ bị 422.
-SUPPORTED_DATAFILE_VERSION = 5
+# v5 thêm `tasks.scope` (spec task-scope S11); v6 thêm `sync_urls` cấp file (B2).
+# Web lên phiên bản mới mà backend chưa lên thì mọi file mới xuất sẽ bị 422. Backend
+# nhận cả v5 và v6 (và cũ hơn): `ge=1, le=` ở envelope.
+SUPPORTED_DATAFILE_VERSION = 6
 SUPPORTED_AI_LOGS_VERSION = 1
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -52,8 +53,12 @@ class DataFileEnvelope(BaseModel):
     projects: list[dict[str, Any]] = Field(max_length=1_000)
     tasks: list[dict[str, Any]] = Field(max_length=20_000)
     notes: list[dict[str, Any]] = Field(default_factory=list, max_length=10_000)
-    # B1: chỉ báo "bỏ qua". B2 mới nhập meta.current_users.
+    # B2: chỉ `meta.current_users` được nhập; các khoá khác (minutes_logged_*...) bị bỏ
+    # và báo trong ignored_fields["meta"] (D-B2a: backend tự tính từ nhật ký).
     meta: dict[str, Any] | None = None
+    # Danh sách URL đồng bộ (v6). None/vắng = không đụng cài đặt trong DB. Để Any: giá
+    # trị sai kiểu phải ra lỗi theo dòng (code `setting_invalid`) chứ không 422 chung chung.
+    sync_urls: Any = None
 
 
 class AiLogsEnvelope(BaseModel):
@@ -216,7 +221,7 @@ class FieldChange(BaseModel):
 
 
 class Replacement(BaseModel):
-    entity: Literal["project", "task", "note", "ai_log"]
+    entity: Literal["project", "task", "note", "ai_log", "setting"]
     # id trong DB (khác file_id khi matched_by = natural_key)
     id: uuid.UUID
     file_id: uuid.UUID
@@ -228,7 +233,7 @@ class Replacement(BaseModel):
 
 class ImportIssue(BaseModel):
     level: Literal["error", "warning"]
-    entity: Literal["file", "project", "task", "task_event", "note", "ai_log"]
+    entity: Literal["file", "project", "task", "task_event", "note", "ai_log", "setting"]
     index: int | None = None
     id: str | None = None
     code: str

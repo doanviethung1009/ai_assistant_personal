@@ -142,6 +142,14 @@ export function migrate(data: DataFile): DataFile {
     data.schema_version = 5;
   }
 
+  // v5 → v6: bổ sung `sync_urls`. Phải là mảng chuỗi, nếu không code gọi .includes/.push sẽ ném.
+  if (data.schema_version < 6) {
+    data.schema_version = 6;
+  }
+  data.sync_urls = Array.isArray(data.sync_urls)
+    ? data.sync_urls.filter((u): u is string => typeof u === "string")
+    : [];
+
   // Chuẩn hoá scope LUÔN chạy, kể cả file tự khai schema_version 5: file đến từ
   // bên ngoài (restore JSON) có thể mang scope rác ('admin', '', object, vắng).
   // Giá trị hợp lệ được giữ nguyên nên không đảo lựa chọn của User.

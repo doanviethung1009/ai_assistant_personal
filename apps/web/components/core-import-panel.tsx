@@ -21,6 +21,9 @@ const ENTITY_LABELS: Record<string, string> = {
   task_events: "Nhật ký task",
   notes: "Sổ tay",
   ai_logs: "Nhật ký AI",
+  // Cài đặt (current_users, sync_urls): counts dùng khoá `settings`, replacement/issue dùng `setting`.
+  settings: "Cài đặt",
+  setting: "Cài đặt",
   project: "Project",
   task: "Task",
   note: "Sổ tay",
