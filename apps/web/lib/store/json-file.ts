@@ -3,6 +3,7 @@ import "server-only";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
 
+import { defaultScopeFor, parseScope } from "../task-scope";
 import * as engine from "./engine";
 import { SCHEMA_VERSION, type DataFile } from "./types";
 
@@ -131,6 +132,29 @@ export function migrate(data: DataFile): DataFile {
 
   // Không còn migrate ai_logs chung vào DataFile (SCHEMA_VERSION = 4).
   // Đã dọn dẹp logic ai_logs.
+
+  // v4 → v5: bổ sung `scope` cho task, suy từ source.
+  //
+  // Bắt buộc phải làm. Engine lọc theo `scope === "personal"` / `"work"`; task
+  // thiếu scope sẽ biến mất khỏi mọi view. Chỉ đặt cho task CHƯA có giá trị
+  // hợp lệ, nên chạy lại (hoặc nạp file đã là v5) không đảo lựa chọn của User.
+  if (data.schema_version < 5) {
+    data.schema_version = 5;
+  }
+
+  // Chuẩn hoá scope LUÔN chạy, kể cả file tự khai schema_version 5: file đến từ
+  // bên ngoài (restore JSON) có thể mang scope rác ('admin', '', object, vắng).
+  // Giá trị hợp lệ được giữ nguyên nên không đảo lựa chọn của User.
+  let normalized = 0;
+  for (const task of data.tasks) {
+    if (parseScope(task.scope) === null) {
+      task.scope = defaultScopeFor(task.source);
+      normalized += 1;
+    }
+  }
+  if (normalized > 0) {
+    console.info(`[store] migrate: chuẩn hoá scope cho ${normalized} task theo source`);
+  }
 
   return data;
 }

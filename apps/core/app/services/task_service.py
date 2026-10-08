@@ -1,21 +1,29 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from enum import Enum
 from typing import Any, Literal
 
-from sqlalchemy import Integer, Select, case, cast, delete, func, or_, select
+from sqlalchemy import ColumnElement, Integer, Select, and_, case, cast, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
-from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
+from app.models.enums import (
+    TaskEventType,
+    TaskPriority,
+    TaskScope,
+    TaskSource,
+    TaskStatus,
+    default_scope_for,
+)
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
-from app.schemas.task import TaskCreate, TaskUpdate
+from app.schemas.task import MAX_OWNER_LEN, MAX_OWNERS, TaskCreate, TaskUpdate, TaskView
 from app.services.clock import local_day_bounds_utc, local_today, now_utc
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 
@@ -33,6 +41,7 @@ _TRACKED_FIELDS = (
     "scheduled_for",
     "estimate_minutes",
     "tags",
+    "scope",
 )
 
 
@@ -48,6 +57,8 @@ class TaskFilters:
     scheduled_on: date | None = None
     due_before: datetime | None = None
     include_closed: bool = False
+    view: TaskView = TaskView.ALL
+    owners: list[str] = field(default_factory=list)
     limit: int = 50
     offset: int = 0
     sort_by: SortField = "created_at"
@@ -61,6 +72,51 @@ def _alive():
     lại xuất hiện trong agenda và thống kê.
     """
     return Task.deleted_at.is_(None)
+
+
+def validate_view_params(view: TaskView, owners: list[str] | None) -> list[str]:
+    """Chuẩn hoá và kiểm `owner` đi kèm `view`; trả danh sách tên đã strip.
+
+    `owner` chỉ có nghĩa với view=mine. Đi kèm view khác thì từ chối (422) thay vì
+    lặng lẽ bỏ qua, để lỗi gọi API lộ ra ngay. Tên chỉ dùng trong `IN (...)` có bind
+    param, không bao giờ nối vào chuỗi SQL.
+    """
+    if not owners:
+        return []
+    if view is not TaskView.MINE:
+        raise ValidationError("owner chỉ hợp lệ khi view=mine")
+    if len(owners) > MAX_OWNERS:
+        raise ValidationError(f"owner tối đa {MAX_OWNERS} tên")
+    cleaned = [name.strip() for name in owners]
+    if any(not name or len(name) > MAX_OWNER_LEN for name in cleaned):
+        raise ValidationError(f"mỗi owner phải dài 1-{MAX_OWNER_LEN} ký tự")
+    return cleaned
+
+
+def _view_clause(view: TaskView, owners: Sequence[str] = ()) -> ColumnElement[bool] | None:
+    """Điều kiện scope cho một view; None nghĩa là không lọc (view=all).
+
+    Nguồn DUY NHẤT của định nghĩa "việc của tôi" ở backend (list, agenda, stats cùng
+    dùng). Web có bản sao ở lib/task-scope.ts (`matchesView`), hai bản phải khớp.
+    Nhánh `assignee IS NULL AND external_id IS NULL` giữ task công việc User tự tạo
+    (không giao ai, không đến từ tích hợp) hiện ở "Hôm nay"; task Jira chưa ai nhận
+    thì không hiện. So khớp assignee CHÍNH XÁC (phân biệt hoa thường). Chuỗi rỗng và
+    khoảng trắng thừa đã được chuẩn hoá khi ghi (rỗng -> NULL, strip), nên ở đây chỉ
+    cần xét NULL; web chế độ file cũng nên coi '' như null.
+    """
+    if view is TaskView.ALL:
+        return None
+    if view is TaskView.PERSONAL:
+        return Task.scope == TaskScope.PERSONAL
+    if view is TaskView.WORK:
+        return Task.scope == TaskScope.WORK
+    work_mine = [Task.assignee.is_(None) & Task.external_id.is_(None)]
+    if owners:
+        work_mine.append(Task.assignee.in_(list(owners)))
+    return or_(
+        Task.scope == TaskScope.PERSONAL,
+        and_(Task.scope == TaskScope.WORK, or_(*work_mine)),
+    )
 
 
 def _priority_rank():
@@ -79,6 +135,10 @@ def _priority_rank():
 
 def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
     stmt = stmt.where(_alive())
+
+    view_clause = _view_clause(filters.view, filters.owners)
+    if view_clause is not None:
+        stmt = stmt.where(view_clause)
 
     if filters.status:
         stmt = stmt.where(Task.status.in_(filters.status))
@@ -115,7 +175,9 @@ def _apply_sort(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
 
     # nulls_last để task không có due_at/scheduled_for không chen lên đầu
     ordering = column.desc().nulls_last() if filters.sort_desc else column.asc().nulls_last()
-    return stmt.order_by(ordering, Task.created_at.desc())
+    # Task.id là khoá phụ DUY NHẤT: nhiều task cùng created_at (nhập hàng loạt) mà
+    # thiếu nó thì thứ tự giữa các trang không ổn định, task bị lặp hoặc sót.
+    return stmt.order_by(ordering, Task.created_at.desc(), Task.id.desc())
 
 
 async def _ensure_project_exists(session: AsyncSession, project_id: uuid.UUID | None) -> None:
@@ -219,6 +281,8 @@ async def create_task(
     await _ensure_project_exists(session, payload.project_id)
 
     data = payload.model_dump()
+    # Phải tự quyết scope ở đây: model cố ý không có default Python (xem models/task.py).
+    data["scope"] = payload.scope or default_scope_for(payload.source)
     task = Task(**data)
     if task.status is TaskStatus.DONE:
         task.completed_at = now_utc()
@@ -238,7 +302,12 @@ async def create_task(
         task,
         TaskEventType.CREATED,
         actor,
-        {"title": task.title, "status": task.status.value, "source": task.source.value},
+        {
+            "title": task.title,
+            "status": task.status.value,
+            "source": task.source.value,
+            "scope": task.scope.value,
+        },
     )
     await session.flush()
     return await get_task_with_events(session, task.id)
@@ -406,12 +475,25 @@ async def _fetch(session: AsyncSession, stmt: Select[Any]) -> list[Task]:
     return list(result.scalars().unique().all())
 
 
-async def get_agenda(session: AsyncSession, reference: date | None = None) -> dict[str, Any]:
+def _alive_in_view(view: TaskView, owners: Sequence[str]) -> ColumnElement[bool]:
+    """`_alive()` AND điều kiện view, để agenda/stats áp view ở một chỗ."""
+    clause = _view_clause(view, owners)
+    return _alive() if clause is None else and_(_alive(), clause)
+
+
+async def get_agenda(
+    session: AsyncSession,
+    reference: date | None = None,
+    *,
+    view: TaskView = TaskView.ALL,
+    owners: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Việc của hôm nay. View áp cho cả 5 nhóm TRƯỚC bước loại trùng in_progress."""
     today = reference or local_today()
     now = now_utc()
     day_start, day_end = local_day_bounds_utc(today)
     open_only = Task.status.notin_(CLOSED_STATUSES)
-    alive = _alive()
+    alive = _alive_in_view(view, owners)
 
     overdue = await _fetch(
         session,
@@ -476,12 +558,23 @@ async def get_agenda(session: AsyncSession, reference: date | None = None) -> di
     }
 
 
-async def get_stats(session: AsyncSession, reference: date | None = None) -> dict[str, Any]:
+async def get_stats(
+    session: AsyncSession,
+    reference: date | None = None,
+    *,
+    view: TaskView = TaskView.ALL,
+    owners: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Thống kê nhanh. `view` áp cho mọi số trừ `trash_total` và `minutes_logged_today`.
+
+    Hai số đó cố ý không lọc theo view: thùng rác thuộc trang riêng, còn chế độ file
+    chỉ có một bộ đếm phút chung; lọc ở đây sẽ làm hai chế độ cho kết quả khác nhau.
+    """
     today = reference or local_today()
     now = now_utc()
     day_start, day_end = local_day_bounds_utc(today)
 
-    alive = _alive()
+    alive = _alive_in_view(view, owners)
 
     status_rows = await session.execute(
         select(Task.status, func.count()).where(alive).group_by(Task.status)

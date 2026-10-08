@@ -1,11 +1,58 @@
-import { listTasks, getCurrentUsersApi } from "@/lib/api";
+import { listTasks } from "@/lib/api";
 import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
 import Link from "next/link";
-import { OPEN_STATUSES, TaskStatus } from "@/lib/types";
+import { OPEN_STATUSES, type Task } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
+
+/** Nhóm task công việc chưa có người nhận. */
+const UNASSIGNED = "Chưa giao";
+
+/** Backend giới hạn limit <= 200 mỗi trang. */
+const FETCH_PAGE = 200;
+/**
+ * Trần số lần gọi mỗi lần render (25 x 200 = 5 000 task): chặn vòng lặp vô hạn nếu
+ * total đổi giữa các lần gọi và không để một request render kéo hàng chục nghìn dòng.
+ * Vượt trần thì danh sách bị cắt; cần phân trang server-side thật (S12).
+ */
+const MAX_FETCH_PAGES = 25;
+
+/**
+ * Tải toàn bộ task công việc (kể cả đã đóng) bằng nhiều trang 200.
+ *
+ * Vì sao còn tải hết: /team lọc theo ngày hoạt động và đếm theo assignee ngay
+ * ở server component, mà backend chưa có endpoint cho hai việc đó. Chuyển sang
+ * phân trang server-side thật cần epic riêng (spec task-scope S12). Trước đây
+ * gọi limit=10000 nên chế độ api bị 422.
+ */
+async function listAllWorkTasks(): Promise<Task[]> {
+  const all: Task[] = [];
+  // Phân trang offset có thể lặp task nếu dữ liệu đổi giữa hai lần gọi (task mới chèn
+  // lên đầu đẩy task cũ sang trang sau), nên lọc trùng theo id khi gộp.
+  const seen = new Set<string>();
+  let fetched = 0;
+  for (let i = 0; i < MAX_FETCH_PAGES; i++) {
+    const res = await listTasks({
+      view: "work",
+      includeClosed: true,
+      limit: FETCH_PAGE,
+      offset: fetched,
+      sortBy: "created_at",
+      sortDesc: true,
+    });
+    fetched += res.items.length;
+    for (const t of res.items) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        all.push(t);
+      }
+    }
+    if (res.items.length === 0 || fetched >= res.total) break;
+  }
+  return all;
+}
 export default async function TeamPage({
   searchParams,
 }: {
@@ -25,17 +72,11 @@ export default async function TeamPage({
   const PAGE_SIZE = Math.max(10, Math.min(1000, Number.parseInt(sp.size ?? "50", 10) || 50));
 
   try {
-    const [tasksRes, currentUsers] = await Promise.all([
-      listTasks({ limit: 10000, includeClosed: true }),
-      getCurrentUsersApi()
-    ]);
-    const allTasks = tasksRes.items;
-    
-    // 1. Khởi tạo danh sách cơ bản (bao gồm cả current user để có cái nhìn tổng hợp)
-    let teamTasks = allTasks.filter(t => {
-      if (t.assignee) return true; // Lấy tất cả task có gán người thực hiện
-      return t.source === 'jira'; // Task Jira chưa ai nhận thì nằm ở backlog Team
-    });
+    const allTasks = await listAllWorkTasks();
+
+    // 1. Danh sách cơ bản: mọi task công việc (scope=work), kể cả task giao cho
+    // chính mình để có cái nhìn tổng hợp. Task cá nhân không bao giờ hiện ở đây.
+    let teamTasks = allTasks;
     
     // 2. Lọc theo status
     if (currentStatus === "open") {
@@ -99,27 +140,20 @@ export default async function TeamPage({
     
     // Khởi tạo danh sách assignees đầy đủ từ allTasks với giá trị 0
     for (const t of allTasks) {
-      if (t.assignee) {
-        assigneeCounts[t.assignee] = 0;
-      } else if (!t.assignee && t.source === 'jira') {
-        assigneeCounts["Unassigned (Jira)"] = 0;
-      }
+      assigneeCounts[t.assignee || UNASSIGNED] = 0;
     }
 
     // Đếm số lượng task thoả mãn bộ lọc
     for (const t of teamTasks) {
-      if (t.assignee) {
-        assigneeCounts[t.assignee] = (assigneeCounts[t.assignee] || 0) + 1;
-      } else if (!t.assignee && t.source === 'jira') {
-        assigneeCounts["Unassigned (Jira)"] = (assigneeCounts["Unassigned (Jira)"] || 0) + 1;
-      }
+      const name = t.assignee || UNASSIGNED;
+      assigneeCounts[name] = (assigneeCounts[name] || 0) + 1;
     }
     const assignees = Object.keys(assigneeCounts).sort();
 
     // 6. Cuối cùng, lọc theo Assignee để ra danh sách task hiển thị
     if (currentAssignee) {
-      if (currentAssignee === "Unassigned (Jira)") {
-        teamTasks = teamTasks.filter(t => !t.assignee && t.source === 'jira');
+      if (currentAssignee === UNASSIGNED) {
+        teamTasks = teamTasks.filter(t => !t.assignee);
       } else {
         teamTasks = teamTasks.filter(t => t.assignee === currentAssignee);
       }
@@ -167,7 +201,7 @@ export default async function TeamPage({
               Giao việc / Team
             </h1>
             <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium">
-              Tổng hợp tất cả các task được giao cho người khác trong hệ thống.
+              Tổng hợp task công việc (Jira) của cả team. Task cá nhân không hiện ở đây.
             </p>
           </div>
           <div className="relative z-10">

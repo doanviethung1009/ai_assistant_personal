@@ -13,6 +13,8 @@ export function JiraQuickSync() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<"idle" | "success" | "error">("idle");
   const [lastSyncText, setLastSyncText] = useState<string>("");
+  // Số task cá nhân bị bỏ qua ở lần đồng bộ gần nhất (0 thì không hiện).
+  const [skippedNote, setSkippedNote] = useState(0);
 
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -36,6 +38,7 @@ export function JiraQuickSync() {
     const newConfigs = [...configs];
     let hasError = false;
     let syncedCount = 0;
+    let skippedPersonal = 0;
     const nowIso = new Date().toISOString();
     
     for (const config of configs) {
@@ -55,6 +58,7 @@ export function JiraQuickSync() {
       const response = await syncJiraAction(fd);
       if (response.ok) {
         syncedCount++;
+        if ("skipped_personal" in response) skippedPersonal += response.skipped_personal ?? 0;
         const idx = newConfigs.findIndex(c => c.id === config.id);
         if (idx !== -1) {
           newConfigs[idx].lastSyncAt = nowIso;
@@ -70,7 +74,8 @@ export function JiraQuickSync() {
     const d = new Date(nowIso);
     setLastSyncText(d.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }));
     setIsSyncing(false);
-    
+    setSkippedNote(skippedPersonal);
+
     if (hasError && syncedCount === 0) {
       setSyncStatus("error");
       alert("Đồng bộ Jira thất bại! Hãy kiểm tra lại kết nối hoặc cấu hình trong trang Dữ liệu.");
@@ -117,6 +122,12 @@ export function JiraQuickSync() {
           : "Cập nhật Jira"}
       </button>
       
+      {skippedNote > 0 && !isSyncing && (
+        <span className="text-[10px] text-[var(--color-ink-muted)] mr-1">
+          Bỏ qua {skippedNote} task cá nhân
+        </span>
+      )}
+
       {lastSyncText && !isSyncing && syncStatus !== "success" && (
         <span className="text-[10px] text-[var(--color-ink-muted)] mr-1">
           Lần cuối: {lastSyncText}

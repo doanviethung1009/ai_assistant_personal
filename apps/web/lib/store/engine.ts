@@ -27,14 +27,18 @@ import type {
   TaskDetail,
   TaskEvent,
   TaskPriority,
+  TaskScope,
   TaskStatus,
+  TaskView,
 } from "../types";
+import { defaultScopeFor, matchesView, parseScope, scopeOf } from "../task-scope";
 import {
   SCHEMA_VERSION,
   trashRetentionDays,
   type DataFile,
   type StoredNote,
   type StoredTask,
+  type WipeOptions,
 } from "./types";
 
 const CLOSED: TaskStatus[] = ["done", "cancelled"];
@@ -282,7 +286,8 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     created_at: created,
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
-    assignee: partial.assignee ?? null,
+    assignee: partial.assignee?.trim() || null,
+    scope: partial.scope ?? defaultScopeFor(partial.source ?? "manual"),
     events:
       partial.events ??
       [
@@ -561,16 +566,16 @@ function find(id: string, includeDeleted = false): StoredTask {
   return task;
 }
 
-export function getAgenda(): Agenda {
+/** View + danh sách tên "của tôi" do lib/api.ts truyền vào (nguồn: cài đặt người dùng). */
+export interface ViewOptions {
+  view: TaskView;
+  owners: string[];
+}
+
+export function getAgenda(opts: ViewOptions): Agenda {
   const today = isoDate();
   const now = Date.now();
-  const store = state();
-  const users = store.currentUsers || ["Đoàn Việt Hưng"];
-  const isMyTask = (t: any) => {
-    if (t.assignee) return users.length > 0 && users.includes(t.assignee);
-    return t.source !== 'jira'; // Task Jira không có người nhận thì không phải của mình
-  };
-  const tasks = aliveTasks().filter(isMyTask);
+  const tasks = aliveTasks().filter((t) => matchesView(t, opts.view, opts.owners));
 
   const inProgress = tasks.filter((t) => t.status === "in_progress");
   const skip = new Set(inProgress.map((t) => t.id));
@@ -630,17 +635,17 @@ function localDay(iso: string): string {
   }).format(new Date(iso));
 }
 
-export function getStats(): Stats {
+/**
+ * `trash_total` và `minutes_logged_today` cố ý KHÔNG lọc theo view (spec S15):
+ * thùng rác là của cả hệ thống và bộ đếm phút chỉ có một, để hai chế độ
+ * (file/api) cho cùng kết quả.
+ */
+export function getStats(opts: ViewOptions): Stats {
   const today = isoDate();
   const now = Date.now();
   const windowStart = Date.now() - 6 * DAY_MS;
   const store = state();
-  const users = store.currentUsers || ["Đoàn Việt Hưng"];
-  const isMyTask = (t: any) => {
-    if (t.assignee) return users.length > 0 && users.includes(t.assignee);
-    return t.source !== 'jira';
-  };
-  const tasks = aliveTasks().filter(isMyTask);
+  const tasks = aliveTasks().filter((t) => matchesView(t, opts.view, opts.owners));
 
   const byStatus: Record<string, number> = {};
   for (const task of tasks) {
@@ -687,7 +692,10 @@ export interface ListOptions {
   limit?: number;
   offset?: number;
   assignee?: string | null;
-  forCurrentUser?: boolean;
+  /** Mặc định `all`: giữ hành vi cũ cho caller không quan tâm tới scope. */
+  view?: TaskView;
+  /** Tên "của tôi", chỉ dùng khi view = mine. */
+  owners?: string[];
 }
 
 export function listTasks(options: ListOptions = {}): Paged<Task> {
@@ -703,15 +711,13 @@ export function listTasks(options: ListOptions = {}): Paged<Task> {
     result = result.filter((t) => t.project_id === options.projectId);
   }
   
-  if (options.forCurrentUser) {
-    const store = state();
-    const users = store.currentUsers || ["Đoàn Việt Hưng"];
-    const isMyTask = (t: any) => {
-      if (t.assignee) return users.length > 0 && users.includes(t.assignee);
-      return t.source !== 'jira';
-    };
-    result = result.filter(isMyTask);
-  } else if (options.assignee) {
+  // view và assignee nối AND, giống backend (trước đây cờ "của tôi" loại trừ assignee).
+  const view = options.view ?? "all";
+  if (view !== "all") {
+    const owners = options.owners ?? [];
+    result = result.filter((t) => matchesView(t, view, owners));
+  }
+  if (options.assignee) {
     result = result.filter((t) => t.assignee === options.assignee);
   }
 
@@ -781,6 +787,15 @@ export interface CreateInput {
   scheduled_for?: string | null;
   estimate_minutes?: number | null;
   tags?: string[];
+  /** Vắng thì suy từ source; task tạo tay có source=manual nên là `personal`. */
+  scope?: TaskScope;
+}
+
+/** Chặn giá trị lạ đi vào store: file là nguồn sự thật nên không có CHECK nào cứu được. */
+function requireScope(value: unknown): TaskScope {
+  const scope = parseScope(value);
+  if (scope === null) throw new Error("scope phải là 'work' hoặc 'personal'");
+  return scope;
 }
 
 export function createTask(input: CreateInput): TaskDetail {
@@ -805,6 +820,7 @@ export function createTask(input: CreateInput): TaskDetail {
     estimate_minutes: input.estimate_minutes ?? null,
     tags: normalizeTags(input.tags),
     completed_at: status === "done" ? nowIso() : null,
+    ...(input.scope !== undefined ? { scope: requireScope(input.scope) } : {}),
   });
 
   store.tasks.unshift(task);
@@ -813,6 +829,8 @@ export function createTask(input: CreateInput): TaskDetail {
 }
 
 export function patchTask(id: string, input: Record<string, unknown>): TaskDetail {
+  // Validate scope TRƯỚC mọi phép gán: payload sai không được sửa dở task trong RAM.
+  const nextScope = "scope" in input ? requireScope(input.scope) : undefined;
   const task = find(id);
   const oldStatus = task.status;
 
@@ -825,7 +843,12 @@ export function patchTask(id: string, input: Record<string, unknown>): TaskDetai
     task.description = (input.description as string | null) ?? null;
   }
   if ("priority" in input) task.priority = input.priority as TaskPriority;
-  if ("assignee" in input) task.assignee = (input.assignee as string | null) ?? null;
+  // Đổi scope không có side effect nào khác: chỉ quyết định task có được sync ghi đè không.
+  if (nextScope !== undefined) task.scope = nextScope;
+  // '' thành null, khớp backend (chuẩn hoá assignee rỗng thành NULL khi ghi).
+  if ("assignee" in input) {
+    task.assignee = ((input.assignee as string | null) ?? "").trim() || null;
+  }
   if ("due_at" in input) task.due_at = (input.due_at as string | null) ?? null;
   if ("scheduled_for" in input) {
     task.scheduled_for = (input.scheduled_for as string | null) ?? null;
@@ -1504,7 +1527,7 @@ export function deleteGlobalTag(name: string): void {
   if (changed) touched();
 }
 
-export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, tasks_assignee?: string, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): void {
+export function wipeAllData(options?: WipeOptions): void {
   const store = state();
 
   try {
@@ -1542,25 +1565,24 @@ export function wipeAllData(options?: { tasks?: boolean, tasks_personal?: boolea
 
   if (!options || options.projects) store.projects = [];
   if (!options || options.tasks) store.tasks = [];
+  if (options && options.tasks_work) {
+    store.tasks = store.tasks.filter((t) => scopeOf(t) !== "work");
+  }
   if (options && options.tasks_personal) {
-    const users = store.currentUsers || ["Đoàn Việt Hưng"];
-    const isMyTask = (t: any) => {
-      if (t.assignee) return users.length > 0 && users.includes(t.assignee);
-      return t.source !== 'jira';
-    };
-    store.tasks = store.tasks.filter(t => !isMyTask(t));
+    store.tasks = store.tasks.filter((t) => scopeOf(t) !== "personal");
   }
   if (options && options.tasks_assignee) {
+    // assignee là khái niệm của Jira nên chỉ đụng task work, không bao giờ task cá nhân.
     const names = options.tasks_assignee.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-    store.tasks = store.tasks.filter(t => !names.includes((t.assignee || "").trim().toLowerCase()));
+    store.tasks = store.tasks.filter(
+      (t) => scopeOf(t) !== "work" || !names.includes((t.assignee || "").trim().toLowerCase()),
+    );
   }
   if (options && options.tasks_team) {
-    const users = store.currentUsers || ["Đoàn Việt Hưng"];
-    const isTeamTask = (t: any) => {
-      if (t.assignee) return users.length === 0 || !users.includes(t.assignee);
-      return t.source === 'jira';
-    };
-    store.tasks = store.tasks.filter(t => !isTeamTask(t));
+    const owners = getCurrentUsers();
+    store.tasks = store.tasks.filter(
+      (t) => !(scopeOf(t) === "work" && !matchesView(t, "mine", owners)),
+    );
   }
   if (!options || options.notes) store.notes = [];
   if (!options || options.sync_urls) store.sync_urls = [];

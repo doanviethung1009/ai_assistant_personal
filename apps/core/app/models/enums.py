@@ -51,6 +51,34 @@ class TaskSource(StrEnum):
     AGENT = "agent"
 
 
+class TaskScope(StrEnum):
+    """Task là việc công ty hay việc riêng.
+
+    Khác `source` (task đến từ đâu): scope quyết định task có bị tích hợp đồng
+    bộ ghi đè hay không, và có hiện ở `/team` hay không. User sửa được.
+
+    CẠM BẪY: có CHECK ở DB (`ck_tasks_scope_valid`), và `alembic check` KHÔNG so
+    sánh CHECK. Thêm giá trị mà quên migration DROP/ADD CONSTRAINT thì INSERT bị từ chối.
+    """
+
+    WORK = "work"
+    PERSONAL = "personal"
+
+
+# Nguồn tích hợp mà task mặc định là việc công ty (spec task-scope S2).
+WORK_SOURCES = frozenset({TaskSource.JIRA, TaskSource.GITHUB, TaskSource.GITLAB})
+
+
+def default_scope_for(source: TaskSource) -> TaskScope:
+    """Nguồn duy nhất của quy tắc suy scope từ source (migration, service, nhập file).
+
+    Web có bản sao ở apps/web/lib/task-scope.ts (`defaultScopeFor`), hai bản phải
+    khớp. Migration `add_tasks_scope` viết tay danh sách nguồn trong SQL vì
+    migration phải đóng băng theo thời điểm viết, không import code đang đổi.
+    """
+    return TaskScope.WORK if source in WORK_SOURCES else TaskScope.PERSONAL
+
+
 class NoteKind(StrEnum):
     """Loại nội dung của một note, quyết định cách hiển thị và tô màu.
 

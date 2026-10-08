@@ -2,21 +2,57 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, timedelta
+from enum import StrEnum
 from math import ceil
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from app.core.config import settings
-from app.models.enums import TaskEventType, TaskPriority, TaskSource, TaskStatus
+from app.models.enums import TaskEventType, TaskPriority, TaskScope, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
+
+# Giới hạn tham số `owner` của view=mine (spec task-scope 3.1): chặn đầu vào
+# không đáng tin làm phình mệnh đề IN.
+MAX_OWNERS = 20
+MAX_OWNER_LEN = 200
+
+
+MAX_ASSIGNEE_LEN = 200
+
+
+def clean_assignee(value: str | None) -> str | None:
+    """Strip và đổi chuỗi rỗng/toàn khoảng trắng thành None.
+
+    Vì sao: `view=mine` so khớp assignee chính xác và coi `assignee IS NULL` là "chưa
+    giao ai". Nếu '' hay ' Hung ' được lưu nguyên thì task tự tạo biến mất khỏi
+    "Hôm nay" mà không báo gì. Dùng chung cho API tạo/sửa và nhập file.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+class TaskView(StrEnum):
+    """Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
+
+    `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
+    scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+    """
+
+    ALL = "all"
+    MINE = "mine"
+    PERSONAL = "personal"
+    WORK = "work"
 
 
 class TaskBase(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
-    assignee: str | None = None
+    # Cột là String(200): thiếu max_length thì vượt độ dài hiện ra 500 thay vì 422.
+    assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     project_id: uuid.UUID | None = None
@@ -35,6 +71,11 @@ class TaskBase(BaseModel):
             raise ValueError("title không được rỗng")
         return stripped
 
+    @field_validator("assignee")
+    @classmethod
+    def _clean_assignee(cls, value: str | None) -> str | None:
+        return clean_assignee(value)
+
     @field_validator("tags")
     @classmethod
     def _clean_tags(cls, value: list[str]) -> list[str]:
@@ -44,6 +85,8 @@ class TaskBase(BaseModel):
 class TaskCreate(TaskBase):
     # Integration và agent dùng cùng endpoint này. Web UI để mặc định MANUAL.
     source: TaskSource = TaskSource.MANUAL
+    # None = suy từ source (default_scope_for). Integration truyền tường minh "work".
+    scope: TaskScope | None = None
     external_id: str | None = Field(default=None, max_length=255)
     external_url: str | None = None
     raw_payload: dict[str, Any] | None = None
@@ -58,7 +101,7 @@ class TaskUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = None
-    assignee: str | None = None
+    assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     project_id: uuid.UUID | None = None
@@ -67,6 +110,15 @@ class TaskUpdate(BaseModel):
     estimate_minutes: int | None = Field(default=None, gt=0, le=60 * 24 * 30)
     spent_minutes: int | None = Field(default=None, ge=0)
     tags: list[str] | None = None
+    scope: TaskScope | None = None
+
+    @model_validator(mode="after")
+    def _scope_not_null(self) -> TaskUpdate:
+        # Cột scope NOT NULL: `null` tường minh phải bị từ chối ở đây (422) thay vì
+        # để Postgres ném IntegrityError (500). Vắng khoá thì không nằm trong fields_set.
+        if "scope" in self.model_fields_set and self.scope is None:
+            raise ValueError("scope không được null")
+        return self
 
     @field_validator("title")
     @classmethod
@@ -77,6 +129,13 @@ class TaskUpdate(BaseModel):
         if not stripped:
             raise ValueError("title không được rỗng")
         return stripped
+
+    # Chỉ chạy khi client có truyền khoá, nên "không truyền" và "truyền null" vẫn
+    # phân biệt được qua model_dump(exclude_unset=True).
+    @field_validator("assignee")
+    @classmethod
+    def _clean_assignee(cls, value: str | None) -> str | None:
+        return clean_assignee(value)
 
     @field_validator("tags")
     @classmethod
@@ -119,6 +178,8 @@ class TaskRead(BaseModel):
     completed_at: datetime | None
     tags: list[str]
     source: TaskSource
+    # Bắt buộc, không default: OpenAPI sinh field required cho web.
+    scope: TaskScope
     external_id: str | None
     external_url: str | None
     created_at: datetime

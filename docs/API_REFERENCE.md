@@ -25,6 +25,15 @@ Các API này hỗ trợ việc quản lý công việc (Task), theo dõi tiến
 | `POST` | `/{task_id}/complete`| Đánh dấu xong | Chuyển trạng thái sang "Hoàn thành" |
 | `POST` | `/{task_id}/reopen` | Mở lại task | Đưa task về trạng thái chưa làm |
 
+**Loại việc (`scope`) và bộ lọc `view`.** Mỗi task có `scope`: `work` (công việc, thường từ Jira) hoặc `personal` (cá nhân). Mặc định theo nguồn: `jira`, `github`, `gitlab` là `work`; còn lại là `personal`. Sửa được bằng `PATCH` (đổi một task Jira sang `personal` nghĩa là tách nó khỏi đồng bộ). Chi tiết thiết kế: `docs/specs/task-scope.md`.
+
+| Tham số (cho `GET /`, `/agenda`, `/stats`) | Ghi chú |
+|---|---|
+| `view` | `all` (mặc định ở API) / `mine` / `personal` / `work`. `mine` = việc cá nhân + việc công việc giao cho một tên trong `owner` + việc công việc bạn tự tạo (không `assignee`, không mã Jira). Web mặc định `mine` |
+| `owner` | Lặp lại được, tối đa 20 tên (1 đến 200 ký tự), khớp chính xác; chỉ đi kèm `view=mine`. Sai thì 422 |
+
+`trash_total` và `minutes_logged_today` trong `/stats` không lọc theo `view`. `TaskRead` luôn trả `scope`.
+
 ## 2. API Quản lý Ghi chú (Notes)
 Base path: `/api/v1/notes`
 
@@ -85,6 +94,7 @@ Tham số của cả hai endpoint:
 | `dry_run` | query, bool, mặc định `true` | `true`: chạy thử rồi rollback, trả báo cáo (kèm diff từng bản ghi sẽ bị ghi đè). Chỉ `dry_run=false` mới ghi thật |
 | `expect_replaced` | query, int | **Bắt buộc khi nhập thật.** Số bản ghi sẽ bị ghi đè theo báo cáo dry-run; lệch thì huỷ (`replace_count_mismatch`) |
 | `expect_sha256` | query, 64 ký tự hex | **Bắt buộc khi nhập thật.** `file_sha256` của báo cáo dry-run; file khác thì huỷ (`file_changed_since_dry_run`) |
+| `include_personal` | query, bool, mặc định `false` (chỉ `/datafile`) | Mặc định nhập **bỏ qua** task `personal` đang có trong Postgres (đếm `skipped_personal`, không ghi đè). `true` cho phép ghi đè cả task cá nhân |
 | `X-Import-Secret` | header | **Bắt buộc khi nhập thật.** Giá trị biến `IMPORT_COMMIT_SECRET` của core (tối thiểu 16 ký tự). Chưa cấu hình hoặc sai: `403`. Dry-run không cần |
 
 Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`.

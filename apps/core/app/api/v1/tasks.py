@@ -18,6 +18,7 @@ from app.schemas.task import (
     TaskRead,
     TaskStatsResponse,
     TaskUpdate,
+    TaskView,
     TimeLogRequest,
     TrashResponse,
 )
@@ -25,6 +26,20 @@ from app.services import task_service
 from app.services.task_service import SortField, TaskFilters
 
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+
+ViewQuery = Annotated[
+    TaskView,
+    Query(
+        description=(
+            "Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không "
+            "giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi."
+        )
+    ),
+]
+OwnerQuery = Annotated[
+    list[str] | None,
+    Query(description="Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine."),
+]
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -47,8 +62,11 @@ async def get_agenda(
     reference_date: Annotated[
         date | None, Query(description="Mặc định là hôm nay theo timezone hiển thị")
     ] = None,
+    view: ViewQuery = TaskView.ALL,
+    owner: OwnerQuery = None,
 ) -> AgendaResponse:
-    data = await task_service.get_agenda(session, reference_date)
+    owners = task_service.validate_view_params(view, owner)
+    data = await task_service.get_agenda(session, reference_date, view=view, owners=owners)
     return AgendaResponse.model_validate(data)
 
 
@@ -56,8 +74,11 @@ async def get_agenda(
 async def get_stats(
     session: SessionDep,
     reference_date: Annotated[date | None, Query()] = None,
+    view: ViewQuery = TaskView.ALL,
+    owner: OwnerQuery = None,
 ) -> TaskStatsResponse:
-    data = await task_service.get_stats(session, reference_date)
+    owners = task_service.validate_view_params(view, owner)
+    data = await task_service.get_stats(session, reference_date, view=view, owners=owners)
     return TaskStatsResponse.model_validate(data)
 
 
@@ -129,12 +150,17 @@ async def list_tasks(
     due_before: Annotated[datetime | None, Query()] = None,
     assignee: Annotated[str | None, Query()] = None,
     include_closed: Annotated[bool, Query(description="Gồm cả done và cancelled")] = False,
+    view: ViewQuery = TaskView.ALL,
+    owner: OwnerQuery = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     sort_by: Annotated[SortField, Query()] = "created_at",
     sort_desc: Annotated[bool, Query()] = True,
 ) -> Page[TaskRead]:
+    owners = task_service.validate_view_params(view, owner)
     filters = TaskFilters(
+        view=view,
+        owners=owners,
         status=status_in,
         priority=priority_in,
         project_id=project_id,

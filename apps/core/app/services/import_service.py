@@ -52,6 +52,7 @@ from app.models.enums import (
     ImportEntity,
     ImportKind,
     TaskEventType,
+    default_scope_for,
 )
 from app.models.import_audit import ImportAudit, ImportRun
 from app.models.note import Note
@@ -117,6 +118,7 @@ TASK_FIELDS = (
     "completed_at",
     "tags",
     "source",
+    "scope",
     "external_id",
     "external_url",
 )
@@ -318,6 +320,9 @@ class _Plan:
     created_file_ids: set[uuid.UUID] = field(default_factory=set)
     # khoá tự nhiên (đã chuẩn hoá) -> id DB; dùng để task tìm project theo key
     natural_to_db: dict[Hashable, uuid.UUID] = field(default_factory=dict)
+    # id (trong file) của task bị bỏ qua vì khớp task cá nhân trong DB; event của
+    # chúng không được chèn (xem _plan_events).
+    skipped_personal_ids: set[uuid.UUID] = field(default_factory=set)
 
 
 @dataclass(frozen=True)
@@ -335,9 +340,13 @@ class _Spec:
 class _Ctx:
     """Bộ gom lỗi, đếm, diff và dấu vết audit của một lần nhập."""
 
-    def __init__(self, *, dry_run: bool, schema_version: int) -> None:
+    def __init__(
+        self, *, dry_run: bool, schema_version: int, include_personal: bool = False
+    ) -> None:
         self.import_id = uuid.uuid4()
         self.dry_run = dry_run
+        # Mặc định tắt: task cá nhân trong DB không bị file ghi đè (spec task-scope S8).
+        self.include_personal = include_personal
         self.schema_version = schema_version
         self.now = datetime.now(UTC)
         self.counts = {key: EntityCounts() for key in _COUNT_KEYS.values()}
@@ -694,6 +703,13 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
             id_=m.id,
         )
     events = _parse_events(ctx, index, m.id, m.events, created)
+    scope = m.scope
+    if scope is None:
+        # Mọi file v1-v4 không có scope (hoặc có nhưng null): suy từ source. Đây là
+        # giá trị DỰ PHÒNG nên đánh dấu fallback: tạo mới thì dùng, còn ghi đè thì
+        # giữ scope đang có trong DB, để file cũ không đảo lựa chọn User đã sửa.
+        scope = default_scope_for(m.source)
+        fallback.add("scope")
     values = {
         "title": m.title,
         "description": m.description,
@@ -708,6 +724,7 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         "completed_at": completed,
         "tags": tags,
         "source": m.source,
+        "scope": scope,
         "external_id": m.external_id,
         "external_url": external_url,
         "created_at": created,
@@ -1057,6 +1074,24 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
                 id_=r.file_id,
             )
             continue
+        if (
+            spec.entity == "task"
+            and not ctx.include_personal
+            and _canon("scope", target.get("scope")) == "personal"
+        ):
+            # Task cá nhân là của User: file (kể cả file v4 cũ không có scope) không
+            # được ghi đè nó, và cũng không tạo bản trùng khoá tự nhiên. Chạm vào nó
+            # phải bật include_personal tường minh. Áp cho cả khớp theo id lẫn khoá tự nhiên.
+            counts.skipped_personal += 1
+            plan.skipped_personal_ids.add(r.file_id)
+            ctx.warn(
+                spec.entity,
+                "skipped_personal",
+                "Task cá nhân trong DB được bảo vệ, bỏ qua. Bật include_personal để ghi đè.",
+                index=r.index,
+                id_=r.file_id,
+            )
+            continue
         if matched_by == "id" and nat is not None:
             other = nat_rows.get(nat)
             if other is not None and other["id"] != target["id"]:
@@ -1247,6 +1282,9 @@ async def _plan_events(
     for r in rows:
         if r.trashed or not r.events:
             continue
+        if r.file_id in tasks.skipped_personal_ids:
+            counts.skipped_personal += len(r.events)
+            continue
         if r.file_id not in tasks.id_map:
             counts.skipped_trash_in_db += len(r.events)
             continue
@@ -1386,7 +1424,13 @@ async def _write_audit(
             kind=kind,
             file_sha256=file_sha256,
             schema_version=schema_version,
-            counts={k: v.model_dump() for k, v in ctx.counts.items()},
+            # `options` ghi cờ đã dùng (include_personal cho phép ghi đè task cá nhân)
+            # để audit biết lần nhập đó có bỏ rào chắn hay không; JSONB nên không cần
+            # migration. Chỉ nằm trong sổ cái, không đổi ImportReport.
+            counts={
+                **{k: v.model_dump() for k, v in ctx.counts.items()},
+                "options": {"include_personal": ctx.include_personal},
+            },
             actor=actor,
         )
     )
@@ -1555,11 +1599,15 @@ async def import_datafile(
     expect_sha256: str | None = None,
     file_sha256: str,
     actor: str = "import:datafile",
+    include_personal: bool = False,
 ) -> ImportReport:
     """Nhập projects, tasks (kèm events), notes từ `builder-data.json`.
 
     Xem banner đầu module: hàm này GHI ĐÈ, không xoá. `dry_run` mặc định True để
-    quên truyền tham số thì không ghi gì.
+    quên truyền tham số thì không ghi gì. `include_personal` mặc định False: task
+    đang `personal` trong DB được bảo vệ. Lưu ý `expect_replaced` lấy từ dry-run:
+    dry-run không bật mà nhập thật bật thì số ghi đè lệch và bị huỷ
+    (`replace_count_mismatch`), đó là hành vi mong muốn.
     """
     _require_expect(dry_run, expect_replaced, expect_sha256)
     n_events = sum(len(t.get("events") or []) for t in envelope.tasks if isinstance(t, dict))
@@ -1567,7 +1615,11 @@ async def import_datafile(
         raise ValidationError(f"Tối đa {MAX_EVENTS} event mỗi file.")
 
     await _take_lock(session)
-    ctx = _Ctx(dry_run=dry_run, schema_version=envelope.schema_version)
+    ctx = _Ctx(
+        dry_run=dry_run,
+        schema_version=envelope.schema_version,
+        include_personal=include_personal,
+    )
     if envelope.model_extra:
         ctx.note_ignored("file", envelope.model_extra)
     if envelope.meta:

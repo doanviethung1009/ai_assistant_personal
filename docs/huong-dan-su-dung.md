@@ -52,6 +52,10 @@ Tag được chuẩn hoá tự động: chữ thành chữ thường, khoảng t
 ngang, trùng lặp bị loại. Nhập `Deploy, deploy, Home Lab` sẽ thành
 `deploy`, `home-lab`. Tối đa 20 tag một task.
 
+## Việc công việc và việc cá nhân
+
+Mỗi task có một **loại việc**: **Công việc** (thường từ Jira, được đồng bộ) hoặc **Cá nhân** (do bạn tự tạo, không bao giờ bị đồng bộ hay nhập file ghi đè). Trang **Tất cả task** có bốn tab: **Của tôi** (mặc định: việc cá nhân + việc công việc giao cho bạn), **Cá nhân**, **Công việc**, **Tất cả**. Khi thêm nhanh một task, chọn Cá nhân hoặc Công việc. Muốn một task Jira không bị đồng bộ cập nhật nữa, đổi nó sang **Cá nhân** (nó vẫn giữ mã Jira). Trang **Team** chỉ hiện việc công việc.
+
 ## Năm trạng thái, dùng khi nào
 
 | Trạng thái | Nghĩa |

@@ -17,8 +17,8 @@ export default async function TodayPage() {
 
   try {
     [agenda, stats, projects] = await Promise.all([
-      getAgenda(),
-      getStats(),
+      getAgenda({ view: "mine" }),
+      getStats({ view: "mine" }),
       listProjects(),
     ]);
   } catch (error) {

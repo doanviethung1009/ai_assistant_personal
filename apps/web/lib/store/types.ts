@@ -42,6 +42,26 @@ export interface StoredTask
  */
 export type StoredNote = Omit<Note, "days_until_purge">;
 
+/**
+ * Danh mục xoá hàng loạt (Vùng nguy hiểm). Định nghĩa theo `scope`:
+ *   tasks          mọi task
+ *   tasks_work     scope=work (làm lại dữ liệu Jira, giữ task cá nhân)
+ *   tasks_team     scope=work và KHÔNG phải "của tôi"
+ *   tasks_personal scope=personal
+ *   tasks_assignee scope=work và assignee thuộc danh sách tên (cách nhau dấu phẩy)
+ */
+export interface WipeOptions {
+  tasks?: boolean;
+  tasks_work?: boolean;
+  tasks_personal?: boolean;
+  tasks_team?: boolean;
+  tasks_assignee?: string;
+  projects?: boolean;
+  notes?: boolean;
+  sync_urls?: boolean;
+  chrome_history?: boolean;
+}
+
 /** Số ngày giữ task đã xoá. 0 nghĩa là xoá thẳng, không qua thùng rác. */
 export function trashRetentionDays(): number {
   const raw = Number.parseInt(process.env.TRASH_RETENTION_DAYS ?? "", 10);
@@ -87,5 +107,6 @@ export interface AiLogsFile {
  *   2 → thêm `deleted_at` cho thùng rác
  *   3 → thêm mảng `notes` cho sổ tay
  *   4 → phiên bản dọn dẹp (tách ai_logs ra file riêng)
+ *   5 → thêm scope cho task (work | personal)
  */
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 5;

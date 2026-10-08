@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
+import { scopeOf } from "@/lib/task-scope";
 
 // Tên custom field Jira được coi là thông tin phân nhóm dự án
 const CUSTOM_TAG_FIELD = /company|group|customer|client|team|squad|tribe|department|công ty|nhóm|khách|dự án/i;
@@ -147,7 +148,8 @@ export async function syncJiraAction(formData: FormData) {
       projectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
     }
     let updated = 0;
-    
+    let skippedPersonal = 0;
+
     for (const issue of allIssues) {
       const issueKey = issue.key;
       const fields = issue.fields || {};
@@ -200,8 +202,16 @@ export async function syncJiraAction(formData: FormData) {
       
       const validTags = tags.filter(t => t.length > 0);
       
-      let task = db.tasks.find((t: any) => t.external_id === issueKey);
-      
+      // Khớp theo (source, external_id) như unique của backend, không chỉ external_id.
+      let task = db.tasks.find((t) => t.source === "jira" && t.external_id === issueKey);
+
+      // Task đã chuyển sang `personal` nghĩa là User tách nó khỏi đồng bộ: KHÔNG
+      // ghi đè, cũng không tạo bản trùng (khoá (jira, KEY) vẫn bị task đó chiếm).
+      if (task && scopeOf(task) === "personal") {
+        skippedPersonal++;
+        continue;
+      }
+
       const resolvedAt = fields.resolutiondate 
         ? new Date(fields.resolutiondate).toISOString() 
         : (fields.updated ? new Date(fields.updated).toISOString() : nowIso());
@@ -252,6 +262,7 @@ export async function syncJiraAction(formData: FormData) {
           external_id: issueKey,
           external_url: `${baseUrl}/browse/${issueKey}`,
           assignee: fields.assignee?.displayName || null,
+          scope: 'work',
           created_at: fields.created ? new Date(fields.created).toISOString() : nowIso(),
           updated_at: nowIso(),
           deleted_at: null,
@@ -281,8 +292,8 @@ export async function syncJiraAction(formData: FormData) {
     engine.touched();
     revalidatePath('/', 'layout');
     
-    return { ok: true, added, updated };
-    
+    return { ok: true, added, updated, skipped_personal: skippedPersonal };
+
   } catch (error: any) {
     return { ok: false, error: "Lỗi kết nối tới Jira: " + error.message };
   }
