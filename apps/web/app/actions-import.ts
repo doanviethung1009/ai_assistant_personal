@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
-import { uuid, nowIso } from "@/lib/store/engine";
+import { uuid, nowIso, MAX_SYNC_URLS } from "@/lib/store/engine";
 import { migrate } from "@/lib/store/json-file";
 import type { DataFile } from "@/lib/store/types";
 import { syncUrlError } from "@/lib/sync-url-policy";
@@ -254,6 +254,7 @@ export async function restoreFromJsonAction(jsonData: any) {
     let skippedPersonal = 0;
     let restoredProjects = 0;
     let restoredNotes = 0;
+    let droppedUrls = 0;
 
     if (Array.isArray(jsonData.projects)) {
       for (const p of data.projects) {
@@ -296,16 +297,24 @@ export async function restoreFromJsonAction(jsonData: any) {
 
     if (Array.isArray(jsonData.sync_urls)) {
       // Chỉ giữ chuỗi qua allowlist: URL này sau đó sẽ được server fetch (SSRF).
-      db.sync_urls = jsonData.sync_urls.filter(
-        (u: unknown): u is string => typeof u === "string" && syncUrlError(u) === null,
-      );
+      const accepted = Array.from(
+        new Set(
+          jsonData.sync_urls.filter(
+            (u: unknown): u is string => typeof u === "string" && syncUrlError(u) === null,
+          ),
+        ),
+      ) as string[];
+      // Giới hạn 50 như backend; phần bị lọc/cắt được báo lại, không im lặng.
+      db.sync_urls = accepted.slice(0, MAX_SYNC_URLS);
+      droppedUrls = jsonData.sync_urls.length - db.sync_urls.length;
     }
 
     engine.touched();
     revalidatePath('/', 'layout');
 
     const skippedNote =
-      skippedPersonal > 0 ? `, giữ nguyên ${skippedPersonal} task cá nhân đang có` : "";
+      (skippedPersonal > 0 ? `, giữ nguyên ${skippedPersonal} task cá nhân đang có` : "") +
+      (droppedUrls > 0 ? `, bỏ ${droppedUrls} link đồng bộ không hợp lệ/trùng/vượt ${MAX_SYNC_URLS}` : "");
     return {
       ok: true,
       message: `Đã khôi phục thành công! (${restoredTasks} tasks, ${restoredProjects} projects, ${restoredNotes} notes${skippedNote})`

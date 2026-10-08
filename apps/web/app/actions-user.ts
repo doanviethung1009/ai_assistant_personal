@@ -21,6 +21,10 @@ export async function setCurrentUserAction(names: string[]): Promise<SetUsersRes
   const clean: string[] = [];
   for (const raw of names) {
     if (typeof raw !== "string") return { ok: false, error: "Danh sách tên không hợp lệ" };
+    // Ký tự điều khiển (kể cả xuống dòng) bị backend từ chối; chặn sớm để PUT không 422.
+    if (/[\x00-\x1f\x7f]/.test(raw)) {
+      return { ok: false, error: "Tên không được chứa ký tự điều khiển" };
+    }
     const name = raw.trim();
     if (!name || clean.includes(name)) continue;
     if (name.length > MAX_OWNER_LENGTH) {

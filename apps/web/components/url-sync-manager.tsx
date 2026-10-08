@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { syncFromUrlAction, addSyncUrlAction, removeSyncUrlAction } from "@/app/actions";
 
 export function UrlSyncManager({
@@ -12,6 +12,8 @@ export function UrlSyncManager({
   canSync?: boolean;
 }) {
   const [urls, setUrls] = useState<string[]>(initialUrls);
+  // Đồng bộ lại khi server render lại (sau revalidate), để link bị server bỏ biến mất khỏi danh sách.
+  useEffect(() => setUrls(initialUrls), [initialUrls]);
   const [newUrl, setNewUrl] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
@@ -31,7 +33,15 @@ export function UrlSyncManager({
       }
       setUrls([...urls, toAdd]);
       setNewUrl("");
+      notifyDropped(res.dropped);
     });
+  }
+
+  /** Link cũ không còn qua allowlist bị server bỏ khỏi danh sách: nói rõ thay vì để chúng biến mất. */
+  function notifyDropped(dropped: number | undefined) {
+    if (dropped && dropped > 0) {
+      setResult({ ok: false, message: `Đã bỏ ${dropped} link cũ không còn hợp lệ (host không còn trong danh sách cho phép).` });
+    }
   }
 
   function handleRemove(url: string) {
@@ -44,6 +54,7 @@ export function UrlSyncManager({
         return;
       }
       setUrls(urls.filter(u => u !== url));
+      notifyDropped(res.dropped);
     });
   }
 
@@ -64,8 +75,8 @@ export function UrlSyncManager({
       <h2 className="text-sm font-semibold">Tự động cào dữ liệu công việc (Quest Data)</h2>
       <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
         Quản lý các link file Excel (.xlsx) hoặc CSV (.csv). Bạn có thể bấm "Cào" thủ công để đồng bộ ngay lập tức.
-        Chỉ nhận link <code>https</code> của Google Docs/Drive, SharePoint, OneDrive (host khác cần cấu hình{" "}
-        <code>SYNC_URL_EXTRA_HOSTS</code> ở server).
+        Chỉ nhận link <code>https</code> của Google Docs/Drive và SharePoint. Link OneDrive/SharePoint cá nhân,
+        hoặc host khác, có thể cần thêm host qua <code>SYNC_URL_EXTRA_HOSTS</code> ở server.
       </p>
       {!canSync ? (
         <p className="mt-1 text-xs text-[var(--color-ink-muted)]">

@@ -1103,7 +1103,17 @@ export interface ListNotesOptions {
 }
 
 export function getSyncUrls(): string[] { return state().sync_urls || []; }
-export function addSyncUrl(url: string) { const s = state(); if (!s.sync_urls) s.sync_urls = []; if (!s.sync_urls.includes(url)) s.sync_urls.push(url); touched(); }
+/** Trần số URL đồng bộ, khớp backend (PUT /settings/sync-urls tối đa 50). */
+export const MAX_SYNC_URLS = 50;
+
+export function addSyncUrl(url: string) {
+  const s = state();
+  if (!s.sync_urls) s.sync_urls = [];
+  if (s.sync_urls.includes(url)) return;
+  if (s.sync_urls.length >= MAX_SYNC_URLS) throw new Error(`Tối đa ${MAX_SYNC_URLS} link đồng bộ`);
+  s.sync_urls.push(url);
+  touched();
+}
 export function removeSyncUrl(url: string) { const s = state(); if (s.sync_urls) s.sync_urls = s.sync_urls.filter((u: string) => u !== url); touched(); }
 export function listNotes(options: ListNotesOptions = {}): Paged<Note> {
   let result = aliveNotes();

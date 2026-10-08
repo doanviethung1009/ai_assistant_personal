@@ -46,7 +46,8 @@ export async function fetchAllowlisted(startUrl: string, headers: Record<string,
     try {
       res = await fetch(current, {
         redirect: "manual",
-        headers,
+        // identity: không nhận nội dung nén, giảm rủi ro nén bom (readCappedBody vẫn đếm byte sau giải nén).
+        headers: { ...headers, "Accept-Encoding": "identity" },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
     } catch {
@@ -65,6 +66,68 @@ export async function fetchAllowlisted(startUrl: string, headers: Record<string,
     }
   }
   throw new SyncFetchError("Link chuyển hướng quá nhiều lần.");
+}
+
+/** Trần kích thước file cào về, tránh một link độc làm tràn RAM của web. */
+export const MAX_SYNC_BYTES = 20 * 1024 * 1024;
+
+const ALLOWED_CONTENT_TYPES = new Set([
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+  "application/csv",
+  "application/octet-stream",
+]);
+
+/** Từ chối kiểu nội dung lạ (HTML đăng nhập, JSON...). Thiếu header thì cho qua, XLSX.read sẽ tự bắt. */
+export function assertSpreadsheetContentType(res: Response): void {
+  const raw = res.headers.get("content-type");
+  if (!raw) return;
+  const type = raw.split(";")[0]!.trim().toLowerCase();
+  if (!ALLOWED_CONTENT_TYPES.has(type)) {
+    throw new SyncFetchError("Link không trả về file Excel/CSV.");
+  }
+}
+
+/**
+ * Đọc body theo STREAM, cộng dồn byte và dừng ngay khi vượt trần.
+ *
+ * Không dùng arrayBuffer(): nó nạp toàn bộ vào RAM trước khi ta kịp kiểm, và
+ * Content-Length có thể vắng (chunked) hoặc nói dối. Đếm trên byte đã GIẢI NÉN nên
+ * cũng chặn được nén bom dù đã yêu cầu Accept-Encoding: identity.
+ */
+export async function readCappedBody(res: Response, maxBytes: number = MAX_SYNC_BYTES): Promise<Uint8Array> {
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > maxBytes) {
+    void res.body?.cancel().catch(() => undefined);
+    throw new SyncFetchError("File quá lớn (tối đa 20 MB).");
+  }
+  if (!res.body) return new Uint8Array(0);
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw new SyncFetchError("File quá lớn (tối đa 20 MB).");
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error instanceof SyncFetchError) throw error;
+    throw new SyncFetchError("Đọc dữ liệu từ link bị gián đoạn.");
+  }
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.byteLength;
+  }
+  return out;
 }
 
 /** Trả thông điệp lỗi (không chứa URL) nếu URL bị từ chối, null nếu được phép. */

@@ -17,6 +17,8 @@
 export const DEFAULT_EXACT_HOSTS: ReadonlySet<string> = new Set([
   "docs.google.com",
   "drive.google.com",
+  // Drive chuyển hướng 303 sang host này khi tải file (đã kiểm trên mạng thật).
+  "drive.usercontent.google.com",
   "onedrive.live.com",
   "1drv.ms",
 ]);
@@ -81,7 +83,39 @@ function isIpLiteral(host: string): boolean {
   return host.split(".").every((part) => /^(?:0x[0-9a-f]+|[0-9]+)$/i.test(part));
 }
 
-/** Tách `host` / `*.host` thành (exact, suffix). Sai cú pháp thì ném lỗi (fail closed). */
+/**
+ * Đuôi miền dùng chung / công cộng: `*.github.io` mở cho MỌI người dùng github.io, nên
+ * wildcard trên chúng bị từ chối. BEST-EFFORT: không thể liệt kê hết Public Suffix List;
+ * người vận hành vẫn phải tự chịu trách nhiệm với từng host thêm vào. Giữ đồng bộ với backend.
+ */
+export const SHARED_SUFFIXES: ReadonlySet<string> = new Set([
+  "github.io",
+  "nip.io",
+  "sslip.io",
+  "xip.io",
+  "herokuapp.com",
+  "vercel.app",
+  "netlify.app",
+  "pages.dev",
+  "workers.dev",
+  "ngrok.io",
+  "ngrok-free.app",
+  "blogspot.com",
+  "azurewebsites.net",
+  "cloudfront.net",
+  "amazonaws.com",
+  "appspot.com",
+]);
+
+/** Dạng co.uk / com.au: nhãn đầu 2-3 ký tự, nhãn cuối đúng 2 ký tự. */
+function isTwoLabelPublicSuffix(host: string): boolean {
+  return /^[a-z]{2,3}\.[a-z]{2}$/.test(host);
+}
+
+/**
+ * Tách `host` / `*.host` thành (exact, suffix). Sai cú pháp thì ném lỗi (fail closed).
+ * Từ chối: host không có dấu chấm, wildcard trên đuôi dùng chung (SHARED_SUFFIXES, co.uk...).
+ */
 export function parseExtraHosts(raw: Iterable<string>): { exact: Set<string>; suffix: Set<string> } {
   const exact = new Set<string>();
   const suffix = new Set<string>();
@@ -94,8 +128,11 @@ export function parseExtraHosts(raw: Iterable<string>): { exact: Set<string>; su
       throw new Error(`SYNC_URL_EXTRA_HOSTS: '${item.trim().slice(0, 80)}' không phải tên host hợp lệ`);
     }
     if (isIpLiteral(host)) throw new Error("SYNC_URL_EXTRA_HOSTS: không chấp nhận địa chỉ IP");
-    if (wildcard && !host.includes(".")) {
-      throw new Error(`SYNC_URL_EXTRA_HOSTS: '*.${host}' quá rộng`);
+    if (!host.includes(".")) {
+      throw new Error(`SYNC_URL_EXTRA_HOSTS: '${item.trim().slice(0, 80)}' thiếu dấu chấm (cần tên miền đầy đủ)`);
+    }
+    if (wildcard && (SHARED_SUFFIXES.has(host) || isTwoLabelPublicSuffix(host))) {
+      throw new Error(`SYNC_URL_EXTRA_HOSTS: '*.${host}' là đuôi miền dùng chung, quá rộng`);
     }
     (wildcard ? suffix : exact).add(host);
   }

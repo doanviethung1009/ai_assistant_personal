@@ -777,18 +777,34 @@ async function putSyncUrls(urls: string[]): Promise<void> {
  * cho phép) ở CẢ hai tầng: ở đây để báo lỗi rõ và không phụ thuộc vào core, và core
  * kiểm lại khi PUT. Thông báo lỗi không chứa URL (link chia sẻ thường mang token).
  */
-export async function addSyncUrlApi(url: string): Promise<void> {
+export interface SyncUrlChange {
+  /** Số link cũ không còn qua allowlist bị bỏ khỏi danh sách trong lần lưu này. */
+  dropped: number;
+}
+
+/**
+ * PUT kiểm lại MỌI phần tử, nên một link cũ không còn hợp lệ (đổi allowlist sau khi lưu)
+ * sẽ khóa cả việc thêm lẫn xoá. Lọc chúng ra trước khi PUT và báo số lượng để UI nói
+ * rõ với người dùng thay vì lặng lẽ làm mất link.
+ */
+async function putFilteredSyncUrls(urls: string[]): Promise<SyncUrlChange> {
+  const valid = urls.filter((u) => syncUrlError(u) === null);
+  await putSyncUrls(valid);
+  return { dropped: urls.length - valid.length };
+}
+
+export async function addSyncUrlApi(url: string): Promise<SyncUrlChange> {
   const rejected = syncUrlError(url);
   if (rejected !== null) throw new CoreApiError(rejected, 400);
-  if (IS_LOCAL) return local(() => engine.addSyncUrl(url));
+  if (IS_LOCAL) return local(() => { engine.addSyncUrl(url); return { dropped: 0 }; });
   const current = await getSyncUrlsApi();
-  if (current.includes(url)) return;
-  await putSyncUrls([...current, url]);
+  if (current.includes(url)) return { dropped: 0 };
+  return putFilteredSyncUrls([...current, url]);
 }
-export async function removeSyncUrlApi(url: string): Promise<void> {
-  if (IS_LOCAL) return local(() => engine.removeSyncUrl(url));
+export async function removeSyncUrlApi(url: string): Promise<SyncUrlChange> {
+  if (IS_LOCAL) return local(() => { engine.removeSyncUrl(url); return { dropped: 0 }; });
   const current = await getSyncUrlsApi();
-  await putSyncUrls(current.filter((u) => u !== url));
+  return putFilteredSyncUrls(current.filter((u) => u !== url));
 }
 
 // ── Tags Management ──────────────────────────────────────────────────────

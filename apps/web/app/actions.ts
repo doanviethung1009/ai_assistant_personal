@@ -555,10 +555,16 @@ export async function importDataAction(
 }
 
 import * as XLSX from 'xlsx';
-import { SyncFetchError, fetchAllowlisted, syncUrlError } from "@/lib/sync-url-policy";
+import {
+  SyncFetchError,
+  assertSpreadsheetContentType,
+  fetchAllowlisted,
+  readCappedBody,
+  syncUrlError,
+} from "@/lib/sync-url-policy";
 
-/** Trần kích thước file cào về, tránh một link độc làm tràn RAM của web. */
-const MAX_SYNC_BYTES = 20 * 1024 * 1024;
+/** Số dòng tối đa đọc từ một sheet cào về. */
+const MAX_SYNC_ROWS = 50_000;
 
 function parseJiraDate(val: any): string | null {
   if (!val || val === "No Due Date" || val === "Not Closed") return null;
@@ -611,13 +617,16 @@ export async function syncFromUrlAction(url: string): Promise<ActionResult & { c
       Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, text/csv, */*',
     });
     // Không đưa statusText vào lỗi: nó đến từ máy chủ ngoài.
-    if (!res.ok) throw new SyncFetchError(`Link trả về lỗi HTTP ${res.status}.`);
-    const declared = Number(res.headers.get("content-length") ?? 0);
-    if (declared > MAX_SYNC_BYTES) throw new SyncFetchError("File quá lớn (tối đa 20 MB).");
+    if (!res.ok) {
+      void res.body?.cancel().catch(() => undefined);
+      throw new SyncFetchError(`Link trả về lỗi HTTP ${res.status}.`);
+    }
+    assertSpreadsheetContentType(res);
 
-    const buffer = await res.arrayBuffer();
-    if (buffer.byteLength > MAX_SYNC_BYTES) throw new SyncFetchError("File quá lớn (tối đa 20 MB).");
-    const workbook = XLSX.read(buffer, { type: 'array' });
+    // Đọc theo stream và dừng ngay khi vượt 20 MB (không arrayBuffer() toàn phần).
+    const buffer = await readCappedBody(res);
+    // sheetRows chặn sheet khổng lồ làm phình RAM khi parse.
+    const workbook = XLSX.read(buffer, { type: 'array', sheetRows: MAX_SYNC_ROWS });
     const sheetName = workbook.SheetNames[0];
     if (!sheetName) throw new Error('File không chứa sheet nào');
     const sheet = workbook.Sheets[sheetName];
@@ -646,23 +655,25 @@ export async function syncFromUrlAction(url: string): Promise<ActionResult & { c
 import { addSyncUrlApi, removeSyncUrlApi } from "@/lib/api";
 
 /** Lưu URL đồng bộ; trả {ok:false,error} (thay vì ném) để UI hiện lỗi allowlist rõ ràng. */
-export async function addSyncUrlAction(url: string): Promise<ActionResult> {
+export type SyncUrlActionResult = ActionResult & { dropped?: number };
+
+export async function addSyncUrlAction(url: string): Promise<SyncUrlActionResult> {
   if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   try {
-    await addSyncUrlApi(url.trim());
+    const { dropped } = await addSyncUrlApi(url.trim());
     revalidateAll();
-    return { ok: true };
+    return { ok: true, dropped };
   } catch (error) {
     return toResult(error);
   }
 }
 
-export async function removeSyncUrlAction(url: string): Promise<ActionResult> {
+export async function removeSyncUrlAction(url: string): Promise<SyncUrlActionResult> {
   if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   try {
-    await removeSyncUrlApi(url);
+    const { dropped } = await removeSyncUrlApi(url);
     revalidateAll();
-    return { ok: true };
+    return { ok: true, dropped };
   } catch (error) {
     return toResult(error);
   }
