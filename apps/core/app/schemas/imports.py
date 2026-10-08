@@ -29,6 +29,7 @@ from app.models.enums import (
     TaskSource,
     TaskStatus,
 )
+from app.schemas.task import clean_assignee
 
 # v5 thêm `tasks.scope` (spec task-scope S11). Web lên v5 mà backend chưa lên thì
 # mọi file mới xuất sẽ bị 422.
@@ -144,6 +145,11 @@ class ImportTask(_Row):
     @classmethod
     def _title(cls, value: str) -> str:
         return _not_blank(value)
+
+    @field_validator("assignee")
+    @classmethod
+    def _assignee(cls, value: str | None) -> str | None:
+        return clean_assignee(value)
 
 
 class ImportNote(_Row):

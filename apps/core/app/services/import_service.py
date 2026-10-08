@@ -1424,7 +1424,13 @@ async def _write_audit(
             kind=kind,
             file_sha256=file_sha256,
             schema_version=schema_version,
-            counts={k: v.model_dump() for k, v in ctx.counts.items()},
+            # `options` ghi cờ đã dùng (include_personal cho phép ghi đè task cá nhân)
+            # để audit biết lần nhập đó có bỏ rào chắn hay không; JSONB nên không cần
+            # migration. Chỉ nằm trong sổ cái, không đổi ImportReport.
+            counts={
+                **{k: v.model_dump() for k, v in ctx.counts.items()},
+                "options": {"include_personal": ctx.include_personal},
+            },
             actor=actor,
         )
     )

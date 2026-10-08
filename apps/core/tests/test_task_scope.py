@@ -420,3 +420,56 @@ def test_migration_backfills_by_source_and_round_trips(migrated_db: None) -> Non
         # Luôn đưa schema về head để các test sau không gãy; dữ liệu do conftest TRUNCATE.
         _alembic("upgrade", "head")
         asyncio.run(_sql(url, [("TRUNCATE tasks CASCADE", {})]))
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Chuẩn hoá assignee và phân trang ổn định (sau review)
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def test_assignee_is_stripped_and_blank_becomes_null(client: httpx.AsyncClient) -> None:
+    padded = await _create(client, title="t1", assignee="  Hung ")
+    blank = await _create(client, title="t2", assignee="")
+    spaces = await _create(client, title="t3", assignee="   ")
+    assert padded["assignee"] == "Hung"
+    assert blank["assignee"] is None
+    assert spaces["assignee"] is None
+
+    # PATCH: truyền ' ' xoá, không truyền thì giữ nguyên.
+    resp = await client.patch(f"/api/v1/tasks/{padded['id']}", json={"title": "moi"})
+    assert resp.json()["assignee"] == "Hung"
+    resp = await client.patch(f"/api/v1/tasks/{padded['id']}", json={"assignee": " "})
+    assert resp.json()["assignee"] is None
+    resp = await client.patch(f"/api/v1/tasks/{blank['id']}", json={"assignee": " An "})
+    assert resp.json()["assignee"] == "An"
+
+
+async def test_assignee_too_long_is_422(client: httpx.AsyncClient) -> None:
+    assert (
+        await client.post("/api/v1/tasks", json={"title": "t", "assignee": "x" * 201})
+    ).status_code == 422
+    ok = await client.post("/api/v1/tasks", json={"title": "t", "assignee": "x" * 200})
+    assert ok.status_code == 201
+    resp = await client.patch(f"/api/v1/tasks/{ok.json()['id']}", json={"assignee": "x" * 201})
+    assert resp.status_code == 422
+
+
+async def test_view_mine_treats_blank_assignee_as_unassigned(client: httpx.AsyncClient) -> None:
+    await _create(client, title="own", source="manual", scope="work", assignee="")
+    page = (await _list(client, view="mine")).json()
+    assert _titles(page) == {"own"}
+
+
+async def test_pagination_is_stable_with_identical_created_at(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    ids = {(await _create(client, title=f"t{i}"))["id"] for i in range(7)}
+    await session.execute(text("UPDATE tasks SET created_at = '2026-01-01T00:00:00+00:00'"))
+    await session.commit()
+
+    seen: list[str] = []
+    for offset in range(0, 7, 3):
+        page = (await _list(client, limit=3, offset=offset)).json()
+        seen += [item["id"] for item in page["items"]]
+    assert len(seen) == 7
+    assert set(seen) == ids

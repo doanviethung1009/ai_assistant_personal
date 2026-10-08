@@ -920,6 +920,33 @@ async def _insert_personal_t1(session: AsyncSession, task_id: uuid.UUID = T1) ->
     await session.commit()
 
 
+async def test_import_run_records_include_personal_flag(session: AsyncSession) -> None:
+    await _import(session)
+    await _import(session, include_personal=True)
+    flags = (
+        await session.scalars(
+            text(
+                "SELECT counts -> 'options' ->> 'include_personal' "
+                "FROM import_runs ORDER BY created_at"
+            )
+        )
+    ).all()
+    assert list(flags) == ["false", "true"]
+    # Dry-run không ghi sổ cái.
+    await _import(session, dry_run=True, include_personal=True)
+    assert await session.scalar(text("SELECT count(*) FROM import_runs")) == 2
+
+
+async def test_file_assignee_is_normalized(session: AsyncSession) -> None:
+    data = _load()
+    data["tasks"][0]["assignee"] = "  Hung  "
+    data["tasks"][1]["assignee"] = "   "
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert (await _task(session, T1))["assignee"] == "Hung"
+    assert (await _task(session, T2))["assignee"] is None
+
+
 async def test_file_without_scope_derives_from_source(session: AsyncSession) -> None:
     data = _load()
     assert all("scope" not in t for t in data["tasks"])

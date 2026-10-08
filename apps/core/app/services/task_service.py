@@ -100,7 +100,9 @@ def _view_clause(view: TaskView, owners: Sequence[str] = ()) -> ColumnElement[bo
     dùng). Web có bản sao ở lib/task-scope.ts (`matchesView`), hai bản phải khớp.
     Nhánh `assignee IS NULL AND external_id IS NULL` giữ task công việc User tự tạo
     (không giao ai, không đến từ tích hợp) hiện ở "Hôm nay"; task Jira chưa ai nhận
-    thì không hiện. So khớp assignee CHÍNH XÁC (phân biệt hoa thường).
+    thì không hiện. So khớp assignee CHÍNH XÁC (phân biệt hoa thường). Chuỗi rỗng và
+    khoảng trắng thừa đã được chuẩn hoá khi ghi (rỗng -> NULL, strip), nên ở đây chỉ
+    cần xét NULL; web chế độ file cũng nên coi '' như null.
     """
     if view is TaskView.ALL:
         return None
@@ -173,7 +175,9 @@ def _apply_sort(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
 
     # nulls_last để task không có due_at/scheduled_for không chen lên đầu
     ordering = column.desc().nulls_last() if filters.sort_desc else column.asc().nulls_last()
-    return stmt.order_by(ordering, Task.created_at.desc())
+    # Task.id là khoá phụ DUY NHẤT: nhiều task cùng created_at (nhập hàng loạt) mà
+    # thiếu nó thì thứ tự giữa các trang không ổn định, task bị lặp hoặc sót.
+    return stmt.order_by(ordering, Task.created_at.desc(), Task.id.desc())
 
 
 async def _ensure_project_exists(session: AsyncSession, project_id: uuid.UUID | None) -> None:

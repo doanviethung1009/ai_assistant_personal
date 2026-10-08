@@ -19,6 +19,22 @@ MAX_OWNERS = 20
 MAX_OWNER_LEN = 200
 
 
+MAX_ASSIGNEE_LEN = 200
+
+
+def clean_assignee(value: str | None) -> str | None:
+    """Strip và đổi chuỗi rỗng/toàn khoảng trắng thành None.
+
+    Vì sao: `view=mine` so khớp assignee chính xác và coi `assignee IS NULL` là "chưa
+    giao ai". Nếu '' hay ' Hung ' được lưu nguyên thì task tự tạo biến mất khỏi
+    "Hôm nay" mà không báo gì. Dùng chung cho API tạo/sửa và nhập file.
+    """
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
 class TaskView(StrEnum):
     """Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
 
@@ -35,7 +51,8 @@ class TaskView(StrEnum):
 class TaskBase(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
-    assignee: str | None = None
+    # Cột là String(200): thiếu max_length thì vượt độ dài hiện ra 500 thay vì 422.
+    assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     project_id: uuid.UUID | None = None
@@ -53,6 +70,11 @@ class TaskBase(BaseModel):
         if not stripped:
             raise ValueError("title không được rỗng")
         return stripped
+
+    @field_validator("assignee")
+    @classmethod
+    def _clean_assignee(cls, value: str | None) -> str | None:
+        return clean_assignee(value)
 
     @field_validator("tags")
     @classmethod
@@ -79,7 +101,7 @@ class TaskUpdate(BaseModel):
 
     title: str | None = Field(default=None, min_length=1, max_length=500)
     description: str | None = None
-    assignee: str | None = None
+    assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
     status: TaskStatus | None = None
     priority: TaskPriority | None = None
     project_id: uuid.UUID | None = None
@@ -107,6 +129,13 @@ class TaskUpdate(BaseModel):
         if not stripped:
             raise ValueError("title không được rỗng")
         return stripped
+
+    # Chỉ chạy khi client có truyền khoá, nên "không truyền" và "truyền null" vẫn
+    # phân biệt được qua model_dump(exclude_unset=True).
+    @field_validator("assignee")
+    @classmethod
+    def _clean_assignee(cls, value: str | None) -> str | None:
+        return clean_assignee(value)
 
     @field_validator("tags")
     @classmethod
