@@ -55,7 +55,7 @@
 - **Lỗi có sẵn đã sửa trong epic:** `/team` ở chế độ api không còn gọi `limit=10000` (backend cho tối đa 200); `listTasks` ở chế độ api truyền `view`/`owner`/`assignee`; vùng nguy hiểm ở chế độ api không còn giả vờ xoá (hiện thông báo); `restoreFromJsonAction` chạy migrate.
 - **Chưa làm / ghi nhận:** `file-upload-manager`, `url-sync-manager` chưa hiện `skipped_personal` (không thuộc Ownership frontend của epic); `/team` vẫn tải nhiều trang rồi lọc client-side (phân trang server-side là epic riêng); `/tasks` ở chế độ api nhận `size` tới 1000 còn backend tối đa 200 (lỗi có sẵn).
 
-## 8. Cài đặt người dùng và URL đồng bộ (pha B2, nhánh `feat/settings-b2`, chưa merge)
+## 8. Cài đặt người dùng và URL đồng bộ (pha B2, đã merge vào `main`)
 
 - **Đã code:** bảng `app_settings` (key khai báo cứng, migration `a7b3c5d9e2f4`, down_revision `f6a2b4c8d1e3`), `GET/PUT /api/v1/settings/current-users` và `/sync-urls`, `GET /api/v1/tasks/assignees` (chỉ `scope=work`); nhập `meta.current_users` và `sync_urls` từ file (thực thể `setting`). File JSON **phiên bản 6** (lưu `sync_urls`, lỗi cũ: `snapshot()` bỏ sót). Web ở chế độ api: `getCurrentUsersApi`/`getAssigneesApi`/`getSyncUrlsApi` gọi core thật, `CurrentUserManager` và `UrlSyncManager` dùng được.
 - **Bảo mật (chống SSRF):** URL đồng bộ chỉ `https` + allowlist host (Google Docs/Sheets/Drive, SharePoint, OneDrive; thêm bằng `SYNC_URL_EXTRA_HOSTS`, đặt giống nhau cho api và web). Hai bản luật phải GIỮ TƯƠNG ĐƯƠNG: `apps/core/app/core/url_allowlist.py` và `apps/web/lib/url-allowlist.ts`. `syncFromUrlAction` kiểm `IS_LOCAL` trước, fetch `redirect: manual`, kiểm lại allowlist mỗi bước (tối đa 5).
@@ -64,5 +64,15 @@
 - **Rủi ro còn lại:** `*.sharepoint.com` và `*.googleusercontent.com` nhận mọi tenant (nội dung do bên khác kiểm soát được parse và nhập); chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền); `xlsx` 0.18.5 có CVE (việc riêng đã tách); OneDrive cá nhân chưa kiểm được; `jira-actions.ts` fetch `baseUrl` tuỳ ý kèm `Authorization` (SSRF có sẵn, để B4).
 - **Merge:** sau PR task-scope (#13) vì migration nối tiếp. `.env` hiện có không có `SYNC_URL_EXTRA_HOSTS` (tuỳ chọn); Jira on-prem cần thêm host vào biến này.
 - **Chưa làm:** pha B3 (lịch sử Chrome), B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
+
+## 9. Lịch sử Chrome vào Postgres (pha B3, nhánh `feat/browser-history-b3`, chưa merge)
+
+- **Đã code:** bảng `browser_history` (migration `b8c4d6e0f3a5`, nối sau `a7b3c5d9e2f4`; unique `(profile, url_hash)`, hai index `(last_visit_at DESC, id)` và `(profile, last_visit_at DESC, id)`, 4 CHECK), `POST /browser-history/batch`, `GET`, `DELETE` (cần `X-Import-Secret`), `POST /import/browser-history`. Web: `scrapeChromeHistory` có tham số `timeMode` (`local` cho file, `utc` cho api), `/history` phân trang server-side 50/trang, nút xoá theo profile kèm mật khẩu, loại file `chrome-history.json` trong panel Nhập.
+- **Bảo mật:** sửa lỗi nội suy shell (`execFile`, ép `limit` 1..10000, `customPath` phải là file `History` dưới thư mục Chrome, mở bằng `O_NOFOLLOW`); URL bỏ query/fragment/userinfo; lỗi không lộ đường dẫn máy; 422 của batch không trả lại URL gốc.
+- **Lỗi múi giờ đã tránh:** nhánh api gửi giờ UTC có `Z`, không dùng `localtime`, vì upsert GREATEST khiến giờ lệch lên trước không tự sửa được.
+- **Đã review (code, bảo mật, DB) và sửa một vòng:** DELETE đòi mật khẩu; index khớp truy vấn; sắp theo `url_hash` chống deadlock; giới hạn độ dài field.
+- **Rủi ro còn lại:** path URL có thể chứa token (đã bỏ query nhưng không cắt path); `q` tìm kiếm có thể nằm trong access log của uvicorn; `COUNT(*)` mỗi trang; web chưa có đăng nhập; chưa chạy UAT với Chrome và sqlite3 thật, chưa chạy `make smoke`; `smoke-test.sh` chưa có assertion cho B3; `customPath` ngoài thư mục Chrome mặc định (Chromium, Brave) bị từ chối.
+- **Merge:** sau B2 (đã merge). Migration `b8c4d6e0f3a5` là head mới.
+- **Chưa làm:** pha B4 (Jira sync ở backend).
 
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

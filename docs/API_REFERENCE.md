@@ -110,6 +110,19 @@ Base path: `/api/v1`. Cài đặt **không bí mật** của người dùng, lư
 
 Allowlist được kiểm **hai lần**: backend khi lưu, web khi fetch (kiểm lại URL ở mỗi bước chuyển hướng, tối đa 5 bước). `GET /settings/sync-urls` trả nguyên dữ liệu đã lưu, không kiểm lại. Chạy đồng bộ từ URL ở chế độ api cần pha B4.
 
+## 7. API Lịch sử duyệt web (Browser history, pha B3)
+
+Dữ liệu cá nhân nhạy cảm. Web đọc Chrome trên máy chạy web rồi đẩy lên core. Mọi route cần `X-API-Key`. URL được chuẩn hoá khi lưu: chỉ `http`/`https`, **bỏ query, fragment và userinfo** (nhưng **path vẫn giữ**, nên link kiểu `/reset-password/<token>` vẫn nằm trong DB).
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `POST` | `/browser-history/batch` | `{profile, items:[{url,title,visit_count,last_visit_time}]}`, tối đa 10 000 item (vượt thì 422). Upsert theo `(profile, sha256(url))`, `visit_count` và `last_visit_at` chỉ tăng (GREATEST). Trả `{received, created, updated, unchanged, invalid}`. `last_visit_time` có hậu tố `Z`/offset thì dùng đúng; không có múi giờ thì hiểu theo `display_timezone` |
+| `GET` | `/browser-history?q=&profile=&limit=50&offset=` | `Page[...]`, `limit` tối đa 100, sắp theo `last_visit_at` giảm dần |
+| `DELETE` | `/browser-history?profile=` | `profile` bắt buộc. **Cần header `X-Import-Secret`** (xoá cứng, không hoàn tác). Trả `{deleted}` |
+| `POST` | `/import/browser-history?dry_run=true&profile=Default` | Nhập `chrome-history.json` (body thô, tối đa 10 MB, 50 000 dòng). Nhập thật (`dry_run=false`) cần `X-Import-Secret`; không dùng `expect_sha256` vì upsert chỉ tăng nên không ghi đè xuống; không ghi `import_runs`, chỉ log một dòng (profile, số lượng, sha256, IP) |
+
+Giới hạn đã biết: `COUNT(*)` chạy mỗi lần tải trang; tìm kiếm `q` dùng ILIKE không index (đủ cho quy mô cá nhân); muốn đặt lại `visit_count` thấp hơn phải xoá theo profile rồi đẩy lại.
+
 ---
 
 > 💡 **Lưu ý quan trọng cho AI Agent (LLM):**

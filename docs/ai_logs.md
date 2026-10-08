@@ -874,3 +874,11 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - code-reviewer: thêm/xoá URL bị khoá bởi URL cũ không còn hợp lệ (đã lọc và báo số link bị bỏ).
   - Tự kiểm chứng: 449 test pass (452 trên file thật), parity allowlist TS/Python 225 URL + 33 cấu hình, 0 lệch; dữ liệu thật không đổi hash.
 - **Phản hồi:** B2 xong vòng sửa; chưa push; migration chỉ merge sau PR task-scope (#13).
+
+### [08-10-2026 23:30] | Category: [API]
+- **Prompt:** Merge #12, #13, #14 rồi làm pha B3 (lịch sử Chrome vào Postgres, sửa lỗi nội suy shell ở `scrapeChromeHistory`).
+- **Xử lý:**
+  - Merge #12, #13, #14 vào `main` (CI xanh). Tạo nhánh `feat/browser-history-b3`.
+  - backend-dev: bảng `browser_history`, migration `b8c4d6e0f3a5`, 4 endpoint, nhập `chrome-history.json`, test. frontend-dev: `execFile`, đẩy lên core theo lô, `/history` phân trang, panel nhập.
+  - 3 reviewer: DELETE không đòi mật khẩu, lệch múi giờ web/core (giờ lệch lên không tự sửa vì GREATEST), index chưa khớp truy vấn, deadlock lô song song, 422 lộ URL, thiếu giới hạn field. Đã sửa một vòng; chạy lại kiểm chứng riêng.
+- **Phản hồi:** B3 xong code và tài liệu, 479 test pass, tsc sạch. Chưa chạy UAT với Chrome thật và `make smoke` (không có Docker). Chưa commit/push.
