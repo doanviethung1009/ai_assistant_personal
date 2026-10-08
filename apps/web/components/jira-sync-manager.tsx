@@ -32,7 +32,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
   const [projectKey, setProjectKey] = useState("");
   const [projectName, setProjectName] = useState("");
 
-  const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; error?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; skipped_personal?: number; error?: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<string>("30d");
   const [syncRange, setSyncRange] = useState<Record<string, string>>({});
@@ -421,7 +421,10 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
               <p className="font-bold">{result.ok ? "Đồng bộ thành công!" : "Lỗi đồng bộ"}</p>
               <p className="text-sm mt-1 opacity-90">
                 {result.ok 
-                  ? `Hệ thống đã kéo về và tự động tạo mới ${result.added} task, cập nhật lại ${result.updated} task.` 
+                  ? `Hệ thống đã kéo về và tự động tạo mới ${result.added} task, cập nhật lại ${result.updated} task.` +
+                    (result.skipped_personal
+                      ? ` Bỏ qua ${result.skipped_personal} task cá nhân (đã tách khỏi đồng bộ).`
+                      : "")
                   : result.error}
               </p>
             </div>

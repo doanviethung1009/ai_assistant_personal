@@ -5,9 +5,11 @@ import { useRef, useState, useTransition } from "react";
 import { createTaskAction, type NewTaskInput } from "@/app/actions";
 import {
   PRIORITY_LABELS,
+  SCOPE_LABELS,
   STATUS_LABELS,
   type Project,
   type TaskPriority,
+  type TaskScope,
   type TaskStatus,
 } from "@/lib/types";
 
@@ -24,10 +26,14 @@ function todayLocalIso(): string {
 export function QuickAddForm({
   projects,
   defaultScheduleToday = false,
+  defaultScope = "personal",
 }: {
   projects: Project[];
   defaultScheduleToday?: boolean;
+  /** Task tạo tay mặc định là việc riêng; tab Công việc ở /tasks đổi thành `work`. */
+  defaultScope?: TaskScope;
 }) {
+  const [scope, setScope] = useState<TaskScope>(defaultScope);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -73,6 +79,7 @@ export function QuickAddForm({
           ? estimate
           : undefined,
       tags,
+      scope,
     };
 
     startTransition(async () => {
@@ -111,6 +118,29 @@ export function QuickAddForm({
             className={INPUT_CLASS}
             aria-describedby={error ? "task-error" : undefined}
           />
+        </div>
+
+        <div
+          role="radiogroup"
+          aria-label="Loại task"
+          className="flex overflow-hidden rounded-md border border-[var(--color-border)] text-sm"
+        >
+          {(["personal", "work"] as TaskScope[]).map((value) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={scope === value}
+              onClick={() => setScope(value)}
+              className={`px-3 py-2 transition-colors ${
+                scope === value
+                  ? "bg-[var(--color-accent)] text-white"
+                  : "text-[var(--color-ink-muted)] hover:bg-[var(--color-surface-hover)]"
+              }`}
+            >
+              {SCOPE_LABELS[value]}
+            </button>
+          ))}
         </div>
 
         <div className="flex gap-2">

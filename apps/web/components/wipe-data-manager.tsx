@@ -29,13 +29,15 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
 
     startTransition(async () => {
       let options = undefined;
-      
+
       if (wipeTarget !== "all") {
+        // Mỗi lựa chọn bật đúng MỘT cờ; ô nhập tên chỉ dùng cho tasks_assignee.
         options = {
           tasks: wipeTarget === "tasks",
-          tasks_personal: wipeTarget === "tasks_personal" && !assignee.trim(),
-          tasks_team: wipeTarget === "tasks_team" && !assignee.trim(),
-          tasks_assignee: ["tasks_personal", "tasks_team", "tasks_assignee"].includes(wipeTarget) && assignee.trim() ? assignee.trim() : undefined,
+          tasks_work: wipeTarget === "tasks_work",
+          tasks_personal: wipeTarget === "tasks_personal",
+          tasks_team: wipeTarget === "tasks_team",
+          tasks_assignee: wipeTarget === "tasks_assignee" ? assignee.trim() : undefined,
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
           vault: wipeTarget === "vault",
@@ -43,8 +45,13 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
           chrome_history: wipeTarget === "chrome_history"
         };
       }
-      
-      await wipeAllDataAction(options);
+
+      try {
+        await wipeAllDataAction(options);
+      } catch {
+        alert("Xoá dữ liệu thất bại. Kiểm tra DATA_SOURCE và log của web.");
+        return;
+      }
       setConfirmText("");
       alert("Đã xoá dữ liệu thành công!");
       router.push("/");
@@ -66,10 +73,11 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
           disabled={pending}
           className="rounded-md border border-red-500/30 bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-red-500"
         >
-          <option value="tasks">Xoá TẤT CẢ Task (cả Team &amp; Cá nhân)</option>
-          <option value="tasks_personal">Chỉ xoá Task CÁ NHÂN (Hôm nay)</option>
-          <option value="tasks_team">Chỉ xoá Task TEAM (Của người khác)</option>
-          <option value="tasks_assignee">Xoá Task theo 1 NGƯỜI cụ thể (nhập tên)</option>
+          <option value="tasks">Xoá TẤT CẢ Task (cả Công việc &amp; Cá nhân)</option>
+          <option value="tasks_work">Chỉ xoá task CÔNG VIỆC (Jira), giữ task cá nhân</option>
+          <option value="tasks_team">Chỉ xoá task công việc của NGƯỜI KHÁC (giữ việc của tôi)</option>
+          <option value="tasks_personal">Chỉ xoá task CÁ NHÂN</option>
+          <option value="tasks_assignee">Xoá task công việc theo 1 NGƯỜI cụ thể (nhập tên)</option>
           <option value="projects">Chỉ xoá Dự án (Projects)</option>
           <option value="notes">Chỉ xoá Sổ tay (Notes)</option>
           <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>
@@ -77,12 +85,12 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
           <option value="chrome_history">Chỉ xoá Lịch sử Chrome History</option>
           <option value="all">⚠️ Xoá TOÀN BỘ dữ liệu (Tất cả, nguy hiểm)</option>
         </select>
-        {["tasks_personal", "tasks_team", "tasks_assignee"].includes(wipeTarget) && (
+        {wipeTarget === "tasks_assignee" && (
           <div className="relative mt-2">
             <input
               type="text"
               list="assignees-list"
-              placeholder={wipeTarget === "tasks_assignee" ? "Tên người (nhiều người cách nhau dấu phẩy)" : "Nhập tên người cần xoá (để trống = xoá theo mặc định)"}
+              placeholder="Tên người (nhiều người cách nhau dấu phẩy)"
               value={assignee}
               onChange={(e) => setAssignee(e.target.value)}
               disabled={pending}

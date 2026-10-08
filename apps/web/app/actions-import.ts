@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
+import { migrate } from "@/lib/store/json-file";
+import type { DataFile } from "@/lib/store/types";
+import { scopeOf } from "@/lib/task-scope";
 import * as XLSX from "xlsx";
 
 const PALETTE = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#06b6d4', '#d946ef'];
@@ -32,6 +35,7 @@ export async function importBulkTasksAction(rows: any[]) {
   const db = engine.state();
   let added = 0;
   let updated = 0;
+  let skippedPersonal = 0;
 
   for (const ticket of rows) {
     const summary = ticket['Summary'] || ticket['Title'];
@@ -39,7 +43,20 @@ export async function importBulkTasksAction(rows: any[]) {
 
     const key = ticket['Issue Key'] || ticket['Key'];
     const issueKey = key ? String(key) : null;
-    
+
+    // Issue Key trùng một task đã chuyển sang `personal`: User đã tách nó khỏi
+    // đồng bộ nên KHÔNG ghi đè, cũng không tạo bản trùng. Kiểm trước khi tạo
+    // project để dòng bị bỏ qua không để lại tác dụng phụ.
+    if (
+      issueKey &&
+      db.tasks.some(
+        (t) => t.source === "jira" && t.external_id === issueKey && scopeOf(t) === "personal",
+      )
+    ) {
+      skippedPersonal++;
+      continue;
+    }
+
     let rawSummary = String(ticket['Summary'] || "No Title");
     let finalTitle = rawSummary;
 
@@ -104,9 +121,15 @@ export async function importBulkTasksAction(rows: any[]) {
     const dueAt = parseJiraDate(ticket['Due Date']);
     const completedAt = status === 'done' ? (parseJiraDate(ticket['Closed Date']) || nowIso()) : null;
     
-    let task = db.tasks.find((t: any) => 
-      (issueKey && t.external_id === issueKey) || 
-      (!issueKey && t.title.toLowerCase() === finalTitle.toLowerCase())
+    // Chỉ khớp trong task Jira thuộc scope `work` (cả theo Issue Key lẫn theo tiêu đề),
+    // để dòng Excel không đè lên task tay trùng tên hay task cá nhân.
+    let task = db.tasks.find(
+      (t) =>
+        t.source === "jira" &&
+        scopeOf(t) === "work" &&
+        (issueKey
+          ? t.external_id === issueKey
+          : t.title.toLowerCase() === finalTitle.toLowerCase()),
     );
     
     // Lọc bỏ các tag rỗng
@@ -144,6 +167,7 @@ export async function importBulkTasksAction(rows: any[]) {
         external_id: issueKey,
         external_url: issueKey ? `https://onemount.atlassian.net/browse/${issueKey}` : null,
         assignee,
+        scope: 'work',
         created_at: createdAt,
         updated_at: nowIso(),
         deleted_at: null,
@@ -156,7 +180,7 @@ export async function importBulkTasksAction(rows: any[]) {
   
   engine.touched();
   revalidatePath('/', 'layout');
-  return { ok: true, added, updated };
+  return { ok: true, added, updated, skipped_personal: skippedPersonal };
 }
 
 export async function importBulkFileAction(formData: FormData) {
@@ -191,48 +215,75 @@ export async function restoreFromJsonAction(jsonData: any) {
       return { ok: false, error: "Dữ liệu JSON không hợp lệ" };
     }
 
+    // Chạy migrate trước khi gộp: file cũ (v1-v4) thiếu `scope` (và trước đây có
+    // thể thiếu cả `deleted_at`), nếu đưa nguyên vào RAM thì task biến mất khỏi
+    // mọi view. File không ghi schema_version coi như v1 để migrate chạy đủ bước.
+    const version = Number.isInteger(jsonData.schema_version) ? jsonData.schema_version : 1;
+    const data = migrate({
+      ...jsonData,
+      schema_version: version,
+      projects: Array.isArray(jsonData.projects) ? jsonData.projects : [],
+      tasks: Array.isArray(jsonData.tasks) ? jsonData.tasks : [],
+      notes: Array.isArray(jsonData.notes) ? jsonData.notes : [],
+    } as DataFile);
+
     const db = engine.state();
     let restoredTasks = 0;
+    let skippedPersonal = 0;
     let restoredProjects = 0;
     let restoredNotes = 0;
 
     if (Array.isArray(jsonData.projects)) {
-      for (const p of jsonData.projects) {
-        const idx = db.projects.findIndex((x: any) => x.id === p.id);
+      for (const p of data.projects) {
+        const idx = db.projects.findIndex((x) => x.id === p.id);
         if (idx !== -1) db.projects[idx] = p;
         else db.projects.push(p);
       }
-      restoredProjects = jsonData.projects.length;
+      restoredProjects = data.projects.length;
     }
-    
+
     if (Array.isArray(jsonData.tasks)) {
-      for (const t of jsonData.tasks) {
-        const idx = db.tasks.findIndex((x: any) => x.id === t.id || (t.external_id && x.external_id === t.external_id));
+      for (const t of data.tasks) {
+        // Khớp theo id, hoặc (source, external_id) như unique của backend.
+        const idx = db.tasks.findIndex(
+          (x) =>
+            x.id === t.id ||
+            (!!t.external_id && x.source === t.source && x.external_id === t.external_id),
+        );
+        const existing = idx !== -1 ? db.tasks[idx] : undefined;
+        // Task cá nhân đang có trong RAM được bảo vệ: file khôi phục không ghi đè
+        // (S8). Chế độ file không có tuỳ chọn bật ghi đè; muốn thì đổi sang `work` trước.
+        if (existing && scopeOf(existing) === "personal") {
+          skippedPersonal++;
+          continue;
+        }
         if (idx !== -1) db.tasks[idx] = t;
         else db.tasks.push(t);
+        restoredTasks++;
       }
-      restoredTasks = jsonData.tasks.length;
     }
-    
+
     if (Array.isArray(jsonData.notes)) {
-      for (const n of jsonData.notes) {
-        const idx = db.notes.findIndex((x: any) => x.id === n.id);
+      for (const n of data.notes) {
+        const idx = db.notes.findIndex((x) => x.id === n.id);
         if (idx !== -1) db.notes[idx] = n;
         else db.notes.push(n);
       }
-      restoredNotes = jsonData.notes.length;
+      restoredNotes = data.notes.length;
     }
-    
+
     if (Array.isArray(jsonData.sync_urls)) {
       db.sync_urls = jsonData.sync_urls;
     }
 
     engine.touched();
     revalidatePath('/', 'layout');
-    
-    return { 
-      ok: true, 
-      message: `Đã khôi phục thành công! (${restoredTasks} tasks, ${restoredProjects} projects, ${restoredNotes} notes)` 
+
+    const skippedNote =
+      skippedPersonal > 0 ? `, giữ nguyên ${skippedPersonal} task cá nhân đang có` : "";
+    return {
+      ok: true,
+      message: `Đã khôi phục thành công! (${restoredTasks} tasks, ${restoredProjects} projects, ${restoredNotes} notes${skippedNote})`
     };
   } catch (error: any) {
     return { ok: false, error: error.message || String(error) };

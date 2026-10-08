@@ -12,6 +12,20 @@ export type TaskStatus = Schemas["TaskStatus"];
 export type TaskPriority = Schemas["TaskPriority"];
 export type TaskSource = Schemas["TaskSource"];
 export type TaskEventType = Schemas["TaskEventType"];
+export type TaskScope = Schemas["TaskScope"];
+export type TaskView = Schemas["TaskView"];
+
+export const SCOPE_LABELS: Record<TaskScope, string> = {
+  work: "Công việc",
+  personal: "Cá nhân",
+};
+
+export const VIEW_LABELS: Record<TaskView, string> = {
+  mine: "Của tôi",
+  personal: "Cá nhân",
+  work: "Công việc",
+  all: "Tất cả",
+};
 
 /**
  * `color` ở Pydantic cũng `default=None` nên optional trong schema sinh.

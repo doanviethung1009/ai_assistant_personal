@@ -141,7 +141,14 @@ export default async function DataPage({
           <LocalOnlyNotice feature="Đồng bộ Jira, URL đồng bộ và cấu hình người dùng hiện tại" />
         ))}
 
-      {tab === "nguy-hiem" && <WipeDataManager assignees={assignees} />}
+      {tab === "nguy-hiem" &&
+        (IS_LOCAL ? (
+          <WipeDataManager assignees={assignees} />
+        ) : (
+          // Chế độ api chưa có endpoint xoá hàng loạt. Trước đây nút vẫn hiện và báo
+          // "thành công" dù không xoá gì.
+          <LocalOnlyNotice feature="Xoá dữ liệu hàng loạt" />
+        ))}
     </div>
   );
 }

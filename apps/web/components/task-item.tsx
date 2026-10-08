@@ -5,9 +5,12 @@ import {
   deleteTaskAction,
   logTimeAction,
   setScheduleAction,
+  setScopeAction,
   setStatusAction,
 } from "@/app/actions";
 import { PriorityBadge, ProjectBadge, SourceBadge, StatusBadge, TagBadge } from "@/components/badges";
+import { ScopeBadge } from "@/components/scope-badge";
+import { isSyncManaged, scopeOf } from "@/lib/task-scope";
 import {
   formatDateTime,
   formatMinutes,
@@ -34,6 +37,25 @@ export function TaskItem({ task }: { task: Task }) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const isClosed = task.status === "done" || task.status === "cancelled";
+  const scope = scopeOf(task);
+  // Task do tích hợp quản lý: sync sau sẽ ghi đè trạng thái, tiêu đề... (chỉ cảnh báo, không khoá).
+  const syncManaged = isSyncManaged(task);
+
+  /**
+   * Đổi scope, có hộp xác nhận khi việc đó đổi quan hệ với đồng bộ. Task tay
+   * (không external_id hoặc source=manual) đổi qua lại không ảnh hưởng gì tới sync nên không hỏi.
+   */
+  function toggleScope() {
+    const next = scope === "work" ? "personal" : "work";
+    let message: string | null = null;
+    if (next === "personal" && syncManaged) {
+      message = "Task này sẽ KHÔNG còn được Jira cập nhật. Đồng bộ sau sẽ bỏ qua nó.";
+    } else if (next === "work" && task.external_id && task.source !== "manual") {
+      message = "Lần đồng bộ sau sẽ ghi đè tiêu đề, trạng thái... bằng dữ liệu Jira.";
+    }
+    if (message !== null && !window.confirm(message)) return;
+    run(() => setScopeAction(task.id, next));
+  }
 
   function run(action: () => Promise<{ ok: boolean; error?: string }>) {
     setError(null);
@@ -90,6 +112,7 @@ export function TaskItem({ task }: { task: Task }) {
             ) : null}
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
+              <ScopeBadge scope={scope} />
               <StatusBadge status={task.status} />
               <PriorityBadge priority={task.priority} />
               <SourceBadge source={task.source} />
@@ -178,6 +201,11 @@ export function TaskItem({ task }: { task: Task }) {
               onChange={(event) =>
                 run(() => setStatusAction(task.id, event.target.value as TaskStatus))
               }
+              title={
+                syncManaged
+                  ? "Đồng bộ từ Jira: trạng thái sẽ bị ghi đè ở lần đồng bộ sau."
+                  : undefined
+              }
               className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] shadow-sm focus:ring-2 focus:ring-[var(--color-accent)] outline-none transition-shadow"
             >
               {ALL_STATUSES.map((status) => (
@@ -186,9 +214,27 @@ export function TaskItem({ task }: { task: Task }) {
                 </option>
               ))}
             </select>
+            {syncManaged ? (
+              <p className="mt-1 max-w-[11rem] text-right text-[10px] leading-tight text-[var(--color-ink-muted)]">
+                Đồng bộ từ Jira: trạng thái sẽ bị ghi đè ở lần đồng bộ sau.
+              </p>
+            ) : null}
           </div>
 
           <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={toggleScope}
+              className={ICON_BUTTON}
+              title={
+                scope === "work"
+                  ? "Tách khỏi đồng bộ, coi là việc riêng"
+                  : "Đưa về việc công ty"
+              }
+            >
+              {scope === "work" ? "Chuyển thành cá nhân" : "Chuyển thành công việc"}
+            </button>
             {!isClosed && task.scheduled_for !== todayInDisplayTz() ? (
               <button
                 type="button"

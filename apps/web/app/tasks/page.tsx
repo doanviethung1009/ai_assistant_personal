@@ -5,11 +5,22 @@ import { ApiErrorPanel } from "@/components/api-error";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { TaskItem } from "@/components/task-item";
 import { listProjects, listTasks } from "@/lib/api";
-import { OPEN_STATUSES, STATUS_LABELS, type Paged, type Project, type Task, type TaskStatus } from "@/lib/types";
+import { TASK_VIEWS, parseView } from "@/lib/task-scope";
+import {
+  OPEN_STATUSES,
+  STATUS_LABELS,
+  VIEW_LABELS,
+  type Paged,
+  type Project,
+  type Task,
+  type TaskStatus,
+  type TaskView,
+} from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 interface SearchParams {
+  view?: string;
   q?: string;
   status?: string;
   closed?: string;
@@ -33,6 +44,8 @@ export default async function TasksPage({
   searchParams: Promise<SearchParams>;
 }) {
   const params = await searchParams;
+  // Giá trị lạ về `mine`. Tên "của tôi" (owner) KHÔNG đọc từ URL: api.ts lấy từ cài đặt server.
+  const view = parseView(params.view);
   const includeClosed = params.closed === "1";
   const statuses = parseStatuses(params.status);
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
@@ -45,7 +58,7 @@ export default async function TasksPage({
     [result, projects] = await Promise.all([
       listTasks({
         query: params.q,
-        forCurrentUser: true,
+        view,
         status: statuses,
         includeClosed,
         limit: PAGE_SIZE,
@@ -74,10 +87,10 @@ export default async function TasksPage({
             <div className="p-2 bg-indigo-500/10 rounded-xl">
               <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-500"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             </div>
-            Tất cả Task
+            Task
           </h1>
           <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium">
-            Quản lý {result.total} task trong hệ thống (chưa tính task cũ).
+            {result.total} task trong mục &ldquo;{VIEW_LABELS[view]}&rdquo;.
           </p>
         </div>
         <div className="relative z-10">
@@ -86,14 +99,37 @@ export default async function TasksPage({
       </div>
 
       <div className="relative rounded-2xl bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)] p-2 shadow-sm border border-[var(--color-border)]">
-        <QuickAddForm projects={projects} />
+        <QuickAddForm
+          key={view}
+          projects={projects}
+          defaultScope={view === "work" ? "work" : "personal"}
+        />
       </div>
+
+      <nav aria-label="Loại task" className="flex flex-wrap gap-2">
+        {TASK_VIEWS.map((value) => (
+          <Link
+            key={value}
+            href={viewHref(value, params)}
+            aria-current={view === value ? "page" : undefined}
+            className={`rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
+              view === value
+                ? "bg-[var(--color-accent)] text-white"
+                : "border border-[var(--color-border)] bg-[var(--color-surface)] hover:bg-[var(--color-surface-hover)]"
+            }`}
+          >
+            {VIEW_LABELS[value]}
+          </Link>
+        ))}
+      </nav>
 
       <form
         method="get"
         className="flex flex-col gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-sm sm:flex-row sm:items-end"
         aria-label="Lọc task"
       >
+        {/* Giữ view khi lọc: form GET sẽ gửi lại đúng tab đang xem */}
+        <input type="hidden" name="view" value={view} />
         <div className="flex-1">
           <label
             htmlFor="filter-q"
@@ -213,6 +249,17 @@ export default async function TasksPage({
   );
 }
 
+/** Link đổi tab: giữ bộ lọc nhưng về trang 1, vì số trang của tab cũ không còn nghĩa. */
+function viewHref(view: TaskView, params: SearchParams): string {
+  const query = new URLSearchParams();
+  query.set("view", view);
+  if (params.q) query.set("q", params.q);
+  if (params.status) query.set("status", params.status);
+  if (params.closed) query.set("closed", params.closed);
+  if (params.size) query.set("size", params.size);
+  return `/tasks?${query.toString()}`;
+}
+
 function PageLink({
   page,
   params,
@@ -233,6 +280,7 @@ function PageLink({
   }
 
   const query = new URLSearchParams();
+  if (params.view) query.set("view", parseView(params.view));
   if (params.q) query.set("q", params.q);
   if (params.status) query.set("status", params.status);
   if (params.closed) query.set("closed", params.closed);

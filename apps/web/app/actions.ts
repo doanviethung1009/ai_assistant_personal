@@ -34,7 +34,7 @@ import {
   type ImportMode,
   type ImportSummary,
 } from "@/lib/store/transfer";
-import type { ImportReport, NoteKind, TaskPriority, TaskStatus } from "@/lib/types";
+import type { ImportReport, NoteKind, TaskPriority, TaskScope, TaskStatus } from "@/lib/types";
 
 export interface ActionResult {
   ok: boolean;
@@ -44,6 +44,7 @@ export interface ActionResult {
 function revalidateAll(): void {
   revalidatePath("/");
   revalidatePath("/tasks");
+  revalidatePath("/team");
   revalidatePath("/projects");
   revalidatePath("/notes");
   revalidatePath("/trash");
@@ -71,6 +72,7 @@ export interface NewTaskInput {
   scheduledFor?: string;
   estimateMinutes?: number;
   tags?: string[];
+  scope?: TaskScope;
 }
 
 export async function createTaskAction(input: NewTaskInput): Promise<ActionResult> {
@@ -80,6 +82,9 @@ export async function createTaskAction(input: NewTaskInput): Promise<ActionResul
   }
   if (title.length > 500) {
     return { ok: false, error: "Tiêu đề tối đa 500 ký tự" };
+  }
+  if (input.scope !== undefined && input.scope !== "work" && input.scope !== "personal") {
+    return { ok: false, error: "scope phải là 'work' hoặc 'personal'" };
   }
 
   try {
@@ -93,7 +98,33 @@ export async function createTaskAction(input: NewTaskInput): Promise<ActionResul
       scheduled_for: input.scheduledFor || null,
       estimate_minutes: input.estimateMinutes ?? null,
       tags: input.tags ?? [],
+      // undefined -> core/engine suy từ source (manual -> personal)
+      scope: input.scope,
     });
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/**
+ * Đổi task giữa việc công ty và việc riêng.
+ *
+ * Quyết định quan trọng: `personal` nghĩa là "tách khỏi đồng bộ" (Jira sync,
+ * nhập Excel/URL bỏ qua task này), còn `work` đưa task trở lại vòng đồng bộ.
+ * Server Action là endpoint công khai nên scope được kiểm lại ở đây; `id` đi
+ * qua pathId() trong lib/api.ts.
+ */
+export async function setScopeAction(
+  id: string,
+  scope: TaskScope,
+): Promise<ActionResult> {
+  if (scope !== "work" && scope !== "personal") {
+    return { ok: false, error: "scope phải là 'work' hoặc 'personal'" };
+  }
+  try {
+    await patchTask(id, { scope });
     revalidateAll();
     return { ok: true };
   } catch (error) {
@@ -558,7 +589,7 @@ function toDirectDownloadUrl(url: string): string {
   return url;
 }
 
-export async function syncFromUrlAction(url: string): Promise<ActionResult & { count?: number }> {
+export async function syncFromUrlAction(url: string): Promise<ActionResult & { count?: number; skipped_personal?: number }> {
   try {
     const downloadUrl = toDirectDownloadUrl(url);
     
@@ -582,7 +613,11 @@ export async function syncFromUrlAction(url: string): Promise<ActionResult & { c
     const result = await importBulkTasksAction(rows);
 
     revalidateAll();
-    return { ok: true, count: (result.added || 0) + (result.updated || 0) };
+    return {
+      ok: true,
+      count: (result.added || 0) + (result.updated || 0),
+      skipped_personal: result.skipped_personal,
+    };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Sync failed" };
   }
@@ -643,6 +678,8 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   const file = formData.get("file");
   const kind = String(formData.get("kind") ?? "");
   const dryRun = String(formData.get("dry_run") ?? "1") !== "0";
+  // Chỉ đúng "1" mới bật; mặc định tắt để task cá nhân trong Postgres được bảo vệ (S8).
+  const includePersonal = String(formData.get("include_personal") ?? "") === "1";
 
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Chưa chọn file" };
@@ -687,7 +724,7 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   }
 
   try {
-    const options = { dryRun, expectReplaced, expectSha256, secret };
+    const options = { dryRun, expectReplaced, expectSha256, secret, includePersonal };
     const report =
       kind === "datafile"
         ? await api.importDataFile(text, options)

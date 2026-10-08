@@ -2,7 +2,7 @@ import "server-only";
 
 import * as engine from "./store/engine";
 import { ensureLoaded, reloadAiLogsFromDisk } from "./store/json-file";
-import { DATA_SOURCE, trashRetentionDays } from "./store/types";
+import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
   HealthResponse,
@@ -18,7 +18,9 @@ import type {
   SystemInfo,
   Task,
   TaskDetail,
+  TaskScope,
   TaskStatus,
+  TaskView,
   TrashResponse,
 } from "./types";
 
@@ -204,6 +206,11 @@ export interface ImportCallOptions {
    * KHÔNG đưa vào URL, log hay thông báo lỗi.
    */
   secret?: string;
+  /**
+   * true: cho phép file ghi đè cả task đang `personal` trong Postgres. Phải gửi ở
+   * CẢ dry-run lẫn nhập thật, nếu không số ghi đè lệch và expect_replaced từ chối.
+   */
+  includePersonal?: boolean;
 }
 
 /**
@@ -224,6 +231,8 @@ async function postImport(
     );
   }
   const params = new URLSearchParams({ dry_run: options.dryRun ? "true" : "false" });
+  // Chỉ áp cho datafile; ai-logs không có khái niệm scope.
+  if (endpoint === "datafile" && options.includePersonal) params.set("include_personal", "true");
   if (!options.dryRun) {
     if (
       options.expectReplaced === undefined ||
@@ -279,15 +288,40 @@ export async function setCurrentUsersApi(names: string[]): Promise<void> {
 
 // ── Đọc ────────────────────────────────────────────────────────────────
 
-export function getAgenda(referenceDate?: string): Promise<Agenda> {
-  if (IS_LOCAL) return local(() => engine.getAgenda());
-  const query = referenceDate ? `?reference_date=${encodeURIComponent(referenceDate)}` : "";
-  return coreFetch<Agenda>(`/api/v1/tasks/agenda${query}`);
+/**
+ * Tên "của tôi" cho view=mine. LUÔN lấy từ cài đặt phía server, không bao giờ
+ * từ searchParams hay client, để URL không đổi được "việc của tôi" là gì.
+ * Trước B2, chế độ api trả [] nên "Hôm nay" chỉ còn task cá nhân (S6).
+ */
+async function ownersFor(view: TaskView): Promise<string[]> {
+  return view === "mine" ? getCurrentUsersApi() : [];
 }
 
-export function getStats(): Promise<Stats> {
-  if (IS_LOCAL) return local(() => engine.getStats());
-  return coreFetch<Stats>("/api/v1/tasks/stats");
+/** Gắn view và owner (lặp lại) vào query của core. owner chỉ hợp lệ với view=mine. */
+function appendView(params: URLSearchParams, view: TaskView, owners: readonly string[]): void {
+  params.set("view", view);
+  if (view === "mine") owners.forEach((name) => params.append("owner", name));
+}
+
+export async function getAgenda(
+  opts: { view?: TaskView; referenceDate?: string } = {},
+): Promise<Agenda> {
+  const view = opts.view ?? "mine";
+  const owners = await ownersFor(view);
+  if (IS_LOCAL) return local(() => engine.getAgenda({ view, owners }));
+  const params = new URLSearchParams();
+  if (opts.referenceDate) params.set("reference_date", opts.referenceDate);
+  appendView(params, view, owners);
+  return coreFetch<Agenda>(`/api/v1/tasks/agenda?${params.toString()}`);
+}
+
+export async function getStats(opts: { view?: TaskView } = {}): Promise<Stats> {
+  const view = opts.view ?? "mine";
+  const owners = await ownersFor(view);
+  if (IS_LOCAL) return local(() => engine.getStats({ view, owners }));
+  const params = new URLSearchParams();
+  appendView(params, view, owners);
+  return coreFetch<Stats>(`/api/v1/tasks/stats?${params.toString()}`);
 }
 
 export interface ListTasksOptions {
@@ -300,13 +334,19 @@ export interface ListTasksOptions {
   sortBy?: string;
   sortDesc?: boolean;
   assignee?: string | null;
-  forCurrentUser?: boolean;
+  /** Mặc định `all` (giữ hành vi cũ); `mine` lấy owner từ cài đặt phía server. */
+  view?: TaskView;
 }
 
-export function listTasks(options: ListTasksOptions = {}): Promise<Paged<Task>> {
-  if (IS_LOCAL) return local(() => engine.listTasks(options));
+export async function listTasks(options: ListTasksOptions = {}): Promise<Paged<Task>> {
+  const view = options.view ?? "all";
+  const owners = await ownersFor(view);
+  if (IS_LOCAL) return local(() => engine.listTasks({ ...options, view, owners }));
 
   const params = new URLSearchParams();
+  // Trước epic scope, chế độ api bỏ qua assignee nên /tasks hiện mọi task.
+  if (options.assignee) params.set("assignee", options.assignee);
+  appendView(params, view, owners);
   options.status?.forEach((value) => params.append("status", value));
   if (options.projectId) params.set("project_id", options.projectId);
   if (options.query) params.set("q", options.query);
@@ -348,7 +388,8 @@ export interface CreateTaskInput {
   external_id?: string | null;
   external_url?: string | null;
   assignee?: string | null;
-  forCurrentUser?: boolean;
+  /** Vắng thì core/engine suy từ source (manual -> personal). */
+  scope?: TaskScope;
 }
 
 export function createTask(input: CreateTaskInput): Promise<TaskDetail> {
@@ -522,7 +563,6 @@ export interface ListNotesOptions {
   sortBy?: NoteSortField;
   sortDesc?: boolean;
   assignee?: string | null;
-  forCurrentUser?: boolean;
   /** true = chỉ note đã lưu trữ. Mặc định (false) = chỉ note đang dùng. */
   archived?: boolean;
 }
@@ -744,8 +784,13 @@ export async function deleteGlobalTagApi(name: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
 }
 
-export async function wipeAllDataApi(options?: { tasks?: boolean, tasks_personal?: boolean, tasks_team?: boolean, tasks_assignee?: string, projects?: boolean, notes?: boolean, sync_urls?: boolean, chrome_history?: boolean }): Promise<void> {
+/**
+ * Xoá hàng loạt chỉ có ở chế độ file/memory. Ở chế độ api từ chối rõ ràng:
+ * trước đây hàm trả undefined nên UI báo "đã xoá" mà không xoá gì.
+ */
+export async function wipeAllDataApi(options?: WipeOptions): Promise<void> {
   if (IS_LOCAL) return local(() => engine.wipeAllData(options));
+  return Promise.reject(new CoreApiError("Xoá hàng loạt chỉ hỗ trợ chế độ file", 501));
 }
 
 // ── AI Logs ───────────────────────────────────────────────────────────────

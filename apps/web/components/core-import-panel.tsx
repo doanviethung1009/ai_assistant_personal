@@ -73,6 +73,9 @@ export function CoreImportPanel() {
   // Mật khẩu IMPORT_COMMIT_SECRET gõ tay cho mỗi lần Nhập thật. Chỉ nằm trong state của
   // component: không lưu localStorage, không đưa vào URL, và bị xoá sau mỗi lần thử nhập.
   const [secret, setSecret] = useState("");
+  // Mặc định TẮT: task đang `personal` trong Postgres không bị file ghi đè (S8). Phải gửi
+  // cùng giá trị ở Kiểm tra lẫn Nhập thật, nên đổi ô này buộc Kiểm tra lại.
+  const [includePersonal, setIncludePersonal] = useState(false);
   const [pending, startTransition] = useTransition();
 
   function resetResult() {
@@ -88,6 +91,7 @@ export function CoreImportPanel() {
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
     const next = event.target.files?.[0] ?? null;
     resetResult();
+    setIncludePersonal(false);
     if (next && next.size > MAX_BYTES) {
       setFile(null);
       event.target.value = "";
@@ -112,6 +116,7 @@ export function CoreImportPanel() {
     form.set("file", file);
     form.set("kind", kind);
     form.set("dry_run", dryRun ? "1" : "0");
+    form.set("include_personal", includePersonal ? "1" : "0");
     if (!dryRun) {
       // Số đã Kiểm tra, không phải số người dùng gõ: core sẽ đối chiếu với thực tế.
       if (!report || checkedKey !== key) return;
@@ -221,6 +226,25 @@ export function CoreImportPanel() {
         </div>
       </div>
 
+      {kind === "datafile" ? (
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={includePersonal}
+            disabled={pending}
+            onChange={(e) => {
+              setIncludePersonal(e.target.checked);
+              resetResult();
+            }}
+            className="mt-1"
+          />
+          <span>
+            Ghi đè cả task cá nhân đang có trong Postgres (mặc định tắt: task cá nhân được giữ
+            nguyên)
+          </span>
+        </label>
+      ) : null}
+
       <div className="mt-4">
         <button
           type="button"
@@ -261,6 +285,7 @@ export function CoreImportPanel() {
           ) : null}
 
           <CountsTable report={report} />
+          <SkippedPersonalNote report={report} />
           <KeyChanges report={report} />
           <IssueList report={report} />
           <ReplacementList report={report} />
@@ -348,6 +373,7 @@ export function CoreImportPanel() {
             mới, 0 ghi đè.
           </p>
           <CountsTable report={done} />
+          <SkippedPersonalNote report={done} />
         </div>
       ) : null}
     </section>
@@ -371,6 +397,7 @@ function CountsTable({ report }: { report: ImportReport }) {
             <th className="px-2 py-1 text-right font-medium">Ghi đè</th>
             <th className="px-2 py-1 text-right font-medium">Không đổi</th>
             <th className="px-2 py-1 text-right font-medium">Thùng rác</th>
+            <th className="px-2 py-1 text-right font-medium">Cá nhân (giữ)</th>
             <th className="px-2 py-1 text-right font-medium">Lỗi</th>
           </tr>
         </thead>
@@ -387,6 +414,7 @@ function CountsTable({ report }: { report: ImportReport }) {
               </td>
               <td className="px-2 py-1 text-right">{c.unchanged}</td>
               <td className="px-2 py-1 text-right">{c.skipped_trash + c.skipped_trash_in_db}</td>
+              <td className="px-2 py-1 text-right">{c.skipped_personal}</td>
               <td className={`px-2 py-1 text-right ${c.invalid > 0 ? "text-[var(--color-danger)]" : ""}`}>
                 {c.invalid}
               </td>
@@ -395,6 +423,17 @@ function CountsTable({ report }: { report: ImportReport }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** Báo số task cá nhân trong Postgres được giữ nguyên, để không ai tưởng file đã ghi đè chúng. */
+function SkippedPersonalNote({ report }: { report: ImportReport }) {
+  const skipped = report.counts.tasks?.skipped_personal ?? 0;
+  if (skipped <= 0) return null;
+  return (
+    <p className="text-xs text-[var(--color-ink-muted)]">
+      {skipped} task cá nhân trong Postgres được giữ nguyên (không bị file ghi đè).
+    </p>
   );
 }
 

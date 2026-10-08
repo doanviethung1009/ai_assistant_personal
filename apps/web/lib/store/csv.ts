@@ -20,6 +20,7 @@ import type {
   TaskSource,
   TaskStatus,
 } from "../types";
+import { parseScope, scopeOf } from "../task-scope";
 import { makeNote, makeTask, normalizeTags, nowIso, summary, uuid } from "./engine";
 import type { StoredNote, StoredTask } from "./types";
 
@@ -142,6 +143,8 @@ export const TASK_COLUMNS = [
   "completed_at",
   "tags",
   "source",
+  // work | personal. Vắng hoặc rỗng khi nhập nghĩa là suy từ source.
+  "scope",
   "external_id",
   "external_url",
   "created_at",
@@ -168,6 +171,7 @@ export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
     task.completed_at ?? "",
     task.tags.join(";"),
     task.source,
+    scopeOf(task),
     task.external_id ?? "",
     task.external_url ?? "",
     task.created_at,
@@ -247,6 +251,14 @@ export function csvToTasks(
       return;
     }
 
+    // Cột vắng hoặc rỗng -> suy từ source; giá trị lạ bỏ dòng, giống source.
+    const rawScope = (record.scope ?? "").trim();
+    const parsedScope = parseScope(rawScope);
+    if (rawScope && parsedScope === null) {
+      skipped.push({ line, reason: `scope không hợp lệ: ${record.scope}` });
+      return;
+    }
+
     const projectKey = (record.project_key ?? "").toUpperCase();
     const project = projectKey ? byKey.get(projectKey) : undefined;
     if (projectKey && !project) {
@@ -275,6 +287,7 @@ export function csvToTasks(
           (resolvedStatus === "done" ? nowIso() : null),
         tags: normalizeTags((record.tags ?? "").split(";")),
         source: source || "manual",
+        ...(parsedScope ? { scope: parsedScope } : {}),
         external_id: record.external_id || null,
         external_url: record.external_url || null,
         created_at: record.created_at || nowIso(),
