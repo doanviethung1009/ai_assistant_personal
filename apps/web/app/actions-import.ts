@@ -6,6 +6,7 @@ import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
 import { migrate } from "@/lib/store/json-file";
 import type { DataFile } from "@/lib/store/types";
+import { syncUrlError } from "@/lib/sync-url-policy";
 import { scopeOf } from "@/lib/task-scope";
 import * as XLSX from "xlsx";
 
@@ -294,7 +295,10 @@ export async function restoreFromJsonAction(jsonData: any) {
     }
 
     if (Array.isArray(jsonData.sync_urls)) {
-      db.sync_urls = jsonData.sync_urls;
+      // Chỉ giữ chuỗi qua allowlist: URL này sau đó sẽ được server fetch (SSRF).
+      db.sync_urls = jsonData.sync_urls.filter(
+        (u: unknown): u is string => typeof u === "string" && syncUrlError(u) === null,
+      );
     }
 
     engine.touched();

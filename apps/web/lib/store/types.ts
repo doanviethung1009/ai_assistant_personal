@@ -85,6 +85,8 @@ export interface DataFile {
   projects: Project[];
   tasks: StoredTask[];
   notes: StoredNote[];
+  /** Danh sách URL đồng bộ (từ v6). Trước đó snapshot() bỏ sót nên file cũ không có. */
+  sync_urls?: string[];
   // ai_logs đã được tách ra file riêng để tránh làm chậm hệ thống.
   meta: {
     minutes_logged_today: number;
@@ -108,5 +110,6 @@ export interface AiLogsFile {
  *   3 → thêm mảng `notes` cho sổ tay
  *   4 → phiên bản dọn dẹp (tách ai_logs ra file riêng)
  *   5 → thêm scope cho task (work | personal)
+ *   6 → lưu `sync_urls` (trước đó snapshot() bỏ sót, nên mất sau mỗi lần khởi động)
  */
-export const SCHEMA_VERSION = 5;
+export const SCHEMA_VERSION = 6;

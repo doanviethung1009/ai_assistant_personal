@@ -3,7 +3,14 @@
 import { useState, useTransition } from "react";
 import { syncFromUrlAction, addSyncUrlAction, removeSyncUrlAction } from "@/app/actions";
 
-export function UrlSyncManager({ initialUrls }: { initialUrls: string[] }) {
+export function UrlSyncManager({
+  initialUrls,
+  canSync = true,
+}: {
+  initialUrls: string[];
+  /** false ở chế độ api: lưu danh sách được, nhưng cào + nhập task cần endpoint upsert của B4. */
+  canSync?: boolean;
+}) {
   const [urls, setUrls] = useState<string[]>(initialUrls);
   const [newUrl, setNewUrl] = useState("");
   const [pending, startTransition] = useTransition();
@@ -14,8 +21,14 @@ export function UrlSyncManager({ initialUrls }: { initialUrls: string[] }) {
     if (!newUrl.trim() || urls.includes(newUrl.trim())) return;
     const toAdd = newUrl.trim();
     
+    setResult(null);
     startTransition(async () => {
-      await addSyncUrlAction(toAdd);
+      const res = await addSyncUrlAction(toAdd);
+      if (!res.ok) {
+        // Lỗi allowlist (http, host lạ, IP...) hiện rõ, không thêm vào danh sách.
+        setResult({ ok: false, message: `Không lưu được link: ${res.error ?? "bị từ chối"}` });
+        return;
+      }
       setUrls([...urls, toAdd]);
       setNewUrl("");
     });
@@ -23,8 +36,13 @@ export function UrlSyncManager({ initialUrls }: { initialUrls: string[] }) {
 
   function handleRemove(url: string) {
     if (!confirm("Xoá link này?")) return;
+    setResult(null);
     startTransition(async () => {
-      await removeSyncUrlAction(url);
+      const res = await removeSyncUrlAction(url);
+      if (!res.ok) {
+        setResult({ ok: false, message: `Không xoá được link: ${res.error ?? "lỗi"}` });
+        return;
+      }
       setUrls(urls.filter(u => u !== url));
     });
   }
@@ -46,7 +64,14 @@ export function UrlSyncManager({ initialUrls }: { initialUrls: string[] }) {
       <h2 className="text-sm font-semibold">Tự động cào dữ liệu công việc (Quest Data)</h2>
       <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
         Quản lý các link file Excel (.xlsx) hoặc CSV (.csv). Bạn có thể bấm "Cào" thủ công để đồng bộ ngay lập tức.
+        Chỉ nhận link <code>https</code> của Google Docs/Drive, SharePoint, OneDrive (host khác cần cấu hình{" "}
+        <code>SYNC_URL_EXTRA_HOSTS</code> ở server).
       </p>
+      {!canSync ? (
+        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+          Ở chế độ api, nút &ldquo;Cào ngay&rdquo; chưa dùng được: cào và nhập task cần pha B4. Danh sách link vẫn được lưu vào Postgres.
+        </p>
+      ) : null}
 
       <form onSubmit={handleAdd} className="mt-3 flex items-center gap-2">
         <input
@@ -75,7 +100,8 @@ export function UrlSyncManager({ initialUrls }: { initialUrls: string[] }) {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleSync(url)}
-                  disabled={pending}
+                  disabled={pending || !canSync}
+                  title={canSync ? undefined : "Cần pha B4 (endpoint upsert) để cào và nhập task ở chế độ api"}
                   className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                 >
                   Cào ngay
