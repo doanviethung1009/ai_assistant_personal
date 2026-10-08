@@ -50,6 +50,9 @@ apps/core/app/
     browser_history_service.py  chuẩn hoá URL/profile, upsert GREATEST theo lô
     task_sync_service.py       upsert-batch: khoá dòng, chỉ scope=work, lọc raw_payload
     integration_service.py     CRUD kết nối, đổi base_url phải kèm token mới
+    jira_client.py / jira_mapping.py   gọi Jira Cloud (không theo redirect), ánh xạ issue sang task
+    ssrf_guard.py              phân giải DNS, chặn IP riêng, ghim IP trước khi gửi token ra ngoài
+    integration_sync_service.py  chạy sync: khoá theo kết nối, ghi từng lô, không giữ transaction lúc gọi Jira
     task_service.py    toàn bộ logic nghiệp vụ của task
     project_service.py logic project
     note_service.py    logic sổ tay, gồm soft delete và mark_used

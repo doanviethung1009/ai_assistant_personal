@@ -7,8 +7,16 @@ import {
   createIntegration,
   deleteIntegration,
   patchIntegration,
+  syncIntegration,
 } from "@/lib/api";
-import type { IntegrationConnection, IntegrationCreateBody, IntegrationUpdateBody } from "@/lib/types";
+import { checkJiraBaseUrl } from "@/lib/jira-url-policy";
+import { isValidIssueKey, jqlQuote } from "@/lib/jira-issue-key";
+import type {
+  IntegrationConnection,
+  IntegrationCreateBody,
+  IntegrationSyncResult,
+  IntegrationUpdateBody,
+} from "@/lib/types";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
 import { scopeOf } from "@/lib/task-scope";
@@ -31,9 +39,64 @@ function customValueToStrings(val: unknown): string[] {
   return [];
 }
 
+/** Trần thời gian và kích thước mỗi trang trả về từ Jira (chế độ file). */
+const JIRA_FETCH_TIMEOUT_MS = 30_000;
+const JIRA_MAX_PAGE_BYTES = 25 * 1024 * 1024;
+/** Trần TỔNG cho cả lượt (cộng dồn qua các trang) và hạn chót cả lượt: 100 trang x 25 MB sẽ tràn RAM. */
+const JIRA_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
+const JIRA_TOTAL_DEADLINE_MS = 5 * 60_000;
+const MAX_TITLE = 500;
+const MAX_DESCRIPTION = 32_000;
+
+/** Cờ chống chạy song song trong process: mỗi baseUrl một lượt tại một thời điểm. Nằm trên globalThis như store. */
+const syncGlobals = globalThis as typeof globalThis & { __jiraFileSyncRunning?: Set<string> };
+function runningSet(): Set<string> {
+  return (syncGlobals.__jiraFileSyncRunning ??= new Set<string>());
+}
+
+class JiraTooLargeError extends Error {}
+
+/** Thông báo TỰ VIẾT theo mã trạng thái: không bao giờ chuyển tiếp body/statusText của Jira. */
+function jiraStatusMessage(status: number): string {
+  if (status === 401 || status === 403) return "Xác thực thất bại (sai Email/Token hoặc thiếu quyền).";
+  if (status === 400) return "Jira từ chối truy vấn (kiểm tra lại JQL).";
+  if (status === 404) return "Jira không tìm thấy tài nguyên (kiểm tra lại URL).";
+  if (status === 429) return "Jira giới hạn tần suất truy cập, thử lại sau.";
+  if (status >= 500) return "Jira đang lỗi, thử lại sau.";
+  return `Jira trả về lỗi (mã ${status}).`;
+}
+
+/** Đọc JSON từ response theo stream và dừng khi vượt trần, để Jira (hay kẻ giả mạo) không làm tràn RAM. */
+async function readJsonCapped(res: Response, budget: { used: number }): Promise<any> {
+  const declared = Number(res.headers.get("content-length") ?? 0);
+  if (declared > JIRA_MAX_PAGE_BYTES || !res.body) throw new Error("size");
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    budget.used += value.byteLength;
+    if (total > JIRA_MAX_PAGE_BYTES || budget.used > JIRA_MAX_TOTAL_BYTES) {
+      await reader.cancel().catch(() => undefined);
+      throw new JiraTooLargeError("size");
+    }
+    chunks.push(value);
+  }
+  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+}
+
+/**
+ * Cào Jira trực tiếp từ web, CHỈ chế độ file (chế độ api dùng syncIntegrationAction).
+ *
+ * THAY ĐỔI HÀNH VI (vá SSRF): trước đây nhận mọi baseUrl và gửi Authorization tới đó, kèm trả
+ * nguyên body lỗi. Nay chỉ nhận Jira Cloud https://*.atlassian.net, không theo redirect
+ * (Authorization không bao giờ bị gửi sang host khác), và không trả/log body của Jira.
+ */
 export async function syncJiraAction(formData: FormData) {
   if (!IS_LOCAL) {
-    return { ok: false, error: "Đồng bộ Jira ở chế độ api cần pha B4b (endpoint sync phía core chưa có). Hiện chỉ chạy được ở chế độ Local File." };
+    return { ok: false, error: "Chế độ api dùng nút \"Cào ngay\" ở kết nối Jira đã lưu (trang Dữ liệu)." };
   }
   
   const url = formData.get("url") as string;
@@ -48,11 +111,10 @@ export async function syncJiraAction(formData: FormData) {
     return { ok: false, error: "Thiếu URL, Email hoặc Token" };
   }
   
-  // Xử lý URL
-  let baseUrl = url.trim().replace(/\/$/, "");
-  if (!baseUrl.startsWith("http")) {
-    baseUrl = "https://" + baseUrl;
-  }
+  // Chặn SSRF: chỉ Jira Cloud, chuẩn hoá về https://host
+  const urlCheck = checkJiraBaseUrl(url);
+  if (!urlCheck.ok) return { ok: false, error: urlCheck.error };
+  const baseUrl = urlCheck.baseUrl;
   
   // Tạo JQL
   let jql = "";
@@ -60,14 +122,14 @@ export async function syncJiraAction(formData: FormData) {
     jql = customJql.trim();
     // Tự động nhận diện nếu user chỉ gõ mã dự án (ví dụ "DBA" hoặc "DBA, PROJ")
     if (!jql.includes("=") && !jql.toLowerCase().includes(" in ") && !jql.toLowerCase().includes(" is ") && !jql.includes("~")) {
-      const spaces = jql.split(",").map(s => `"${s.trim()}"`).join(",");
+      const spaces = jql.split(",").map(s => jqlQuote(s.trim())).join(",");
       jql = `project in (${spaces}) ORDER BY updated DESC`;
     }
   } else {
     // Lấy task assign cho mình theo cài đặt Tên người dùng cá nhân (danh sách)
     const storeUsers = engine.state().currentUsers || [];
     if (storeUsers.length > 0) {
-      const usersStr = storeUsers.map(u => `"${u}"`).join(", ");
+      const usersStr = storeUsers.map(u => jqlQuote(String(u))).join(", ");
       jql = `assignee in (${usersStr}) ORDER BY updated DESC`;
     } else {
       jql = `assignee = currentUser() ORDER BY updated DESC`;
@@ -87,16 +149,29 @@ export async function syncJiraAction(formData: FormData) {
 
   const searchUrl = `${baseUrl}/rest/api/3/search/jql`;
   
+  // Một lượt tại một thời điểm cho mỗi baseUrl (trong process này).
+  const running = runningSet();
+  if (running.has(baseUrl)) {
+    return { ok: false, error: "Đang có một lượt đồng bộ khác chạy cho Jira này. Đợi nó xong rồi thử lại." };
+  }
+  running.add(baseUrl);
+  const deadline = Date.now() + JIRA_TOTAL_DEADLINE_MS;
+  const budget = { used: 0 };
+
   try {
     const authHeader = `Basic ${Buffer.from(`${email.trim()}:${token.trim()}`).toString('base64')}`;
     
     let allIssues: any[] = [];
-    const fieldNames: Record<string, string> = {};
+    // Không prototype: khoá "__proto__" từ Jira không thể làm bẩn prototype.
+    const fieldNames: Record<string, string> = Object.create(null);
     let nextPageToken: string | undefined = undefined;
     let hasMore = true;
     let pagesFetched = 0;
 
-    while (hasMore && pagesFetched < 100) { // Nâng giới hạn lên 100 trang * 100 = 10,000 tasks
+    while (hasMore && pagesFetched < 100) {
+      if (Date.now() > deadline) {
+        return { ok: false, error: "Đồng bộ quá thời gian (5 phút). Thu hẹp JQL hoặc dùng ô Từ ngày." };
+      } // Nâng giới hạn lên 100 trang * 100 = 10,000 tasks
       const body: any = {
         jql: jql,
         maxResults: 100, // Tối ưu: Lấy 100 kết quả mỗi trang thay vì 50
@@ -116,20 +191,28 @@ export async function syncJiraAction(formData: FormData) {
           "Accept": "application/json",
           "Content-Type": "application/json"
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        // manual: mọi 3xx là lỗi, không để fetch đi theo và gửi Authorization sang host khác
+        redirect: "manual",
+        signal: AbortSignal.any([AbortSignal.timeout(JIRA_FETCH_TIMEOUT_MS), AbortSignal.timeout(Math.max(1, deadline - Date.now()))]),
       });
-      
-      if (!res.ok) {
-        const errorText = await res.text();
-        console.error("Jira API Error:", res.status, errorText);
-        if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: `Xác thực thất bại (Sai Email/Token hoặc thiếu quyền). Jira: ${errorText}` };
-        }
-        return { ok: false, error: `Jira trả về lỗi: ${res.status} ${res.statusText}. Chi tiết: ${errorText}` };
+
+      if (res.status >= 300 && res.status < 400) {
+        void res.body?.cancel().catch(() => undefined);
+        return { ok: false, error: "Jira trả về chuyển hướng, không được phép theo (kiểm tra lại URL Jira)." };
       }
-      
-      const data = await res.json();
-      if (data.names) Object.assign(fieldNames, data.names);
+      if (!res.ok) {
+        void res.body?.cancel().catch(() => undefined);
+        console.error("Jira API Error: status", res.status);
+        return { ok: false, error: jiraStatusMessage(res.status) };
+      }
+
+      const data = await readJsonCapped(res, budget);
+      if (data.names && typeof data.names === "object") {
+        for (const [k, v] of Object.entries(data.names)) {
+          if (k.startsWith("customfield_") && typeof v === "string") fieldNames[k] = v;
+        }
+      }
       const issues = data.issues || [];
       allIssues = allIssues.concat(issues);
       
@@ -156,17 +239,23 @@ export async function syncJiraAction(formData: FormData) {
     }
     let updated = 0;
     let skippedPersonal = 0;
+    let invalidKeys = 0;
 
     for (const issue of allIssues) {
-      const issueKey = issue.key;
-      const fields = issue.fields || {};
-      
-      const title = fields.summary || "No Title";
+      // Key sai định dạng (Jira giả mạo/lỗi) thì bỏ qua, không đưa vào store/URL.
+      if (!issue || typeof issue !== "object" || !isValidIssueKey(issue.key)) {
+        invalidKeys++;
+        continue;
+      }
+      const issueKey: string = issue.key;
+      const fields = issue.fields && typeof issue.fields === "object" ? issue.fields : {};
+
+      const title = (typeof fields.summary === "string" && fields.summary ? fields.summary : "No Title").slice(0, MAX_TITLE);
       
       // Parse description for v2 (string) vs v3 (Atlassian Document Format)
       let description = null;
       if (typeof fields.description === 'string') {
-        description = fields.description;
+        description = fields.description.slice(0, MAX_DESCRIPTION);
       } else if (fields.description && typeof fields.description === 'object') {
         description = "[Nội dung Jira dạng khối (Atlassian Document Format)]";
       }
@@ -299,10 +388,17 @@ export async function syncJiraAction(formData: FormData) {
     engine.touched();
     revalidatePath('/', 'layout');
     
-    return { ok: true, added, updated, skipped_personal: skippedPersonal };
+    return { ok: true, added, updated, skipped_personal: skippedPersonal, skipped_invalid_key: invalidKeys };
 
-  } catch (error: any) {
-    return { ok: false, error: "Lỗi kết nối tới Jira: " + error.message };
+  } catch (error: unknown) {
+    // Thông báo tự viết: error.message của fetch có thể chứa URL/chi tiết mạng.
+    console.error("Jira sync lỗi:", error instanceof Error ? error.name : "unknown");
+    if (error instanceof JiraTooLargeError) {
+      return { ok: false, error: "Dữ liệu Jira quá lớn (vượt trần). Thu hẹp JQL hoặc dùng ô Từ ngày." };
+    }
+    return { ok: false, error: "Không kết nối được tới Jira hoặc phản hồi không hợp lệ/quá lớn." };
+  } finally {
+    running.delete(baseUrl);
   }
 }
 
@@ -312,7 +408,7 @@ export async function syncJiraAction(formData: FormData) {
 //
 // TOKEN LÀ WRITE-ONLY. Nó đi một chiều: form -> Server Action -> core (mã hoá ở core). Không
 // hàm nào dưới đây trả token về client, không log, và thông báo lỗi được lọc để không lặp
-// lại token dù core có lỡ echo. Sync thật (`/integrations/{id}/sync`) thuộc B4b, chưa có.
+// lại token dù core có lỡ echo.
 
 export interface ConnectionResult {
   ok: boolean;
@@ -543,4 +639,61 @@ export async function migrateLocalIntegrationsAction(
   }
   revalidatePath("/data");
   return { ok: results.length > 0 && results.every((r) => r.ok), results };
+}
+
+// ── Sync theo kết nối đã lưu (B4b) ──────────────────────────────
+
+export type SyncActionResult =
+  | { ok: true; result: IntegrationSyncResult }
+  | { ok: false; error: string; status?: number };
+
+const SECRET_RE = /^[\x20-\x7e]{1,256}$/;
+const SINCE_RE = /^\d{4}-\d{2}-\d{2}(?:[T ][0-9:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
+
+/** Thông báo TỰ VIẾT cho lỗi sync: không echo detail của core (có thể chứa input hay chi tiết Jira). */
+function syncError(error: unknown): SyncActionResult {
+  if (error instanceof CoreApiError) {
+    const status = error.status;
+    const msgs: Record<number, string> = {
+      403: "Sai mật khẩu nhập/đồng bộ (hoặc core chưa cấu hình IMPORT_COMMIT_SECRET).",
+      409: "Không đồng bộ được: đang có lượt đồng bộ khác chạy cho kết nối này, hoặc kết nối chưa có token. Đợi lượt kia xong hoặc nhập token.",
+      422: "Core từ chối tham số: ngày bắt đầu, JQL hoặc host Jira không hợp lệ (chỉ hỗ trợ Jira Cloud).",
+      502: "Core không gọi được Jira hoặc Jira trả lỗi. Kiểm tra URL, email, token và quyền.",
+      503: "Core không giải mã được token đã lưu. Hãy nhập lại token cho kết nối này.",
+      504: "Đồng bộ quá thời gian. Thu hẹp JQL hoặc dùng ô Từ ngày rồi thử lại.",
+    };
+    return { ok: false, status, error: msgs[status] ?? "Đồng bộ thất bại. Xem log của core." };
+  }
+  console.error("sync tích hợp thất bại", error instanceof Error ? error.name : "unknown");
+  return { ok: false, error: "Không gọi được core API hoặc quá thời gian chờ. Kiểm tra service api rồi thử lại." };
+}
+
+/**
+ * Cào Jira cho một kết nối đã lưu, qua core (chế độ api). Core giữ token, web không bao giờ thấy nó.
+ *
+ * `secret` là IMPORT_COMMIT_SECRET: chỉ đi vào header, không log, không echo. `since` tuỳ chọn
+ * (YYYY-MM-DD hoặc ISO) để thu hẹp khi JQL quá rộng (chạm trần 100 trang). Có thể kéo dài hàng
+ * phút nên UI phải khoá nút khi đang chạy.
+ */
+export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown): Promise<SyncActionResult> {
+  if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
+  if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
+  if (typeof secret !== "string" || !SECRET_RE.test(secret)) {
+    return { ok: false, error: "Cần nhập mật khẩu (1-256 ký tự ASCII hiển thị được)." };
+  }
+  let sinceValue: string | undefined;
+  if (since !== undefined && since !== null && since !== "") {
+    if (typeof since !== "string" || since.length > 40 || !SINCE_RE.test(since) || Number.isNaN(Date.parse(since))) {
+      return { ok: false, error: "Ngày bắt đầu không hợp lệ (dùng YYYY-MM-DD)." };
+    }
+    sinceValue = since;
+  }
+  try {
+    const result = await syncIntegration(id, secret, sinceValue);
+    revalidatePath("/data");
+    revalidatePath("/", "layout");
+    return { ok: true, result };
+  } catch (error) {
+    return syncError(error);
+  }
 }

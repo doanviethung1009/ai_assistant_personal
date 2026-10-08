@@ -1,7 +1,7 @@
 """Kết nối tích hợp (Jira...). Token là write-only: không endpoint nào trả token.
 
-Chưa có `/{id}/sync` (thuộc B4b). Route động `/{connection_id}` là route duy nhất nên
-chưa cần lo thứ tự khai báo.
+`/{id}/sync` (B4b) là POST có hậu tố nên không đụng route PATCH/DELETE `/{id}`; mọi route
+ở đây đều có tham số động, chưa có route tĩnh nào cần khai báo trước.
 """
 
 from __future__ import annotations
@@ -9,12 +9,18 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
 
-from app.api.deps import SessionDep
+from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
 from app.schemas.common import Page
-from app.schemas.integration import IntegrationCreate, IntegrationRead, IntegrationUpdate
+from app.schemas.integration import (
+    IntegrationCreate,
+    IntegrationRead,
+    IntegrationUpdate,
+    SyncResult,
+)
 from app.services import integration_service as service
+from app.services import integration_sync_service
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -68,3 +74,38 @@ async def update_connection(
 )
 async def delete_connection(session: SessionDep, connection_id: uuid.UUID) -> None:
     await service.delete_connection(session, connection_id)
+
+
+def _require_import_secret(request: Request, import_secret: ImportSecretHeader = None) -> None:
+    """Sync ghi hàng loạt và gọi ra ngoài mà web không có đăng nhập: cần thêm X-Import-Secret.
+
+    Là dependency để 403 đến trước mọi kiểm tra khác (kể cả 422 của `since`).
+    """
+    guard_import_secret(request, import_secret)
+
+
+@router.post(
+    "/{connection_id}/sync",
+    response_model=SyncResult,
+    dependencies=[Depends(_require_import_secret)],
+    summary="Đồng bộ Jira theo yêu cầu (đòi X-Import-Secret)",
+    description=(
+        "Kéo issue từ Jira về task (scope=work, source=jira), idempotent. `since` (ISO "
+        "8601, tuỳ chọn) chỉ lấy issue cập nhật gần đây. Tối đa 100 trang x 100 issue "
+        "(chạm trần: truncated=true). 403 sai secret, 409 thiếu token hoặc đang có sync "
+        "khác, 422 since/JQL sai hoặc host bị chặn (SSRF), 502/504 lỗi Jira (thông báo "
+        "tự viết, không kèm nội dung Jira), 503 không giải mã được token."
+    ),
+)
+async def sync_connection(
+    request: Request,
+    connection_id: uuid.UUID,
+    since: Annotated[
+        str | None,
+        Query(max_length=40, description="ISO 8601, vd. 2024-05-01 hoặc 2024-05-01T10:00:00Z"),
+    ] = None,
+) -> SyncResult:
+    # Cố ý KHÔNG nhận SessionDep: get_session giữ một transaction mở tới hết request, mà
+    # sync gọi Jira hàng phút. Service tự mở các transaction ngắn.
+    client_ip = request.client.host if request.client else None
+    return await integration_sync_service.run_sync(connection_id, since, client_ip=client_ip)

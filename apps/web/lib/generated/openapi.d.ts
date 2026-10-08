@@ -766,6 +766,26 @@ export interface paths {
         patch: operations["update_connection_api_v1_integrations__connection_id__patch"];
         trace?: never;
     };
+    "/api/v1/integrations/{connection_id}/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Đồng bộ Jira theo yêu cầu (đòi X-Import-Secret)
+         * @description Kéo issue từ Jira về task (scope=work, source=jira), idempotent. `since` (ISO 8601, tuỳ chọn) chỉ lấy issue cập nhật gần đây. Tối đa 100 trang x 100 issue (chạm trần: truncated=true). 403 sai secret, 409 thiếu token hoặc đang có sync khác, 422 since/JQL sai hoặc host bị chặn (SSRF), 502/504 lỗi Jira (thông báo tự viết, không kèm nội dung Jira), 503 không giải mã được token.
+         */
+        post: operations["sync_connection_api_v1_integrations__connection_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1589,6 +1609,54 @@ export interface components {
             file_older_than_db: boolean;
             /** Changes */
             changes: components["schemas"]["FieldChange"][];
+        };
+        /**
+         * SyncMessage
+         * @description Một lỗi/cảnh báo của lần đồng bộ. `reason` là câu TỰ VIẾT, không chứa nội dung Jira.
+         */
+        SyncMessage: {
+            /**
+             * Index
+             * @description Vị trí issue trong dữ liệu đã tải (từ 0); null = cả lần sync
+             */
+            index?: number | null;
+            /**
+             * External Id
+             * @description Khoá issue (PROJ-123) nếu có
+             */
+            external_id?: string | null;
+            /** Reason */
+            reason: string;
+        };
+        /** SyncResult */
+        SyncResult: {
+            /**
+             * Fetched
+             * @description Số issue Jira đã tải (kể cả issue bị loại do lỗi)
+             */
+            fetched: number;
+            /** Pages */
+            pages: number;
+            /** Added */
+            added: number;
+            /** Updated */
+            updated: number;
+            /** Unchanged */
+            unchanged: number;
+            /**
+             * Skipped Personal
+             * @description Trùng khoá với task scope=personal nên bị bỏ qua, không ghi đè
+             */
+            skipped_personal: number;
+            /** Errors */
+            errors?: components["schemas"]["SyncMessage"][];
+            /** Warnings */
+            warnings?: components["schemas"]["SyncMessage"][];
+            /**
+             * Truncated
+             * @description Chạm trần 100 trang: chưa lấy hết, và last_sync_at không được cập nhật
+             */
+            truncated: boolean;
         };
         /**
          * SyncUrlsBody
@@ -3825,6 +3893,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["IntegrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sync_connection_api_v1_integrations__connection_id__sync_post: {
+        parameters: {
+            query?: {
+                /** @description ISO 8601, vd. 2024-05-01 hoặc 2024-05-01T10:00:00Z */
+                since?: string | null;
+            };
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncResult"];
                 };
             };
             /** @description Validation Error */
