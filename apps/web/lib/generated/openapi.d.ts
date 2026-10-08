@@ -688,6 +688,11 @@ export interface components {
              */
             skipped_trash_in_db: number;
             /**
+             * Skipped Personal
+             * @default 0
+             */
+            skipped_personal: number;
+            /**
              * Invalid
              * @default 0
              */
@@ -1207,6 +1212,7 @@ export interface components {
             tags?: string[];
             /** @default manual */
             source: components["schemas"]["TaskSource"];
+            scope?: components["schemas"]["TaskScope"] | null;
             /** External Id */
             external_id?: string | null;
             /** External Url */
@@ -1247,6 +1253,7 @@ export interface components {
             /** Tags */
             tags: string[];
             source: components["schemas"]["TaskSource"];
+            scope: components["schemas"]["TaskScope"];
             /** External Id */
             external_id: string | null;
             /** External Url */
@@ -1337,6 +1344,7 @@ export interface components {
             /** Tags */
             tags: string[];
             source: components["schemas"]["TaskSource"];
+            scope: components["schemas"]["TaskScope"];
             /** External Id */
             external_id: string | null;
             /** External Url */
@@ -1364,6 +1372,18 @@ export interface components {
              */
             readonly days_until_purge: number | null;
         };
+        /**
+         * TaskScope
+         * @description Task là việc công ty hay việc riêng.
+         *
+         *     Khác `source` (task đến từ đâu): scope quyết định task có bị tích hợp đồng
+         *     bộ ghi đè hay không, và có hiện ở `/team` hay không. User sửa được.
+         *
+         *     CẠM BẪY: có CHECK ở DB (`ck_tasks_scope_valid`), và `alembic check` KHÔNG so
+         *     sánh CHECK. Thêm giá trị mà quên migration DROP/ADD CONSTRAINT thì INSERT bị từ chối.
+         * @enum {string}
+         */
+        TaskScope: "work" | "personal";
         /**
          * TaskSource
          * @description Nguồn gốc của task.
@@ -1441,7 +1461,17 @@ export interface components {
             spent_minutes?: number | null;
             /** Tags */
             tags?: string[] | null;
+            scope?: components["schemas"]["TaskScope"] | null;
         };
+        /**
+         * TaskView
+         * @description Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
+         *
+         *     `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
+         *     scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+         * @enum {string}
+         */
+        TaskView: "all" | "mine" | "personal" | "work";
         /** TimeLogRequest */
         TimeLogRequest: {
             /**
@@ -1566,6 +1596,10 @@ export interface operations {
             query?: {
                 /** @description Mặc định là hôm nay theo timezone hiển thị */
                 reference_date?: string | null;
+                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                view?: components["schemas"]["TaskView"];
+                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
+                owner?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -1597,6 +1631,10 @@ export interface operations {
         parameters: {
             query?: {
                 reference_date?: string | null;
+                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                view?: components["schemas"]["TaskView"];
+                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
+                owner?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -1713,6 +1751,10 @@ export interface operations {
                 assignee?: string | null;
                 /** @description Gồm cả done và cancelled */
                 include_closed?: boolean;
+                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                view?: components["schemas"]["TaskView"];
+                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
+                owner?: string[] | null;
                 limit?: number;
                 offset?: number;
                 sort_by?: "created_at" | "updated_at" | "due_at" | "priority" | "title" | "scheduled_for";
@@ -2657,6 +2699,8 @@ export interface operations {
                 expect_replaced?: number | null;
                 /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
                 expect_sha256?: string | null;
+                /** @description false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè (đếm `skipped_personal`). true: cho phép ghi đè cả task cá nhân. */
+                include_personal?: boolean;
             };
             header?: {
                 /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
