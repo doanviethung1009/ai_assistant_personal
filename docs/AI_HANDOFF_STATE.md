@@ -65,7 +65,7 @@
 - **Merge:** sau PR task-scope (#13) vì migration nối tiếp. `.env` hiện có không có `SYNC_URL_EXTRA_HOSTS` (tuỳ chọn); Jira on-prem cần thêm host vào biến này.
 - **Chưa làm:** pha B3 (lịch sử Chrome), B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
 
-## 9. Lịch sử Chrome vào Postgres (pha B3, nhánh `feat/browser-history-b3`, chưa merge)
+## 9. Lịch sử Chrome vào Postgres (pha B3, đã merge vào `main`)
 
 - **Đã code:** bảng `browser_history` (migration `b8c4d6e0f3a5`, nối sau `a7b3c5d9e2f4`; unique `(profile, url_hash)`, hai index `(last_visit_at DESC, id)` và `(profile, last_visit_at DESC, id)`, 4 CHECK), `POST /browser-history/batch`, `GET`, `DELETE` (cần `X-Import-Secret`), `POST /import/browser-history`. Web: `scrapeChromeHistory` có tham số `timeMode` (`local` cho file, `utc` cho api), `/history` phân trang server-side 50/trang, nút xoá theo profile kèm mật khẩu, loại file `chrome-history.json` trong panel Nhập.
 - **Bảo mật:** sửa lỗi nội suy shell (`execFile`, ép `limit` 1..10000, `customPath` phải là file `History` dưới thư mục Chrome, mở bằng `O_NOFOLLOW`); URL bỏ query/fragment/userinfo; lỗi không lộ đường dẫn máy; 422 của batch không trả lại URL gốc.
@@ -74,5 +74,14 @@
 - **Rủi ro còn lại:** path URL có thể chứa token (đã bỏ query nhưng không cắt path); `q` tìm kiếm có thể nằm trong access log của uvicorn; `COUNT(*)` mỗi trang; web chưa có đăng nhập; chưa chạy UAT với Chrome và sqlite3 thật, chưa chạy `make smoke`; `smoke-test.sh` chưa có assertion cho B3; `customPath` ngoài thư mục Chrome mặc định (Chromium, Brave) bị từ chối.
 - **Merge:** sau B2 (đã merge). Migration `b8c4d6e0f3a5` là head mới.
 - **Chưa làm:** pha B4 (Jira sync ở backend).
+
+## 10. Jira ở backend, phần B4a: kết nối mã hoá và upsert-batch (nhánh `feat/jira-sync-b4`, chưa merge)
+
+- **Đã code:** bảng `integration_connections` (migration `c9d1e3f5a7b2`, nối sau `b8c4d6e0f3a5`), `/api/v1/integrations` (token chỉ ghi, mã hoá Fernet, gắn với `connection_id` + `base_url` nên chép ciphertext sang kết nối khác sẽ không giải mã được), `POST /tasks/upsert-batch` (cần `X-Import-Secret`, chỉ ghi `scope=work`, tags gộp, description chỉ điền khi rỗng, lọc `raw_payload`), `POST /import/verify-secret`. Thêm gói `cryptography` (uv.lock chỉ thêm 3 gói). Web: `jira-connections-manager` (quản lý kết nối, chuyển cấu hình từ localStorage một lần), Excel/URL sync ở chế độ api đẩy lên upsert-batch, `lib/excel-upsert.ts`.
+- **Biến môi trường mới:** `INTEGRATION_SECRET_KEY` (khoá Fernet; `make env` tự sinh, **.env có từ trước phải tự thêm**; mất khoá = nhập lại mọi token), `INTEGRATION_SECRET_KEY_OLD` (tuỳ chọn, khi xoay khoá).
+- **Thay đổi hành vi:** route `GET /api/sync` đã **xoá** (ghi dữ liệu không xác thực, có thể bị CSRF qua thẻ img); `JiraQuickSync` ẩn ở chế độ api; `XLSX.read` giới hạn 50 000 dòng cả ở chế độ file; dòng Excel thiếu Issue Key bị bỏ ở chế độ api; ô Excel trống gửi `null` (xoá hạn, người giao, project) cho khớp chế độ file; priority không còn bị đặt lại.
+- **Lệch spec cần nhớ:** actor event là `integration:<source>` (B4b nên đổi thành tên kết nối); `GET /integrations` trả `Page`; `TaskSource` không có `url_sync`/`excel` nên web gửi `source=jira` cố định ở server; tạo kết nối không có token vẫn được khi thiếu khoá (chỉ token mới cần khoá).
+- **Rủi ro còn lại:** `base_url` mới chỉ chặn theo tên host literal, **chưa phân giải DNS** (`127.0.0.1.nip.io`, DNS rebinding): B4b phải phân giải, chặn IP private, ghim IP, tắt redirect, không gửi `Authorization` sang host khác; `syncJiraAction` ở chế độ file vẫn gửi `Authorization` tới `baseUrl` tuỳ ý (SSRF có sẵn, vá ở B4b); tạo/xoá kết nối chưa đòi mật khẩu (web không có đăng nhập); audit kết nối chỉ là log có cấu trúc, chưa có bảng; `external_url` hardcode `onemount.atlassian.net`; chưa chạy UAT, `make smoke` (không có Docker).
+- **Chưa làm (B4b):** `POST /integrations/{id}/sync` (connector Python trong core, mặc định chặn IP private, mở bằng biến môi trường), JQL mặc định dùng `current_users`, bật nút "Cào ngay" ở chế độ api.
 
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*
