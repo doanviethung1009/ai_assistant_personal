@@ -197,6 +197,9 @@ async def test_token_never_in_responses_logs_or_plain_in_db(
     for resp in (bad, short):
         for err in resp.json()["detail"]:
             assert set(err) == {"type", "loc", "msg"}
+    # Đối chứng dương tính: tạo kết nối PHẢI để lại dòng audit, nếu không hai assert dưới có thể
+    # đúng chỉ vì logger bị tắt.
+    assert any(getattr(r, "audit", None) == "integration" for r in caplog.records)
     assert TOKEN not in caplog.text
     assert settings.integration_secret_key.get_secret_value() not in caplog.text
 

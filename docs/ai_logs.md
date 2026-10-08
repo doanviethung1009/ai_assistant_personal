@@ -915,3 +915,11 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Docs: API_REFERENCE, DATA_MIGRATION_TO_POSTGRES, AI_HANDOFF_STATE (mục 9), ops.md, huong-dan-su-dung, PROJECT_STRUCTURE, spec (mục PHA B3 thành ghi chú đã gỡ). `docs.ts` không đăng ký gì liên quan.
   - Khó khăn: máy không có Docker nên dựng Postgres tạm cổng 55433; hook chặn `drop database` qua psql nên không dọn DB so sánh bằng tay.
 - **Phản hồi:** Xong code và docs; ruff sạch, `alembic heads` một head, `alembic check` sạch, downgrade/upgrade ổn, 567 test pass, `tsc` sạch. Chưa commit.
+
+### [09-10-2026 04:00] | Category: [TOOL]
+- **Prompt:** Sửa test log-leak (assert "token không có trong log" có thể vô nghĩa vì logger bị tắt).
+- **Xử lý:**
+  - Tái hiện: chạy cả bộ test thì 14/14 logger `app.*` có `disabled=True` và `caplog` không bắt được dòng thử nghiệm. Nguyên nhân: `fileConfig` trong `apps/core/migrations/env.py` mặc định `disable_existing_loggers=True`, mà fixture `migrated_db` chạy alembic TRONG process pytest sau khi module app đã được import. Production không bị (alembic chạy process riêng).
+  - Sửa gốc: `disable_existing_loggers=False`. Thêm `tests/test_logging_capture.py` (mọi logger `app.*` không bị tắt và bắt được log). Thêm assert đối chứng dương tính vào 3 test (`test_import_api`, `test_task_upsert`, `test_integrations`). Bỏ fixture `_live_loggers` trong `test_jira_sync_api.py` vì nó che mất lỗi nếu bản sửa gốc bị lùi.
+  - Phép thử đột biến: bỏ bản sửa gốc thì 3 test fail; có bản sửa thì 781 pass.
+- **Phản hồi:** Bật logger lên, toàn bộ assert "không lộ token" hiện có vẫn pass, nghĩa là không phát hiện rò thật. Lưới bảo vệ ngăn lỗi quay lại.

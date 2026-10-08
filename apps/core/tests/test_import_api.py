@@ -346,6 +346,7 @@ async def test_openapi_documents_both_paths(client: httpx.AsyncClient) -> None:
 async def test_verify_secret_accepts_only_the_real_secret(
     client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
+    caplog.set_level("WARNING")
     url = "/api/v1/import/verify-secret"
     ok = await client.post(url, headers={"X-Import-Secret": IMPORT_SECRET})
     assert ok.status_code == 204 and ok.content == b""
@@ -354,6 +355,9 @@ async def test_verify_secret_accepts_only_the_real_secret(
     assert wrong.status_code == 403 and missing.status_code == 403
     for resp in (ok, wrong, missing):
         assert IMPORT_SECRET not in resp.text and "WRONG" not in resp.text
+    # Đối chứng dương tính: cổng mật khẩu PHẢI để lại dòng log cảnh báo, nếu không các assert
+    # "không chứa" bên dưới có thể đúng chỉ vì logger bị tắt.
+    assert "nhập thật bị từ chối" in caplog.text
     assert IMPORT_SECRET not in caplog.text and "WRONG" not in caplog.text
 
 
