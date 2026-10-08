@@ -31,6 +31,10 @@ bootstrap: ## Cài từ đầu: sinh .env, build, dựng stack, chạy migration
 env: ## Sinh file .env với khoá ngẫu nhiên (không ghi đè nếu đã có)
 	@bash scripts/gen-env.sh
 
+.PHONY: env-fill
+env-fill: ## Bổ sung IMPORT_COMMIT_SECRET và INTEGRATION_SECRET_KEY vào .env cũ (không đổi biến đã có)
+	@bash scripts/gen-env.sh --fill-missing
+
 # ── Vòng đời stack ─────────────────────────────────────────────────────
 
 .PHONY: up
