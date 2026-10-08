@@ -1,7 +1,6 @@
 import { Settings2 } from "lucide-react";
 
 import { ApiErrorPanel } from "@/components/api-error";
-import { ChromeHistoryManager } from "@/components/chrome-history-manager";
 import { CurrentUserManager } from "@/components/current-user-manager";
 import { CoreImportPanel } from "@/components/core-import-panel";
 import { DataExportGrid } from "@/components/data-export-grid";
@@ -141,9 +140,7 @@ export default async function DataPage({
               <LocalOnlyNotice feature="Khôi phục từ bản sao lưu cục bộ" />
             </>
           )}
-          {/* Chrome và Vault dùng kho riêng, không phụ thuộc DATA_SOURCE nên luôn hiện. */}
-          <ChromeHistoryManager />
-          {DIVIDER}
+          {/* Vault dùng kho riêng, không phụ thuộc DATA_SOURCE nên luôn hiện. */}
           <VaultImportManager />
         </div>
       )}

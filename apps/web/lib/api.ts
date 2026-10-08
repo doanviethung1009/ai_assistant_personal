@@ -6,10 +6,6 @@ import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
-  BrowserHistoryBatchItem,
-  BrowserHistoryBatchResult,
-  BrowserHistoryImportReport,
-  BrowserHistoryRow,
   HealthResponse,
   ImportReport,
   IntegrationConnection,
@@ -278,114 +274,6 @@ export function importDataFile(text: string, options: ImportCallOptions): Promis
 /** Nhập file ai-logs.json vào Postgres. */
 export function importAiLogsFile(text: string, options: ImportCallOptions): Promise<ImportReport> {
   return postImport("ai-logs", text, options);
-}
-
-// ── Lịch sử duyệt web (B3) ───────────────────────────────────────────────
-
-/** Số dòng tối đa core nhận trong một lô batch. */
-export const BROWSER_HISTORY_BATCH_SIZE = 10_000;
-
-/**
- * Đẩy lịch sử đã cào từ Chrome lên core, tự chia lô <= 10 000 dòng.
- *
- * Vì sao gộp kết quả: core upsert chỉ-tăng và idempotent nên chia lô an toàn;
- * người gọi chỉ cần tổng số. `profile` là tên thư mục (không phải đường dẫn tuyệt
- * đối) để không lộ cấu trúc thư mục của máy vào DB.
- */
-export async function pushBrowserHistory(
-  profile: string,
-  items: BrowserHistoryBatchItem[],
-): Promise<BrowserHistoryBatchResult> {
-  if (IS_LOCAL) {
-    throw new CoreApiError("Đẩy lịch sử lên Postgres chỉ dùng được ở chế độ DATA_SOURCE=api", 501);
-  }
-  const total: BrowserHistoryBatchResult = {
-    received: 0,
-    created: 0,
-    updated: 0,
-    unchanged: 0,
-    invalid: 0,
-  };
-  for (let i = 0; i < items.length; i += BROWSER_HISTORY_BATCH_SIZE) {
-    const part = await coreFetch<BrowserHistoryBatchResult>("/api/v1/browser-history/batch", {
-      method: "POST",
-      body: JSON.stringify({ profile, items: items.slice(i, i + BROWSER_HISTORY_BATCH_SIZE) }),
-    });
-    total.received += part.received;
-    total.created += part.created;
-    total.updated += part.updated;
-    total.unchanged += part.unchanged;
-    total.invalid += part.invalid;
-  }
-  return total;
-}
-
-export interface ListBrowserHistoryOptions {
-  q?: string;
-  profile?: string;
-  /** Core giới hạn tối đa 100. */
-  limit?: number;
-  offset?: number;
-}
-
-/** Một trang lịch sử duyệt web, mới nhất trước. Phân trang server-side. */
-export function listBrowserHistory(
-  options: ListBrowserHistoryOptions = {},
-): Promise<Paged<BrowserHistoryRow>> {
-  const params = new URLSearchParams();
-  if (options.q) params.set("q", options.q.slice(0, 200));
-  if (options.profile) params.set("profile", options.profile.slice(0, 200));
-  params.set("limit", String(Math.min(Math.max(options.limit ?? 50, 1), 100)));
-  params.set("offset", String(Math.max(options.offset ?? 0, 0)));
-  return coreFetch<Paged<BrowserHistoryRow>>(`/api/v1/browser-history?${params.toString()}`);
-}
-
-/**
- * Xoá toàn bộ lịch sử của một profile. KHÔNG hoàn tác.
- *
- * Core đòi mật khẩu IMPORT_COMMIT_SECRET qua header X-Import-Secret (như nhập thật);
- * mật khẩu chỉ đi qua header, không vào URL hay log.
- */
-export function deleteBrowserHistory(profile: string, secret: string): Promise<{ deleted: number }> {
-  const params = new URLSearchParams({ profile: profile.slice(0, 200) });
-  return coreFetch<{ deleted: number }>(`/api/v1/browser-history?${params.toString()}`, {
-    method: "DELETE",
-    headers: { "X-Import-Secret": secret },
-  });
-}
-
-export interface ImportBrowserHistoryOptions {
-  dryRun: boolean;
-  /** Tên thư mục profile gán cho toàn bộ file. */
-  profile: string;
-  /** Bắt buộc khi dryRun=false; chỉ đi qua header X-Import-Secret. */
-  secret?: string;
-}
-
-/** Nhập chrome-history.json vào Postgres. Body thô để core tính sha256. */
-export function importBrowserHistoryFile(
-  text: string,
-  options: ImportBrowserHistoryOptions,
-): Promise<BrowserHistoryImportReport> {
-  if (IS_LOCAL) {
-    return Promise.reject(
-      new CoreApiError("Nhập vào Postgres chỉ dùng được ở chế độ DATA_SOURCE=api", 501),
-    );
-  }
-  if (!options.dryRun && !options.secret) {
-    return Promise.reject(new CoreApiError("Thiếu mật khẩu nhập", 400));
-  }
-  const params = new URLSearchParams({
-    dry_run: options.dryRun ? "true" : "false",
-    profile: options.profile,
-  });
-  const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const headers: Record<string, string> = {};
-  if (!options.dryRun && options.secret) headers["X-Import-Secret"] = options.secret;
-  return coreFetch<BrowserHistoryImportReport>(
-    `/api/v1/import/browser-history?${params.toString()}`,
-    { method: "POST", body, headers },
-  );
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────

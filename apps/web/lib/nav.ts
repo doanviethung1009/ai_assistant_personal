@@ -6,7 +6,6 @@ import {
   BookOpen,
   Shield,
   Tags,
-  History,
   Trash2,
   Blocks,
   Map,
@@ -43,7 +42,6 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/notes", label: "Sổ tay", icon: BookOpen },
   { href: "/vault", label: "Két bảo mật", short: "Két", icon: Shield },
   { href: "/tags", label: "Quản lý Tag", short: "Tags", icon: Tags },
-  { href: "/history", label: "Lịch sử duyệt web", short: "Lịch sử", icon: History },
   { href: "/trash", label: "Thùng rác", short: "Rác", icon: Trash2 },
 ];
 

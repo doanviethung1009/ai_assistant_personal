@@ -10,7 +10,7 @@ import Link from "next/link";
 
 export const DATA_TABS = [
   { id: "xuat", label: "Xuất dữ liệu", hint: "Backup JSON, CSV" },
-  { id: "nhap", label: "Nhập dữ liệu", hint: "JSON, file, Chrome, Vault" },
+  { id: "nhap", label: "Nhập dữ liệu", hint: "JSON, file, Vault" },
   { id: "dong-bo", label: "Đồng bộ & Cấu hình", hint: "Jira, URL, người dùng" },
   { id: "nguy-hiem", label: "Vùng nguy hiểm", hint: "Xoá dữ liệu" },
 ] as const;

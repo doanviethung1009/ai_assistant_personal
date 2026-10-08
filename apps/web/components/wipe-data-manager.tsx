@@ -43,8 +43,7 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
           projects: wipeTarget === "projects",
           notes: wipeTarget === "notes",
           vault: wipeTarget === "vault",
-          sync_urls: wipeTarget === "sync_urls",
-          chrome_history: wipeTarget === "chrome_history"
+          sync_urls: wipeTarget === "sync_urls"
         };
       }
 
@@ -84,7 +83,6 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
           <option value="notes">Chỉ xoá Sổ tay (Notes)</option>
           <option value="vault">Chỉ xoá Két bảo mật (Vault)</option>
           <option value="sync_urls">Chỉ xoá Danh sách URL Cào dữ liệu</option>
-          <option value="chrome_history">Chỉ xoá Lịch sử Chrome History</option>
           <option value="all">⚠️ Xoá TOÀN BỘ dữ liệu (Tất cả, nguy hiểm)</option>
         </select>
         {wipeTarget === "tasks_assignee" && (

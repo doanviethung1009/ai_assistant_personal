@@ -59,7 +59,6 @@ export interface WipeOptions {
   projects?: boolean;
   notes?: boolean;
   sync_urls?: boolean;
-  chrome_history?: boolean;
 }
 
 /** Số ngày giữ task đã xoá. 0 nghĩa là xoá thẳng, không qua thùng rác. */

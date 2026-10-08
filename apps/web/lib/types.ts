@@ -191,12 +191,6 @@ export type EntityCounts = Schemas["EntityCounts"];
 export type ImportIssue = Schemas["ImportIssue"];
 export type KeyChange = Schemas["KeyChange"];
 
-// ── Lịch sử duyệt web (B3) ─────────────────────────────────────────────
-export type BrowserHistoryRow = Schemas["BrowserHistoryRead"];
-export type BrowserHistoryBatchItem = Schemas["BrowserHistoryItem"];
-export type BrowserHistoryBatchResult = Schemas["BrowserHistoryBatchResult"];
-export type BrowserHistoryImportReport = Schemas["BrowserHistoryImportReport"];
-
 // ── Tích hợp (B4a) ───────────────────────────────────────────────────────
 // Alias thuần từ schema sinh. IntegrationRead không có token: chỉ has_secret + secret_last4.
 export type IntegrationConnection = Schemas["IntegrationRead"];
