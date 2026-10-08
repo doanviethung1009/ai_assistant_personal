@@ -55,4 +55,12 @@
 - **Lỗi có sẵn đã sửa trong epic:** `/team` ở chế độ api không còn gọi `limit=10000` (backend cho tối đa 200); `listTasks` ở chế độ api truyền `view`/`owner`/`assignee`; vùng nguy hiểm ở chế độ api không còn giả vờ xoá (hiện thông báo); `restoreFromJsonAction` chạy migrate.
 - **Chưa làm / ghi nhận:** `file-upload-manager`, `url-sync-manager` chưa hiện `skipped_personal` (không thuộc Ownership frontend của epic); `/team` vẫn tải nhiều trang rồi lọc client-side (phân trang server-side là epic riêng); `/tasks` ở chế độ api nhận `size` tới 1000 còn backend tối đa 200 (lỗi có sẵn).
 
+## 8. Cài đặt người dùng và URL đồng bộ (pha B2, nhánh `feat/settings-b2`, chưa merge)
+
+- **Đã code:** bảng `app_settings` (key khai báo cứng, migration `a7b3c5d9e2f4`, down_revision `f6a2b4c8d1e3`), `GET/PUT /api/v1/settings/current-users` và `/sync-urls`, `GET /api/v1/tasks/assignees` (chỉ `scope=work`); nhập `meta.current_users` và `sync_urls` từ file (thực thể `setting`). File JSON **phiên bản 6** (lưu `sync_urls`, lỗi cũ: `snapshot()` bỏ sót). Web ở chế độ api: `getCurrentUsersApi`/`getAssigneesApi`/`getSyncUrlsApi` gọi core thật, `CurrentUserManager` và `UrlSyncManager` dùng được.
+- **Bảo mật (chống SSRF):** URL đồng bộ chỉ `https` + allowlist host (Google Docs/Sheets/Drive, SharePoint, OneDrive; thêm bằng `SYNC_URL_EXTRA_HOSTS`, đặt giống nhau cho api và web). Hai bản luật phải GIỮ TƯƠNG ĐƯƠNG: `apps/core/app/core/url_allowlist.py` và `apps/web/lib/url-allowlist.ts`. `syncFromUrlAction` kiểm `IS_LOCAL` trước, fetch `redirect: manual`, kiểm lại allowlist mỗi bước (tối đa 5).
+- **Thay đổi hành vi chế độ file:** trước đây lưu URL đồng bộ bất kỳ; nay bị từ chối nếu ngoài allowlist.
+- **Merge:** sau PR task-scope (#13) vì migration nối tiếp. `.env` hiện có không có `SYNC_URL_EXTRA_HOSTS` (tuỳ chọn); Jira on-prem cần thêm host vào biến này.
+- **Chưa làm:** pha B3 (lịch sử Chrome), B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
+
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

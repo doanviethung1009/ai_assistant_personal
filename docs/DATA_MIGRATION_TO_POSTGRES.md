@@ -1,7 +1,7 @@
 # Chuyển dữ liệu từ file JSON sang Postgres
 
 > Dành cho bạn đang dùng web ở chế độ `DATA_SOURCE=file` (dữ liệu ở `data/builder-data.json`) và muốn chuyển sang Postgres (`DATA_SOURCE=api`) mà không mất dữ liệu.
-> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **mới có pha B1** (task, project, note, nhật ký AI). Các pha B2 đến B4 chưa làm (xem mục 6).
+> Thiết kế đầy đủ: `docs/specs/import-json-to-postgres.md`. Hiện **có pha B1** (task, project, note, nhật ký AI) và **B2** (người dùng hiện tại, URL đồng bộ). Các pha B3 và B4 chưa làm (xem mục 6).
 
 ## 1. Cần biết trước khi làm
 
@@ -124,15 +124,17 @@ COPY (SELECT id, scope FROM tasks
 TO STDOUT WITH CSV HEADER;
 ```
 
+**URL đồng bộ chỉ nhận một số host.** Khi lưu và khi fetch, URL phải là `https` và thuộc: Google Docs/Sheets/Drive (`docs.google.com`, `drive.google.com`, `*.googleusercontent.com`), SharePoint/OneDrive (`*.sharepoint.com`, `onedrive.live.com`, `1drv.ms`). Host khác (ví dụ Jira on-prem) phải thêm vào biến `SYNC_URL_EXTRA_HOSTS` (danh sách phân cách dấu phẩy, **đặt giống nhau cho cả api và web** trong `.env`/compose). **Thay đổi hành vi:** trước đây chế độ file lưu URL bất kỳ; nay link ngoài danh sách bị từ chối ngay lúc lưu, vì chính server web sẽ fetch nó (chống SSRF).
+
 ## 6. Chưa chuyển (các pha sau)
 
 | Thứ | Hiện tại | Kế hoạch |
 |---|---|---|
-| `current_users`, `sync_urls`, danh sách assignee | Vẫn chỉ ở chế độ file; ở chế độ api trang báo "chưa hỗ trợ" | Pha B2 |
+| `current_users`, `sync_urls`, danh sách assignee | **Đã chuyển (B2):** lưu ở bảng `app_settings`, nhập từ `meta.current_users` và `sync_urls` của file | Xong |
 | Lịch sử Chrome | Kho file riêng | Pha B3 |
 | Jira sync, URL/Excel sync | Chỉ chạy ở chế độ file | Pha B4 |
 | **Vault** | **Cố ý KHÔNG chuyển.** Vẫn là file `data/vault.json`, độc lập với `DATA_SOURCE` | Không chuyển |
 
-**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Jira sync, nhập Excel, lọc task cá nhân/team và "người dùng hiện tại" chưa hoạt động cho tới khi xong B2 và B4. Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
+**Hệ quả khi đổi sang `DATA_SOURCE=api` ngay bây giờ:** Jira sync và nhập Excel/URL chưa hoạt động cho tới khi xong B4 ("người dùng hiện tại", lọc task cá nhân/công việc và danh sách URL đồng bộ đã chạy ở chế độ api). Nếu bạn đang dùng các tính năng đó hằng ngày thì **đừng bỏ chế độ file** vội.
 
 **Vault và sao lưu Postgres:** vì Vault nằm ngoài Postgres nên `pg_dump` **không** bao gồm nó. Hãy sao lưu riêng qua `/api/export?format=json&entity=vault` (tab Xuất dữ liệu, "JSON Két bảo mật").
