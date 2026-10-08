@@ -1,4 +1,4 @@
-"""Schema của chức năng nhập dữ liệu hàng loạt từ file JSON (builder-data, ai-logs).
+"""Schema của chức năng nhập dữ liệu hàng loạt từ file JSON (builder-data).
 
 Hai nhóm:
 - Envelope + schema từng dòng: mô tả cái file được PHÉP chứa. Mảng ở envelope khai
@@ -35,7 +35,6 @@ from app.schemas.task import clean_assignee
 # Web lên phiên bản mới mà backend chưa lên thì mọi file mới xuất sẽ bị 422. Backend
 # nhận cả v5 và v6 (và cũ hơn): `ge=1, le=` ở envelope.
 SUPPORTED_DATAFILE_VERSION = 6
-SUPPORTED_AI_LOGS_VERSION = 1
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Envelope
@@ -59,16 +58,6 @@ class DataFileEnvelope(BaseModel):
     # Danh sách URL đồng bộ (v6). None/vắng = không đụng cài đặt trong DB. Để Any: giá
     # trị sai kiểu phải ra lỗi theo dòng (code `setting_invalid`) chứ không 422 chung chung.
     sync_urls: Any = None
-
-
-class AiLogsEnvelope(BaseModel):
-    """File `ai-logs.json`."""
-
-    model_config = ConfigDict(extra="allow")
-
-    schema_version: int = Field(default=1, ge=1, le=SUPPORTED_AI_LOGS_VERSION)
-    exported_at: str | None = None
-    ai_logs: list[dict[str, Any]] = Field(max_length=20_000)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -184,17 +173,6 @@ class ImportNote(_Row):
         return _not_blank(value)
 
 
-class ImportAiLog(_Row):
-    id: uuid.UUID
-    # str thay vì enum: file thật có `TOOL`, `UI/UX`, `DOCS`; service ánh xạ (D9).
-    category: str | None = None
-    prompt: str = Field(min_length=1)
-    handling: str | None = None
-    response: str = Field(min_length=1)
-    created_at: datetime | None = None
-    updated_at: datetime | None = None
-
-
 # ═══════════════════════════════════════════════════════════════════════
 #  Báo cáo
 # ═══════════════════════════════════════════════════════════════════════
@@ -221,7 +199,7 @@ class FieldChange(BaseModel):
 
 
 class Replacement(BaseModel):
-    entity: Literal["project", "task", "note", "ai_log", "setting"]
+    entity: Literal["project", "task", "note", "setting"]
     # id trong DB (khác file_id khi matched_by = natural_key)
     id: uuid.UUID
     file_id: uuid.UUID
@@ -233,7 +211,7 @@ class Replacement(BaseModel):
 
 class ImportIssue(BaseModel):
     level: Literal["error", "warning"]
-    entity: Literal["file", "project", "task", "task_event", "note", "ai_log", "setting"]
+    entity: Literal["file", "project", "task", "task_event", "note", "setting"]
     index: int | None = None
     id: str | None = None
     code: str

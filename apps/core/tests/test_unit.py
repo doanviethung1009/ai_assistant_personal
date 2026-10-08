@@ -6,7 +6,6 @@ import httpx
 import pytest
 from pydantic import ValidationError
 
-from app.schemas.ai_log import AiLogCreate
 from app.schemas.common import MAX_TAGS, normalize_tags
 from app.schemas.task import TaskCreate
 
@@ -32,31 +31,26 @@ def test_task_title_is_stripped_and_not_blank() -> None:
         TaskCreate(title="   ")
 
 
-def test_ai_log_requires_non_empty_fields() -> None:
-    with pytest.raises(ValidationError):
-        AiLogCreate(prompt="", handling="x", response="y")
-
-
 async def test_api_rejects_missing_and_wrong_key() -> None:
     from app.main import app
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
-        missing = await c.get("/api/v1/ai-logs")
-        wrong = await c.get("/api/v1/ai-logs", headers={"X-API-Key": "sai-khoa-0000000000"})
+        missing = await c.get("/api/v1/tasks")
+        wrong = await c.get("/api/v1/tasks", headers={"X-API-Key": "sai-khoa-0000000000"})
     assert missing.status_code == 401
     assert wrong.status_code == 403
     assert API_KEY != "sai-khoa-0000000000"
 
 
-def test_app_imports_and_exposes_ai_logs_routes() -> None:
+def test_app_imports_and_exposes_routes() -> None:
     """Chặn lặp lại lỗi router import module không tồn tại làm sập cả API."""
     from app.main import app
 
     paths = set(app.openapi()["paths"])
-    assert "/api/v1/ai-logs" in paths
     assert "/api/v1/tasks" in paths
     assert "/api/v1/notes" in paths
+    assert "/api/v1/ai-logs" not in paths
 
 
 def test_refuses_database_without_test_suffix() -> None:

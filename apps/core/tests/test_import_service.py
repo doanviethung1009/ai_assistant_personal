@@ -21,7 +21,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import engine
-from app.schemas.imports import AiLogsEnvelope, DataFileEnvelope, ImportReport
+from app.schemas.imports import DataFileEnvelope, ImportReport
 from app.services import import_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.import_service import normalize_project_key
@@ -44,7 +44,6 @@ TABLES = [
     "tasks",
     "task_events",
     "notes",
-    "ai_logs",
     "import_runs",
     "import_audit",
 ]
@@ -507,57 +506,6 @@ async def test_advisory_lock_held_elsewhere_raises_conflict(session: AsyncSessio
             await other.execute(text("SELECT pg_advisory_unlock(hashtext('builder:import'))"))
     # Khoá đã nhả: chạy lại bình thường.
     assert (await _import(session, dry_run=True)).errors == 0
-
-
-# ── ai_logs ─────────────────────────────────────────────────────────
-
-
-async def _import_logs(
-    session: AsyncSession, data: dict[str, Any] | None = None, *, dry_run: bool = False
-) -> ImportReport:
-    envelope = AiLogsEnvelope.model_validate(
-        data if data is not None else _load("ai_logs_sample.json")
-    )
-    return await import_service.import_ai_logs(
-        session,
-        envelope,
-        dry_run=dry_run,
-        expect_replaced=None if dry_run else 0,
-        expect_sha256=None if dry_run else SHA,
-        file_sha256=SHA,
-    )
-
-
-async def test_import_ai_logs_maps_category_and_fills_handling(session: AsyncSession) -> None:
-    report = await _import_logs(session)
-    assert report.committed, report.issues
-    assert report.counts["ai_logs"].created == 4
-    rows = (
-        await session.execute(
-            text("SELECT category, handling, prompt FROM ai_logs ORDER BY prompt")
-        )
-    ).all()
-    assert [r.category for r in rows] == ["tool", "web", "other", "web"]
-    assert rows[1].handling == "(không ghi nhận)"
-    assert rows[0].handling == "Da xu ly 1"
-    assert "category_unknown" in {i.code for i in report.issues}
-
-    again = await _import_logs(session)
-    assert again.counts["ai_logs"].created == 0
-    assert again.counts["ai_logs"].replaced == 0
-    assert again.counts["ai_logs"].unchanged == 4
-    assert await session.scalar(text("SELECT count(*) FROM ai_logs")) == 4
-
-
-async def test_ai_log_replace(session: AsyncSession) -> None:
-    await _import_logs(session)
-    await session.execute(
-        text("UPDATE ai_logs SET response = 'Sua tay' WHERE prompt = 'Prompt tong hop 1'")
-    )
-    await session.commit()
-    dry = await _import_logs(session, dry_run=True)
-    assert dry.counts["ai_logs"].replaced == 1
-    assert dry.replacements[0].changes[0].field == "response"
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -1090,7 +1038,6 @@ async def test_include_personal_mismatch_between_dry_run_and_commit(
 # ═══════════════════════════════════════════════════════════════════════
 
 REAL_DATAFILE = os.environ.get("IMPORT_REAL_DATAFILE")
-REAL_AILOGS = os.environ.get("IMPORT_REAL_AILOGS")
 
 
 def _read_only_fingerprint(path: Path) -> tuple[str, float, bytes]:
@@ -1175,41 +1122,6 @@ async def test_real_file_datafile(session: AsyncSession, client: Any) -> None:
     )
     assert resp.status_code == 200
     assert sum(resp.json()["by_status"].values()) == expected_mine
-
-    sha_after, mtime_after, _ = _read_only_fingerprint(path)
-    assert (sha_after, mtime_after) == (sha_before, mtime_before)
-
-
-@pytest.mark.skipif(not REAL_AILOGS, reason="cần IMPORT_REAL_AILOGS")
-async def test_real_file_ai_logs(session: AsyncSession, client: Any) -> None:
-    assert REAL_AILOGS
-    path = Path(REAL_AILOGS)
-    sha_before, mtime_before, body = _read_only_fingerprint(path)
-    raw = json.loads(body)
-    envelope = AiLogsEnvelope.model_validate(raw)
-    # File ai-logs thật được công cụ log append liên tục: không ghi cứng số lượng.
-    n = len(raw["ai_logs"])
-
-    dry = await import_service.import_ai_logs(
-        session, envelope, dry_run=True, expect_replaced=None, file_sha256=sha_before
-    )
-    assert dry.errors == 0
-    assert dry.counts["ai_logs"].received == n
-
-    real = await import_service.import_ai_logs(
-        session,
-        envelope,
-        dry_run=False,
-        expect_replaced=0,
-        expect_sha256=sha_before,
-        file_sha256=sha_before,
-    )
-    assert real.committed
-    assert real.counts["ai_logs"].created == n
-    # Sau khi nhập, endpoint đọc phải trả 200 (handling thiếu đã được điền).
-    resp = await client.get("/api/v1/ai-logs", params={"limit": 100})
-    assert resp.status_code == 200
-    assert resp.json()["total"] == n
 
     sha_after, mtime_after, _ = _read_only_fingerprint(path)
     assert (sha_after, mtime_after) == (sha_before, mtime_before)

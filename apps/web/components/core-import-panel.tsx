@@ -13,11 +13,10 @@ import type {
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_ISSUES_SHOWN = 50;
 
-type Kind = "datafile" | "ai-logs";
+type Kind = "datafile";
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: "datafile", label: "JSON Project/Task/Note (builder-data.json)" },
-  { value: "ai-logs", label: "JSON Nhật ký AI (ai-logs.json)" },
 ];
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -25,14 +24,12 @@ const ENTITY_LABELS: Record<string, string> = {
   tasks: "Task",
   task_events: "Nhật ký task",
   notes: "Sổ tay",
-  ai_logs: "Nhật ký AI",
   // Cài đặt (current_users, sync_urls): counts dùng khoá `settings`, replacement/issue dùng `setting`.
   settings: "Cài đặt",
   setting: "Cài đặt",
   project: "Project",
   task: "Task",
   note: "Sổ tay",
-  ai_log: "Nhật ký AI",
 };
 
 const INPUT_CLASS =

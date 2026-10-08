@@ -4,7 +4,7 @@
 #
 #  Dùng:
 #    bash scripts/test-backend.sh                 # chạy toàn bộ
-#    bash scripts/test-backend.sh -k ai_log -x    # truyền tham số cho pytest
+#    bash scripts/test-backend.sh -k task -x    # truyền tham số cho pytest
 #    make test                                    # tương đương
 #
 #  Vì sao tách DB: test DB XOÁ SẠCH bảng nghiệp vụ sau mỗi test (xem

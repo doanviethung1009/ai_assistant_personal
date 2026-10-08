@@ -17,7 +17,6 @@ pytestmark = pytest.mark.db
 
 FIXTURES = Path(__file__).parent / "fixtures"
 DATAFILE = (FIXTURES / "datafile_sample.json").read_bytes()
-AI_LOGS = (FIXTURES / "ai_logs_sample.json").read_bytes()
 JSON_HEADERS = {"Content-Type": "application/json"}
 DATAFILE_SHA = hashlib.sha256(DATAFILE).hexdigest()
 # Nhập thật cần: expect_replaced + expect_sha256 (từ dry-run) và mật khẩu nhập.
@@ -306,35 +305,10 @@ async def test_error_row_returns_200_with_report(client: httpx.AsyncClient) -> N
     assert any(i["code"] == "invalid_enum" for i in body["issues"])
 
 
-async def test_ai_logs_import_then_list(client: httpx.AsyncClient) -> None:
-    resp = await client.post(
-        "/api/v1/import/ai-logs",
-        params={
-            "dry_run": "false",
-            "expect_replaced": "0",
-            "expect_sha256": hashlib.sha256(AI_LOGS).hexdigest(),
-        },
-        content=AI_LOGS,
-        headers=COMMIT_HEADERS,
-    )
-    assert resp.status_code == 200
-    assert resp.json()["committed"] is True
-    listing = await client.get("/api/v1/ai-logs", params={"limit": 100})
-    assert listing.status_code == 200
-    page = listing.json()
-    assert page["total"] == 4
-    assert all(item["handling"] for item in page["items"])
-
-
-async def test_ai_logs_rejects_newer_schema(client: httpx.AsyncClient) -> None:
-    resp = await client.post("/api/v1/import/ai-logs", json={"schema_version": 2, "ai_logs": []})
-    assert resp.status_code == 422
-
-
-async def test_openapi_documents_both_paths(client: httpx.AsyncClient) -> None:
+async def test_openapi_documents_import_paths(client: httpx.AsyncClient) -> None:
     schema = (await client.get("/openapi.json")).json()
     assert "/api/v1/import/datafile" in schema["paths"]
-    assert "/api/v1/import/ai-logs" in schema["paths"]
+    assert "/api/v1/import/ai-logs" not in schema["paths"]
     assert "ImportReport" in schema["components"]["schemas"]
     assert "Replacement" in schema["components"]["schemas"]
 

@@ -1,4 +1,4 @@
-"""Nhập hàng loạt từ file JSON (builder-data.json, ai-logs.json) vào Postgres.
+"""Nhập hàng loạt từ file JSON (builder-data.json) vào Postgres.
 
 ══════════════════════════════════════════════════════════════════════
  CẢNH BÁO: MODULE NÀY GHI ĐÈ BẢN GHI ĐÃ TỒN TẠI.
@@ -45,10 +45,8 @@ from sqlalchemy import Select, Table, insert, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.ai_log import AiLog
 from app.models.app_setting import AppSetting
 from app.models.enums import (
-    AiLogCategory,
     ImportAction,
     ImportEntity,
     ImportKind,
@@ -62,11 +60,9 @@ from app.models.project import Project
 from app.models.task import Task, TaskEvent
 from app.schemas.common import normalize_tags
 from app.schemas.imports import (
-    AiLogsEnvelope,
     DataFileEnvelope,
     EntityCounts,
     FieldChange,
-    ImportAiLog,
     ImportIssue,
     ImportNote,
     ImportProject,
@@ -104,7 +100,6 @@ READ_BATCH = 1_000
 WRITE_BATCH = 500
 
 IMPORT_LOCK_NAME = settings_service.IMPORT_LOCK_NAME
-NO_HANDLING = "(không ghi nhận)"
 
 # Field nhập được của từng thực thể, KHÔNG gồm id/created_at/updated_at/raw_payload.
 PROJECT_FIELDS = ("key", "name", "description", "color", "is_archived")
@@ -142,7 +137,6 @@ NOTE_FIELDS = (
     "external_id",
     "archived_at",
 )
-AI_LOG_FIELDS = ("category", "prompt", "handling", "response")
 
 # Khác biệt ở các cột này KHÔNG tính là "có thay đổi" (D16): chạy lại cùng file
 # phải ra toàn `unchanged`. raw_payload không bao giờ đến từ file nên cũng bỏ.
@@ -153,7 +147,6 @@ _COUNT_KEYS = {
     "task": "tasks",
     "task_event": "task_events",
     "note": "notes",
-    "ai_log": "ai_logs",
     "setting": "settings",
 }
 
@@ -230,22 +223,6 @@ def normalize_color(value: Any) -> str | None:
         r, g, b = colorsys.hls_to_rgb(hue, light, sat)
         return f"#{round(r * 255):02x}{round(g * 255):02x}{round(b * 255):02x}"
     return None
-
-
-def map_ai_log_category(value: str | None) -> AiLogCategory:
-    """Ánh xạ category của file ai-logs sang enum backend (D9).
-
-    File ghi `TOOL`, `UI/UX`, `DOCS`...; enum backend chỉ có app/api/web/tool/other.
-    """
-    if not value:
-        return AiLogCategory.OTHER
-    lowered = value.strip().lower()
-    if lowered == "ui/ux":
-        return AiLogCategory.WEB
-    try:
-        return AiLogCategory(lowered)
-    except ValueError:
-        return AiLogCategory.OTHER
 
 
 def _canon(field_name: str, value: Any) -> Any:
@@ -500,7 +477,7 @@ def _stamps(
 
     Giờ nhập là thứ file không hề nói, nên người dùng cần biết để không nhầm với
     thời điểm tạo thật. Thiếu mỗi updated_at thì lấy created_at (không cảnh báo:
-    đó là quy tắc chuẩn của file ai-logs).
+    đó là quy tắc chuẩn của file nhập).
     """
     created = _aware(created_raw, flag)
     if created is None:
@@ -806,47 +783,6 @@ def _parse_note(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     )
 
 
-def _parse_ai_log(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
-    m = _validate(ctx, "ai_log", index, raw, ImportAiLog)
-    if m is None:
-        return None
-    if not m.prompt.strip() or not m.response.strip():
-        ctx.counts_of("ai_log").invalid += 1
-        ctx.error(
-            "ai_log", "invalid_value", "prompt và response không được rỗng.", index=index, id_=m.id
-        )
-        return None
-    category = map_ai_log_category(m.category)
-    if (
-        m.category
-        and category is AiLogCategory.OTHER
-        and m.category.strip().lower() != AiLogCategory.OTHER.value
-    ):
-        ctx.warn(
-            "ai_log",
-            "category_unknown",
-            f"Category '{m.category[:30]}' không có trong enum, chuyển thành 'other'.",
-            index=index,
-            id_=m.id,
-        )
-    flag = [False]
-    created, updated = _stamps(ctx, "ai_log", index, m.id, m.created_at, m.updated_at, flag)
-    fallback = _absent(raw, AI_LOG_FIELDS)
-    has_handling = bool(m.handling and m.handling.strip())
-    if not has_handling:
-        # "(không ghi nhận)" là chữ do hệ thống bịa ra, không được đè handling thật.
-        fallback.add("handling")
-    values = {
-        "category": category,
-        "prompt": m.prompt,
-        "handling": m.handling if has_handling else NO_HANDLING,
-        "response": m.response,
-        "created_at": created,
-        "updated_at": updated,
-    }
-    return _Parsed(index, m.id, values, False, m.prompt[:80], fallback=fallback)
-
-
 def _parse_rows(
     ctx: _Ctx,
     entity: str,
@@ -994,9 +930,6 @@ NOTE_SPEC = _Spec(
     _sourced_natural,
     _natural_sourced(Note.__table__),
     "duplicate_external_id",
-)
-AI_LOG_SPEC = _Spec(
-    "ai_log", AiLog.__table__, AI_LOG_FIELDS, False, lambda r: None, None, "duplicate_id"
 )
 
 
@@ -1811,48 +1744,6 @@ async def import_datafile(
         session,
         ctx,
         kind=ImportKind.DATAFILE,
-        schema_version=envelope.schema_version,
-        expect_replaced=expect_replaced,
-        expect_sha256=expect_sha256,
-        file_sha256=file_sha256,
-        actor=actor,
-        write=write,
-    )
-
-
-async def import_ai_logs(
-    session: AsyncSession,
-    envelope: AiLogsEnvelope,
-    *,
-    dry_run: bool = True,
-    expect_replaced: int | None = None,
-    expect_sha256: str | None = None,
-    file_sha256: str,
-    actor: str = "import:ai_logs",
-) -> ImportReport:
-    """Nhập `ai-logs.json` vào bảng `ai_logs` (cùng rào chắn như `import_datafile`)."""
-    _require_expect(dry_run, expect_replaced, expect_sha256)
-    await _take_lock(session)
-    ctx = _Ctx(dry_run=dry_run, schema_version=envelope.schema_version)
-    if envelope.model_extra:
-        ctx.note_ignored("file", envelope.model_extra)
-    logs = _parse_rows(ctx, "ai_log", envelope.ai_logs, _parse_ai_log)
-    plan = _Plan()
-    if ctx.n_errors == 0:
-        try:
-            plan = await _plan_entity(ctx, session, AI_LOG_SPEC, logs)
-        except SQLAlchemyError as exc:
-            await session.rollback()
-            _raise_if_lock_timeout(exc)
-            raise
-
-    async def write() -> None:
-        await _apply_plan(session, AI_LOG_SPEC.table, plan)
-
-    return await _finish(
-        session,
-        ctx,
-        kind=ImportKind.AI_LOGS,
         schema_version=envelope.schema_version,
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,

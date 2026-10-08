@@ -1,4 +1,4 @@
-import { ArrowRightToLine, Database, Download, FileJson, FileText, History, Key } from "lucide-react";
+import { ArrowRightToLine, Database, Download, FileJson, FileText, Key } from "lucide-react";
 
 const EXPORTS = [
   {
@@ -7,13 +7,6 @@ const EXPORTS = [
     note: "Backup Project, Task, Sổ tay kèm tags và nhật ký thay đổi.",
     icon: Database,
     color: "from-blue-500/20 to-cyan-500/20 text-blue-600",
-  },
-  {
-    href: "/api/export?format=json&entity=ai_logs",
-    title: "JSON Nhật ký AI",
-    note: "Dữ liệu lịch sử chat AI (ai-logs.json).",
-    icon: History,
-    color: "from-purple-500/20 to-pink-500/20 text-purple-600",
   },
   {
     href: "/api/export?format=json&entity=vault",

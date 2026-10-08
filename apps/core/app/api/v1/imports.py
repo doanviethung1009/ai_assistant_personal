@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
 from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
-from app.schemas.imports import AiLogsEnvelope, DataFileEnvelope, ImportReport
+from app.schemas.imports import DataFileEnvelope, ImportReport
 from app.services import import_service
 
 logger = logging.getLogger(__name__)
@@ -183,33 +183,6 @@ async def import_datafile(
         session,
         envelope,
         include_personal=include_personal,
-        dry_run=dry_run,
-        expect_replaced=expect_replaced,
-        expect_sha256=expect_sha256,
-        file_sha256=hashlib.sha256(body).hexdigest(),
-    )
-
-
-@router.post(
-    "/ai-logs",
-    response_model=ImportReport,
-    summary="Nhập ai-logs.json (GHI ĐÈ bản ghi đã có, không xoá)",
-    openapi_extra=_body_schema(AiLogsEnvelope),
-)
-async def import_ai_logs(
-    request: Request,
-    session: SessionDep,
-    dry_run: DryRunQuery = True,
-    expect_replaced: ExpectReplacedQuery = None,
-    expect_sha256: ExpectSha256Query = None,
-    import_secret: ImportSecretHeader = None,
-) -> ImportReport:
-    _guard_commit(request, dry_run, expect_replaced, expect_sha256, import_secret)
-    body = await _read_body(request)
-    envelope = _parse(body, AiLogsEnvelope)
-    return await import_service.import_ai_logs(
-        session,
-        envelope,
         dry_run=dry_run,
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,

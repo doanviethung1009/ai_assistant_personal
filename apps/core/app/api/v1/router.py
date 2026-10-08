@@ -3,7 +3,6 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from app.api.v1 import (
-    ai_logs,
     imports,
     integrations,
     notes,
@@ -21,7 +20,6 @@ api_router.include_router(tasks.router)
 api_router.include_router(projects.router)
 api_router.include_router(notes.router)
 api_router.include_router(system.router)
-api_router.include_router(ai_logs.router, prefix="/ai-logs", tags=["ai-logs"])
 api_router.include_router(imports.router)
 api_router.include_router(settings.router)
 api_router.include_router(integrations.router)

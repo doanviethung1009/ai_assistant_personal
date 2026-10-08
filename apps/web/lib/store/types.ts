@@ -86,7 +86,6 @@ export interface DataFile {
   notes: StoredNote[];
   /** Danh sách URL đồng bộ (từ v6). Trước đó snapshot() bỏ sót nên file cũ không có. */
   sync_urls?: string[];
-  // ai_logs đã được tách ra file riêng để tránh làm chậm hệ thống.
   meta: {
     minutes_logged_today: number;
     /** Ngày ứng với minutes_logged_today, để reset khi sang ngày mới. */
@@ -96,18 +95,12 @@ export interface DataFile {
   };
 }
 
-export interface AiLogsFile {
-  schema_version: number;
-  exported_at: string;
-  ai_logs: any[]; // Tạm thời dùng any, sẽ cập nhật type sau khi gen-types
-}
-
 /**
  * Lịch sử phiên bản cấu trúc file (builder-data.json):
  *   1 → bản đầu
  *   2 → thêm `deleted_at` cho thùng rác
  *   3 → thêm mảng `notes` cho sổ tay
- *   4 → phiên bản dọn dẹp (tách ai_logs ra file riêng)
+ *   4 → phiên bản dọn dẹp (bỏ ai_logs khỏi file)
  *   5 → thêm scope cho task (work | personal)
  *   6 → lưu `sync_urls` (trước đó snapshot() bỏ sót, nên mất sau mỗi lần khởi động)
  */
