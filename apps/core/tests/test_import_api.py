@@ -337,3 +337,47 @@ async def test_openapi_documents_both_paths(client: httpx.AsyncClient) -> None:
     assert "/api/v1/import/ai-logs" in schema["paths"]
     assert "ImportReport" in schema["components"]["schemas"]
     assert "Replacement" in schema["components"]["schemas"]
+
+
+# ── /import/verify-secret ───────────────────────────────────────────
+
+
+@pytest.mark.db
+async def test_verify_secret_accepts_only_the_real_secret(
+    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    url = "/api/v1/import/verify-secret"
+    ok = await client.post(url, headers={"X-Import-Secret": IMPORT_SECRET})
+    assert ok.status_code == 204 and ok.content == b""
+    wrong = await client.post(url, headers={"X-Import-Secret": "sai-mat-khau-WRONG-123"})
+    missing = await client.post(url)
+    assert wrong.status_code == 403 and missing.status_code == 403
+    for resp in (ok, wrong, missing):
+        assert IMPORT_SECRET not in resp.text and "WRONG" not in resp.text
+    assert IMPORT_SECRET not in caplog.text and "WRONG" not in caplog.text
+
+
+@pytest.mark.db
+async def test_verify_secret_rejected_when_not_configured(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.core.config import settings
+
+    monkeypatch.setattr(settings, "import_commit_secret", None)
+    resp = await client.post(
+        "/api/v1/import/verify-secret", headers={"X-Import-Secret": IMPORT_SECRET}
+    )
+    assert resp.status_code == 403 and "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
+
+
+@pytest.mark.db
+async def test_verify_secret_requires_api_key() -> None:
+    from app.main import app
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as anon:
+        resp = await anon.post(
+            "/api/v1/import/verify-secret", headers={"X-Import-Secret": IMPORT_SECRET}
+        )
+    assert resp.status_code in (401, 403)

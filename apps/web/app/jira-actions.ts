@@ -1,7 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { IS_LOCAL } from "@/lib/api";
+import {
+  CoreApiError,
+  IS_LOCAL,
+  createIntegration,
+  deleteIntegration,
+  patchIntegration,
+} from "@/lib/api";
+import type { IntegrationConnection, IntegrationCreateBody, IntegrationUpdateBody } from "@/lib/types";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
 import { scopeOf } from "@/lib/task-scope";
@@ -26,7 +33,7 @@ function customValueToStrings(val: unknown): string[] {
 
 export async function syncJiraAction(formData: FormData) {
   if (!IS_LOCAL) {
-    return { ok: false, error: "Chỉ hỗ trợ chế độ Local File (Jira Sync ở Phase 1 chỉ hỗ trợ local engine)" };
+    return { ok: false, error: "Đồng bộ Jira ở chế độ api cần pha B4b (endpoint sync phía core chưa có). Hiện chỉ chạy được ở chế độ Local File." };
   }
   
   const url = formData.get("url") as string;
@@ -297,4 +304,243 @@ export async function syncJiraAction(formData: FormData) {
   } catch (error: any) {
     return { ok: false, error: "Lỗi kết nối tới Jira: " + error.message };
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Kết nối Jira lưu ở core (chế độ api, B4a)
+// ═══════════════════════════════════════════════════════════════════════
+//
+// TOKEN LÀ WRITE-ONLY. Nó đi một chiều: form -> Server Action -> core (mã hoá ở core). Không
+// hàm nào dưới đây trả token về client, không log, và thông báo lỗi được lọc để không lặp
+// lại token dù core có lỡ echo. Sync thật (`/integrations/{id}/sync`) thuộc B4b, chưa có.
+
+export interface ConnectionResult {
+  ok: boolean;
+  error?: string;
+  /** Mã HTTP của core, để UI nhận ra 503 (thiếu INTEGRATION_SECRET_KEY) và 409 (trùng tên). */
+  status?: number;
+  connection?: IntegrationConnection;
+}
+
+const MAX_LOCAL_ITEMS = 50;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function str(v: unknown, max: number): string | undefined {
+  return typeof v === "string" && v.length <= max ? v : undefined;
+}
+
+/** Đổi lỗi core thành thông báo an toàn: 403/409/503 tự viết, lỗi khác cắt ~500 ký tự và gỡ token. */
+function connectionError(error: unknown, token?: string): ConnectionResult {
+  if (error instanceof CoreApiError) {
+    if (error.status === 403) {
+      return { ok: false, status: 403, error: "Core từ chối yêu cầu (sai khoá truy cập của web tới core). Kiểm tra CORE_API_KEY." };
+    }
+    if (error.status === 409) {
+      return { ok: false, status: 409, error: "Đã có kết nối Jira trùng tên. Hãy đặt tên khác." };
+    }
+    if (error.status === 503) {
+      return {
+        ok: false,
+        status: 503,
+        error:
+          "Core chưa bật lưu token (503): thiếu INTEGRATION_SECRET_KEY. Đặt biến này trong .env của core (sinh khoá bằng scripts/gen-env.sh) rồi khởi động lại service api.",
+      };
+    }
+    let msg = error.message.slice(0, 500);
+    if (token && token.length >= 4) msg = msg.split(token).join("***");
+    return { ok: false, status: error.status, error: msg };
+  }
+  console.error("kết nối Jira thất bại", error instanceof Error ? error.name : "unknown");
+  return { ok: false, error: "Không gọi được core API. Kiểm tra service api." };
+}
+
+interface ParsedFields {
+  name?: string;
+  base_url?: string;
+  account_email?: string;
+  token?: string;
+  config: { jql: string | null; project_key: string | null; project_name: string | null };
+}
+
+/**
+ * Kiểm kiểu và độ dài các trường biểu mẫu. Server Action là endpoint công khai nên không
+ * tin chữ ký TypeScript. Lỗi trả về KHÔNG chứa giá trị người dùng nhập.
+ */
+function parseFields(input: unknown): ParsedFields | string {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return "Dữ liệu không hợp lệ";
+  const r = input as Record<string, unknown>;
+  const name = str(r.name, 100)?.trim();
+  const baseUrl = str(r.base_url, 2048)?.trim();
+  const email = str(r.account_email, 200)?.trim();
+  if (!name) return "Tên kết nối bắt buộc (tối đa 100 ký tự)";
+  if (!baseUrl) return "URL Jira bắt buộc";
+  if (!email) return "Email bắt buộc";
+  let token: string | undefined;
+  if (r.token !== undefined && r.token !== null && r.token !== "") {
+    if (typeof r.token !== "string" || r.token.length < 8 || r.token.length > 512) {
+      return "Token phải dài 8-512 ký tự";
+    }
+    token = r.token;
+  }
+  const opt = (v: unknown, max: number) => {
+    if (v === undefined || v === null || v === "") return null;
+    return typeof v === "string" && v.length <= max ? v.trim() || null : undefined;
+  };
+  const jql = opt(r.jql, 2000);
+  const projectKey = opt(r.project_key, 100);
+  const projectName = opt(r.project_name, 200);
+  if (jql === undefined || projectKey === undefined || projectName === undefined) {
+    return "JQL hoặc dự án quá dài";
+  }
+  return {
+    name,
+    base_url: baseUrl,
+    account_email: email,
+    token,
+    config: { jql, project_key: projectKey ? projectKey.toUpperCase() : null, project_name: projectName },
+  };
+}
+
+/**
+ * Tạo hoặc sửa một kết nối Jira. Có `id` hợp lệ = sửa, không có = tạo mới.
+ *
+ * Sửa mà không gửi `token` thì core giữ token cũ. Đổi `base_url` khi kết nối đang có token
+ * thì core BẮT BUỘC có token mới (hoặc xoá token), nếu không trả 422: chặn việc gửi token
+ * cũ sang host lạ.
+ */
+export async function saveIntegrationAction(input: unknown): Promise<ConnectionResult> {
+  if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
+  const parsed = parseFields(input);
+  if (typeof parsed === "string") return { ok: false, error: parsed };
+  const rawId = (input as Record<string, unknown>).id;
+  try {
+    let connection: IntegrationConnection;
+    if (rawId === undefined || rawId === null || rawId === "") {
+      const body: IntegrationCreateBody = {
+        kind: "jira",
+        name: parsed.name as string,
+        base_url: parsed.base_url as string,
+        account_email: parsed.account_email as string,
+        config: parsed.config,
+      };
+      if (parsed.token) body.token = parsed.token;
+      connection = await createIntegration(body);
+    } else {
+      if (typeof rawId !== "string" || !UUID_RE.test(rawId)) return { ok: false, error: "id không hợp lệ" };
+      const body: IntegrationUpdateBody = {
+        name: parsed.name,
+        base_url: parsed.base_url,
+        account_email: parsed.account_email,
+        config: parsed.config,
+        clear_token: false,
+      };
+      if (parsed.token) body.token = parsed.token;
+      connection = await patchIntegration(rawId, body);
+    }
+    revalidatePath("/data");
+    return { ok: true, connection };
+  } catch (error) {
+    return connectionError(error, parsed.token);
+  }
+}
+
+/** Xoá token đang lưu của một kết nối (kết nối vẫn còn, phải nhập token mới mới dùng được). */
+export async function clearIntegrationTokenAction(id: unknown): Promise<ConnectionResult> {
+  if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
+  if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
+  try {
+    const connection = await patchIntegration(id, { clear_token: true });
+    revalidatePath("/data");
+    return { ok: true, connection };
+  } catch (error) {
+    return connectionError(error);
+  }
+}
+
+/** Xoá kết nối cùng token đã mã hoá. KHÔNG hoàn tác. */
+export async function deleteIntegrationAction(id: unknown): Promise<ConnectionResult> {
+  if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
+  if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
+  try {
+    await deleteIntegration(id);
+    revalidatePath("/data");
+    return { ok: true };
+  } catch (error) {
+    return connectionError(error);
+  }
+}
+
+export interface MigrateItemResult {
+  localId: string;
+  name: string;
+  ok: boolean;
+  error?: string;
+}
+
+/**
+ * Chuyển các cấu hình Jira cũ trong localStorage lên server (D-B4c), MỘT LẦN.
+ *
+ * Mỗi mục độc lập: mục lỗi (trùng tên, token ngắn, URL không https...) không chặn mục khác.
+ * Client chỉ xoá khỏi localStorage những `localId` có `ok: true`; mục lỗi giữ lại để sửa
+ * tay. Token đi qua đây rồi vào core, không bao giờ trả ngược lại.
+ */
+export async function migrateLocalIntegrationsAction(
+  items: unknown,
+): Promise<{ ok: boolean; error?: string; results: MigrateItemResult[] }> {
+  if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api", results: [] };
+  if (!Array.isArray(items) || items.length === 0 || items.length > MAX_LOCAL_ITEMS) {
+    return { ok: false, error: `Cần 1-${MAX_LOCAL_ITEMS} cấu hình`, results: [] };
+  }
+  const results: MigrateItemResult[] = [];
+  for (const raw of items) {
+    const rec = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+    const localId = str(rec.id, 100) ?? "";
+    const nameForUi = str(rec.name, 100) ?? "(không tên)";
+    // Cấu hình cũ cho phép gõ "host.atlassian.net" không scheme (code sync cũ tự thêm https).
+    let url = str(rec.url, 2048)?.trim().replace(/\/+$/, "");
+    if (url && !/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) url = `https://${url}`;
+    const parsed = parseFields({
+      name: rec.name,
+      base_url: url,
+      account_email: rec.email,
+      token: rec.token,
+      jql: rec.jql,
+      project_key: rec.projectKey === "NEW" ? "" : rec.projectKey,
+      project_name: rec.projectName,
+    });
+    if (!localId || typeof parsed === "string") {
+      results.push({ localId, name: nameForUi, ok: false, error: typeof parsed === "string" ? parsed : "Thiếu id" });
+      continue;
+    }
+    if (!parsed.token) {
+      results.push({ localId, name: nameForUi, ok: false, error: "Thiếu token" });
+      continue;
+    }
+    try {
+      await createIntegration({
+        kind: "jira",
+        name: parsed.name as string,
+        base_url: parsed.base_url as string,
+        account_email: parsed.account_email as string,
+        token: parsed.token,
+        config: parsed.config,
+      });
+      results.push({ localId, name: nameForUi, ok: true });
+    } catch (error) {
+      const failed = connectionError(error, parsed.token);
+      results.push({
+        localId,
+        name: nameForUi,
+        ok: false,
+        error:
+          failed.status === 409
+            ? "trùng tên với một kết nối đã có trên server; bấm Bỏ khỏi trình duyệt rồi tạo lại bằng form với tên khác"
+            : failed.error,
+      });
+      // Thiếu khoá phía core: các mục sau cũng sẽ hỏng y hệt, dừng sớm.
+      if (failed.status === 503) break;
+    }
+  }
+  revalidatePath("/data");
+  return { ok: results.length > 0 && results.every((r) => r.ok), results };
 }

@@ -195,3 +195,14 @@ class SettingKey(StrEnum):
 
     CURRENT_USERS = "current_users"
     SYNC_URLS = "sync_urls"
+
+
+class IntegrationKind(StrEnum):
+    """Loại kết nối tích hợp (bảng `integration_connections`).
+
+    CẠM BẪY: có CHECK ở DB (`ck_integration_connections_kind_valid`) và `alembic check`
+    KHÔNG so sánh CHECK. Thêm giá trị mà quên migration DROP/ADD CONSTRAINT thì INSERT
+    giá trị mới bị DB từ chối.
+    """
+
+    JIRA = "jira"

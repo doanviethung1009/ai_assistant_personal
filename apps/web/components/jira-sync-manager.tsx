@@ -2,9 +2,10 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { syncJiraAction } from "@/app/jira-actions";
+import { STORAGE_KEY } from "@/lib/jira-storage";
 import { RefreshCw, ServerCog, Edit2, Trash2, CheckCircle2, AlertCircle, Save, X, Plus, Clock, KeySquare, Mail, Link as LinkIcon, FolderKanban, TerminalSquare } from "lucide-react";
 
-const STORAGE_KEY = "builder_jira_configs_v2";
+
 
 export interface JiraConfig {
   id: string;

@@ -196,3 +196,29 @@ export type BrowserHistoryRow = Schemas["BrowserHistoryRead"];
 export type BrowserHistoryBatchItem = Schemas["BrowserHistoryItem"];
 export type BrowserHistoryBatchResult = Schemas["BrowserHistoryBatchResult"];
 export type BrowserHistoryImportReport = Schemas["BrowserHistoryImportReport"];
+
+// ── Tích hợp (B4a) ───────────────────────────────────────────────────────
+// Alias thuần từ schema sinh. IntegrationRead không có token: chỉ has_secret + secret_last4.
+export type IntegrationConnection = Schemas["IntegrationRead"];
+export type IntegrationCreateBody = Schemas["IntegrationCreate"];
+export type IntegrationUpdateBody = Schemas["IntegrationUpdate"];
+/**
+ * OpenAPI ghi `status`/`priority` là bắt buộc vì có default, nhưng core chỉ ghi các trường
+ * client THỰC SỰ gửi (model_fields_set). Làm optional để mapper được phép bỏ `priority`.
+ */
+export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority"> & {
+  status?: Schemas["TaskUpsert"]["status"];
+  priority?: Schemas["TaskUpsert"]["priority"];
+};
+export type TaskUpsertResult = Schemas["TaskUpsertResult"];
+
+/**
+ * Kết quả upsert hiển thị cho người dùng. Phía web bổ sung: `skipped_no_key` (dòng Excel
+ * thiếu Issue Key, không gửi được), `errors_total`/`warnings_total` (tổng thật trước khi
+ * cắt còn 20 mục) và biến `index` của errors/warnings thành SỐ DÒNG EXCEL (dòng 1 = tiêu đề).
+ */
+export interface UpsertSummary extends TaskUpsertResult {
+  skipped_no_key?: number;
+  errors_total?: number;
+  warnings_total?: number;
+}

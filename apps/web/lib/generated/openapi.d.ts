@@ -92,6 +92,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/upsert-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upsert hàng loạt task từ nguồn tích hợp (idempotent)
+         * @description Khớp theo (source, external_id) trên task còn sống; chỉ ghi scope=work, task personal trùng khoá bị bỏ qua (skipped_personal). Tối đa 1000 item, body tối đa 20 MB (413). Đòi header X-Import-Secret (403). `tags` được gộp, `description` chỉ điền khi task đang rỗng. `source` không được là `manual`.
+         */
+        post: operations["upsert_batch_api_v1_tasks_upsert_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/assignees": {
         parameters: {
             query?: never;
@@ -549,6 +569,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/import/verify-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Kiểm mật khẩu nhập (X-Import-Secret), không ghi gì
+         * @description Cho web xác minh mật khẩu THẬT trước khi tải URL (tới 20 MB) hay parse Excel.
+         *
+         *     Nếu chỉ kiểm cú pháp, người gọi Server Action giả chưa biết mật khẩu vẫn gây tốn
+         *     băng thông/CPU. Không đọc body, không chạm DB; 403 như mọi đường dùng mật khẩu nhập.
+         */
+        post: operations["verify_secret_api_v1_import_verify_secret_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/import/datafile": {
         parameters: {
             query?: never;
@@ -685,6 +728,42 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Danh sách kết nối (không bao giờ trả token) */
+        get: operations["list_connections_api_v1_integrations_get"];
+        put?: never;
+        /** Tạo kết nối (token chỉ ghi; 503 nếu thiếu INTEGRATION_SECRET_KEY) */
+        post: operations["create_connection_api_v1_integrations_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/integrations/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Xoá kết nối cùng token đã mã hoá */
+        delete: operations["delete_connection_api_v1_integrations__connection_id__delete"];
+        options?: never;
+        head?: never;
+        /** Sửa kết nối (không gửi token = giữ token cũ; clear_token=true để xoá) */
+        patch: operations["update_connection_api_v1_integrations__connection_id__patch"];
         trace?: never;
     };
 }
@@ -1014,6 +1093,111 @@ export interface components {
                 [key: string]: string[];
             };
         };
+        /** IntegrationCreate */
+        IntegrationCreate: {
+            /**
+             * Token
+             * @description API token, chỉ ghi. Rỗng hoặc null = không đổi token đang lưu.
+             */
+            token?: string | null;
+            /** @default jira */
+            kind: components["schemas"]["IntegrationKind"];
+            /** Name */
+            name: string;
+            /**
+             * Base Url
+             * @description https://<tên miền>, không IP, không path
+             */
+            base_url: string;
+            /** Account Email */
+            account_email: string;
+            config?: components["schemas"]["JiraConfig"];
+        };
+        /**
+         * IntegrationKind
+         * @description Loại kết nối tích hợp (bảng `integration_connections`).
+         *
+         *     CẠM BẪY: có CHECK ở DB (`ck_integration_connections_kind_valid`) và `alembic check`
+         *     KHÔNG so sánh CHECK. Thêm giá trị mà quên migration DROP/ADD CONSTRAINT thì INSERT
+         *     giá trị mới bị DB từ chối.
+         * @enum {string}
+         */
+        IntegrationKind: "jira";
+        /**
+         * IntegrationRead
+         * @description Kết nối trả cho client. KHÔNG có token hay ciphertext, dưới mọi hình thức.
+         */
+        IntegrationRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            kind: components["schemas"]["IntegrationKind"];
+            /** Name */
+            name: string;
+            /** Base Url */
+            base_url: string;
+            /** Account Email */
+            account_email: string;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Has Secret */
+            has_secret: boolean;
+            /** Secret Last4 */
+            secret_last4: string | null;
+            /** Last Sync At */
+            last_sync_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
+         * IntegrationUpdate
+         * @description Patch bán phần: khoá vắng thì giữ nguyên. `kind` không đổi được.
+         */
+        IntegrationUpdate: {
+            /**
+             * Token
+             * @description API token, chỉ ghi. Rỗng hoặc null = không đổi token đang lưu.
+             */
+            token?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Base Url */
+            base_url?: string | null;
+            /** Account Email */
+            account_email?: string | null;
+            /** @description Có gửi thì THAY toàn bộ config, không gộp. */
+            config?: components["schemas"]["JiraConfig"] | null;
+            /**
+             * Clear Token
+             * @description true = xoá token đang lưu. Không dùng cùng `token`.
+             * @default false
+             */
+            clear_token: boolean;
+        };
+        /**
+         * JiraConfig
+         * @description `config` của kết nối Jira. Khoá lạ bị từ chối để không nhét secret vào đây.
+         */
+        JiraConfig: {
+            /** Jql */
+            jql?: string | null;
+            /** Project Key */
+            project_key?: string | null;
+            /** Project Name */
+            project_name?: string | null;
+        };
         /** KeyChange */
         KeyChange: {
             /** Original */
@@ -1238,6 +1422,20 @@ export interface components {
         Page_BrowserHistoryRead_: {
             /** Items */
             items: components["schemas"]["BrowserHistoryRead"][];
+            /**
+             * Total
+             * @description Tổng số bản ghi khớp filter, không tính phân trang
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** Page[IntegrationRead] */
+        Page_IntegrationRead_: {
+            /** Items */
+            items: components["schemas"]["IntegrationRead"][];
             /**
              * Total
              * @description Tổng số bản ghi khớp filter, không tính phân trang
@@ -1713,6 +1911,84 @@ export interface components {
             scope?: components["schemas"]["TaskScope"] | null;
         };
         /**
+         * TaskUpsert
+         * @description Một task từ nguồn ngoài.
+         *
+         *     Khoá khớp là `(source của lô, external_id)`. Khi CẬP NHẬT chỉ các trường client
+         *     thực sự gửi mới bị ghi đè (xét bằng `model_fields_set`), nên một nguồn không biết
+         *     `status` sẽ không đặt lại status về `todo`. Khi TẠO MỚI, trường vắng dùng mặc định.
+         *
+         *     `tags` được GỘP và `description` chỉ điền khi task đang rỗng (xem task_sync_service),
+         *     để dữ liệu User tự thêm/sửa không mất sau mỗi lần sync.
+         *
+         *     `external_url` chỉ nhận http/https (chống `javascript:`/`data:` bị render thành link).
+         *     GHI CHÚ: `TaskCreate` (POST /tasks) chưa có ràng buộc này; ngoài phạm vi B4a.
+         */
+        TaskUpsert: {
+            /** External Id */
+            external_id: string;
+            /** Title */
+            title: string;
+            /** Description */
+            description?: string | null;
+            /** Assignee */
+            assignee?: string | null;
+            /** @default todo */
+            status: components["schemas"]["TaskStatus"];
+            /** @default medium */
+            priority: components["schemas"]["TaskPriority"];
+            /** Due At */
+            due_at?: string | null;
+            /** Scheduled For */
+            scheduled_for?: string | null;
+            /** Estimate Minutes */
+            estimate_minutes?: number | null;
+            /** Tags */
+            tags?: string[];
+            /** External Url */
+            external_url?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Completed At */
+            completed_at?: string | null;
+            /** Project Key */
+            project_key?: string | null;
+            /** Project Name */
+            project_name?: string | null;
+            /** Raw Payload */
+            raw_payload?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /** TaskUpsertBatch */
+        TaskUpsertBatch: {
+            /** @description Nguồn tích hợp, không được là `manual` */
+            source: components["schemas"]["TaskSource"];
+            /** Items */
+            items: components["schemas"]["TaskUpsert"][];
+        };
+        /** TaskUpsertResult */
+        TaskUpsertResult: {
+            /** Added */
+            added: number;
+            /** Updated */
+            updated: number;
+            /** Unchanged */
+            unchanged: number;
+            /**
+             * Skipped Personal
+             * @description Trùng khoá với task scope=personal nên bị bỏ qua, không ghi đè
+             */
+            skipped_personal: number;
+            /** Errors */
+            errors?: components["schemas"]["UpsertItemError"][];
+            /**
+             * Warnings
+             * @description Item đã upsert nhưng bị bỏ raw_payload (quá lớn, quá sâu, hết ngân sách lô)
+             */
+            warnings?: components["schemas"]["UpsertItemWarning"][];
+        };
+        /**
          * TaskView
          * @description Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
          *
@@ -1755,6 +2031,29 @@ export interface components {
              * @default 0
              */
             purged_now: number;
+        };
+        /** UpsertItemError */
+        UpsertItemError: {
+            /**
+             * Index
+             * @description Vị trí của item trong `items` (từ 0)
+             */
+            index: number;
+            /** Reason */
+            reason: string;
+        };
+        /**
+         * UpsertItemWarning
+         * @description Item VẪN được upsert nhưng một phần dữ liệu bị bỏ (hiện chỉ có `raw_payload`).
+         */
+        UpsertItemWarning: {
+            /**
+             * Index
+             * @description Vị trí của item trong `items` (từ 0)
+             */
+            index: number;
+            /** Reason */
+            reason: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1898,6 +2197,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskStatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_batch_api_v1_tasks_upsert_batch_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TaskUpsertBatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TaskUpsertResult"];
                 };
             };
             /** @description Validation Error */
@@ -2959,6 +3294,36 @@ export interface operations {
             };
         };
     };
+    verify_secret_api_v1_import_verify_secret_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
+                "X-Import-Secret"?: string | null;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     import_datafile_api_v1_import_datafile_post: {
         parameters: {
             query?: {
@@ -3331,6 +3696,135 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BrowserHistoryDeleteResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_connections_api_v1_integrations_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_IntegrationRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_connection_api_v1_integrations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntegrationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_connection_api_v1_integrations__connection_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_connection_api_v1_integrations__connection_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IntegrationUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IntegrationRead"];
                 };
             };
             /** @description Validation Error */

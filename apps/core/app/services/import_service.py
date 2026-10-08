@@ -79,7 +79,7 @@ from app.schemas.imports import (
 from app.schemas.settings import normalize_names, normalize_urls
 from app.services import settings_service
 from app.services.errors import ConflictError, ValidationError
-from app.services.task_service import _jsonable
+from app.services.jsonable import jsonable
 
 logger = logging.getLogger(__name__)
 
@@ -262,7 +262,7 @@ def _canon(field_name: str, value: Any) -> Any:
 
 def _display(value: Any) -> Any:
     """Giá trị đưa vào báo cáo/payload: JSON được, chuỗi dài bị cắt."""
-    out = _jsonable(value)
+    out = jsonable(value)
     if isinstance(out, str) and len(out) > MAX_TEXT:
         return out[:MAX_TEXT]
     return out
@@ -1171,7 +1171,7 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
                 spec.entity,
                 target["id"],
                 ImportAction.REPLACED,
-                _jsonable(target),
+                jsonable(target),
                 [c.field for c in changes],
             )
         )
@@ -1318,7 +1318,7 @@ async def _plan_settings(
                 "setting",
                 entity_id,
                 ImportAction.REPLACED,
-                {"key": key.value, "value": _jsonable(row.value)},
+                {"key": key.value, "value": jsonable(row.value)},
                 ["value"],
             )
         )
@@ -1513,7 +1513,7 @@ def _generated_event(
         "task_id": task_id,
         "event_type": event_type,
         "actor": "import:datafile",
-        "payload": _jsonable(payload),
+        "payload": jsonable(payload),
         "created_at": ctx.now,
     }
 

@@ -34,7 +34,8 @@ import {
   type ImportMode,
   type ImportSummary,
 } from "@/lib/store/transfer";
-import type { ImportReport, NoteKind, TaskPriority, TaskScope, TaskStatus } from "@/lib/types";
+import type { ImportReport, NoteKind, TaskPriority, TaskScope, TaskStatus, UpsertSummary } from "@/lib/types";
+import { authorizeImport, pushRowsToCore } from "@/lib/excel-upsert";
 
 export interface ActionResult {
   ok: boolean;
@@ -599,16 +600,32 @@ function toDirectDownloadUrl(url: string): string {
   return url;
 }
 
-export async function syncFromUrlAction(url: string): Promise<ActionResult & { count?: number; skipped_personal?: number }> {
-  // Kiểm IS_LOCAL TRƯỚC khi fetch: ở chế độ api việc nhập task cần endpoint upsert của
-  // B4, và không có lý do để server đi tải URL của người dùng rồi mới bị từ chối.
-  if (!api.IS_LOCAL) {
-    return { ok: false, error: "Cào URL ở chế độ api cần endpoint upsert của pha B4 (chưa có)." };
-  }
+/**
+ * Cào một link Excel/CSV đã qua allowlist rồi nhập task.
+ *
+ * Chế độ api: web vẫn tải và đọc file (giữ allowlist + stream trần 20 MB), ánh xạ dòng sang
+ * TaskUpsert rồi đẩy qua `upsert-batch` với `source` cố định `jira` (khớp chế độ file).
+ * Cần mật khẩu nhập vì là ghi đè hàng loạt; mật khẩu không bao giờ vào log hay thông báo lỗi.
+ * Mọi tham số kiểm kiểu lại ở đây vì Server Action là endpoint công khai.
+ */
+export async function syncFromUrlAction(
+  url: unknown,
+  secret?: unknown,
+): Promise<ActionResult & { count?: number; skipped_personal?: number; summary?: UpsertSummary }> {
+  if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   // Server Action là endpoint công khai: kiểm URL gốc trước, rồi kiểm lại ở MỖI bước
   // redirect bên trong fetchAllowlisted (SSRF).
   const rejected = syncUrlError(url);
   if (rejected !== null) return { ok: false, error: rejected };
+
+  // Chế độ api: hỏi core xem mật khẩu đúng không TRƯỚC khi fetch URL, để server không bị
+  // dùng làm công cụ tải URL ngoài bởi request chưa xác thực.
+  let verifiedSecret = "";
+  if (!api.IS_LOCAL) {
+    const auth = await authorizeImport(secret);
+    if (!auth.ok) return { ok: false, error: auth.error };
+    verifiedSecret = auth.secret;
+  }
 
   try {
     const downloadUrl = toDirectDownloadUrl(url);
@@ -633,6 +650,18 @@ export async function syncFromUrlAction(url: string): Promise<ActionResult & { c
     if (!sheet) throw new Error('Không đọc được sheet');
     const rows = XLSX.utils.sheet_to_json(sheet) as any[];
     if (!rows || rows.length === 0) throw new Error('Sheet rỗng, không có dữ liệu');
+
+    if (!api.IS_LOCAL) {
+      const out = await pushRowsToCore(rows, verifiedSecret);
+      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại" };
+      revalidateAll();
+      return {
+        ok: true,
+        count: out.summary.added + out.summary.updated,
+        skipped_personal: out.summary.skipped_personal,
+        summary: out.summary,
+      };
+    }
 
     // Delegate to the unified import logic (handles Company, Projects, Labels, dedup, etc.)
     const { importBulkTasksAction } = await import("@/app/actions-import");

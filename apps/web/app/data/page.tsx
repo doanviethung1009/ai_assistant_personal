@@ -9,6 +9,7 @@ import { DataImport } from "@/components/data-import";
 import { DataSourceCard } from "@/components/data-source-card";
 import { DataTabs, LocalOnlyNotice, parseDataTab } from "@/components/data-tabs";
 import { FileUploadManager } from "@/components/file-upload-manager";
+import { JiraConnectionsManager } from "@/components/jira-connections-manager";
 import { JiraSyncManager } from "@/components/jira-sync-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
 import { UrlSyncManager } from "@/components/url-sync-manager";
@@ -19,10 +20,12 @@ import {
   getAssigneesApi,
   getCurrentUsersApi,
   getSyncUrlsApi,
+  listIntegrations,
   listNotes,
   listProjects,
   listTasks,
 } from "@/lib/api";
+import type { IntegrationConnection } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -35,9 +38,10 @@ const DIVIDER = <div className="h-px w-full bg-[var(--color-border)]/50"></div>;
 /**
  * Trang Dữ liệu & Cấu hình, chia bốn tab (`?tab=`): xuất, nhập, đồng bộ, nguy hiểm.
  *
- * Phần nào chỉ chạy ở DATA_SOURCE=file/memory (nhập JSON, khôi phục, Jira, URL đồng
- * bộ, người dùng hiện tại) thì ở chế độ api hiện thông báo thay vì để người dùng bấm
- * rồi mới bị từ chối. Mọi dữ liệu trang cần được tải song song trong một Promise.all.
+ * Phần nào chỉ chạy ở DATA_SOURCE=file/memory (nhập JSON, khôi phục, xoá hàng loạt)
+ * thì ở chế độ api hiện thông báo thay vì để người dùng bấm rồi mới bị từ chối.
+ * Từ B4a, Excel, cào URL và kết nối Jira chạy được ở cả hai chế độ (api đi qua
+ * upsert-batch và integrations). Mọi dữ liệu trang cần được tải song song trong một Promise.all.
  */
 export default async function DataPage({
   searchParams,
@@ -53,16 +57,30 @@ export default async function DataPage({
   let syncUrls: string[];
   let currentUsers: string[];
   let assignees: string[];
+  let connections: IntegrationConnection[] = [];
+  let connectionsTotal = 0;
+  let connectionsError: string | null = null;
 
   try {
-    const [tasks, projects, notes, urls, users, assigneeList] = await Promise.all([
+    const [tasks, projects, notes, urls, users, assigneeList, integrationPage] = await Promise.all([
       listTasks({ includeClosed: true, limit: 1 }),
       listProjects(true),
       listNotes({ limit: 1 }),
       getSyncUrlsApi(),
       getCurrentUsersApi(),
       getAssigneesApi(),
+      // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
+      IS_LOCAL
+        ? Promise.resolve(null)
+        : listIntegrations().catch((error: unknown) => {
+            connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
+            return null;
+          }),
     ]);
+    if (integrationPage) {
+      connections = integrationPage.items;
+      connectionsTotal = integrationPage.total;
+    }
     taskCount = tasks.total;
     projectCount = projects.length;
     projectList = projects.filter((p) => !p.is_archived);
@@ -117,7 +135,10 @@ export default async function DataPage({
               {DIVIDER}
               <DataImport allowReplace={false} kinds={["tasks-csv", "projects-csv", "notes-csv"]} />
               {DIVIDER}
-              <LocalOnlyNotice feature="Nhập file Excel Jira và khôi phục từ bản sao lưu cục bộ" />
+              {/* Excel đi qua upsert-batch của core (B4a) nên cần mật khẩu nhập. */}
+              <FileUploadManager requireSecret />
+              {DIVIDER}
+              <LocalOnlyNotice feature="Khôi phục từ bản sao lưu cục bộ" />
             </>
           )}
           {/* Chrome và Vault dùng kho riêng, không phụ thuộc DATA_SOURCE nên luôn hiện. */}
@@ -128,8 +149,8 @@ export default async function DataPage({
       )}
 
       {tab === "dong-bo" && (
-        // Người dùng hiện tại và danh sách URL dùng được ở cả hai chế độ (B2, lưu ở Postgres
-        // khi DATA_SOURCE=api). Jira sync và nút cào URL cần backend upsert của B4.
+        // Người dùng hiện tại, URL đồng bộ, cào URL (upsert-batch) và kết nối Jira đều dùng
+        // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api chờ pha B4b.
         <div className="flex flex-col gap-8">
           <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
           {IS_LOCAL ? (
@@ -138,9 +159,21 @@ export default async function DataPage({
               projects={projectList.map((p) => ({ id: p.id, key: p.key, name: p.name }))}
             />
           ) : (
-            <LocalOnlyNotice feature="Đồng bộ Jira" />
+            <>
+              {connectionsError !== null && (
+                <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-700 dark:text-red-400">
+                  Không tải được danh sách kết nối Jira: {connectionsError}
+                </p>
+              )}
+              {connectionsTotal > connections.length && (
+                <p role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-[var(--color-ink-muted)]">
+                  Chỉ hiện {connections.length}/{connectionsTotal} kết nối (giới hạn 100 của core); phần còn lại chưa hiển thị.
+                </p>
+              )}
+              <JiraConnectionsManager connections={connections} />
+            </>
           )}
-          <UrlSyncManager initialUrls={syncUrls} canSync={IS_LOCAL} />
+          <UrlSyncManager initialUrls={syncUrls} requireSecret={!IS_LOCAL} />
         </div>
       )}
 

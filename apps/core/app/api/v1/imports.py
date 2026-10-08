@@ -22,7 +22,7 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
@@ -145,6 +145,21 @@ def _guard_commit(
             detail="dry_run=false bắt buộc có expect_replaced và expect_sha256.",
         )
     guard_import_secret(request, secret)
+
+
+@router.post(
+    "/verify-secret",
+    status_code=204,
+    summary="Kiểm mật khẩu nhập (X-Import-Secret), không ghi gì",
+)
+async def verify_secret(request: Request, import_secret: ImportSecretHeader = None) -> Response:
+    """Cho web xác minh mật khẩu THẬT trước khi tải URL (tới 20 MB) hay parse Excel.
+
+    Nếu chỉ kiểm cú pháp, người gọi Server Action giả chưa biết mật khẩu vẫn gây tốn
+    băng thông/CPU. Không đọc body, không chạm DB; 403 như mọi đường dùng mật khẩu nhập.
+    """
+    guard_import_secret(request, import_secret)
+    return Response(status_code=204)
 
 
 @router.post(

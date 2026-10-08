@@ -882,3 +882,11 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - backend-dev: bảng `browser_history`, migration `b8c4d6e0f3a5`, 4 endpoint, nhập `chrome-history.json`, test. frontend-dev: `execFile`, đẩy lên core theo lô, `/history` phân trang, panel nhập.
   - 3 reviewer: DELETE không đòi mật khẩu, lệch múi giờ web/core (giờ lệch lên không tự sửa vì GREATEST), index chưa khớp truy vấn, deadlock lô song song, 422 lộ URL, thiếu giới hạn field. Đã sửa một vòng; chạy lại kiểm chứng riêng.
 - **Phản hồi:** B3 xong code và tài liệu, 479 test pass, tsc sạch. Chưa chạy UAT với Chrome thật và `make smoke` (không có Docker). Chưa commit/push.
+
+### [09-10-2026 00:30] | Category: [API]
+- **Prompt:** Merge B3, rồi làm pha B4 (Jira sync ở backend), phần B4a: lưu kết nối Jira mã hoá và upsert hàng loạt.
+- **Xử lý:**
+  - Merge #15 (B3) vào `main`. Tạo nhánh `feat/jira-sync-b4`; thêm `cryptography` (uv.lock chỉ thêm 3 gói), biến `INTEGRATION_SECRET_KEY` vào compose và `make env`.
+  - backend-dev: `integration_connections`, `/integrations`, `/tasks/upsert-batch`, `/import/verify-secret`. frontend-dev: quản lý kết nối, chuyển localStorage một lần, Excel/URL sync qua upsert-batch.
+  - Review (code, bảo mật, DB) hai lượt (backend rồi web). Lỗi đáng kể đã sửa: priority bị đặt lại về medium, tags/description bị ghi đè, thiếu completed_at/created_at, thiếu trần body, lọc raw_payload theo giá trị, ciphertext chưa gắn kết nối, race tạo project, JiraQuickSync ghi lại token vào localStorage, mật khẩu chỉ kiểm cú pháp trước khi tải URL. Xoá route GET /api/sync.
+- **Phản hồi:** B4a xong code và tài liệu; 597 test pass, tsc sạch. Chưa UAT, chưa `make smoke`. B4b (chạy sync) chưa làm.

@@ -48,6 +48,18 @@ class Settings(BaseSettings):
     # SecretStr: repr/log/dump không in giá trị.
     import_commit_secret: SecretStr | None = Field(default=None, min_length=16)
 
+    # Khoá mã hoá token của integration (Jira...) khi lưu DB: chuỗi Fernet (32 byte
+    # base64 url-safe, sinh bằng `Fernet.generate_key()`). Khác API_KEY và khác
+    # IMPORT_COMMIT_SECRET. Để trống = tắt lưu token (endpoint trả 503), app VẪN khởi
+    # động. SecretStr: repr/log/dump không in giá trị. Mất khoá thì phải nhập lại
+    # token. Xem core/secrets.py.
+    integration_secret_key: SecretStr = Field(default=SecretStr(""))
+    # Khoá CŨ để xoay khoá (danh sách phân cách dấu phẩy). Chỉ dùng để GIẢI MÃ; token ghi
+    # mới luôn dùng khoá chính. Quy trình: đặt khoá mới vào KEY, khoá cũ vào KEY_OLD, rồi
+    # mã hoá lại dần (secrets.rotate_ciphertext, hoặc nhập lại token); bỏ KEY_OLD khi
+    # không còn ciphertext khoá cũ.
+    integration_secret_key_old: SecretStr = Field(default=SecretStr(""))
+
     # Host bổ sung cho allowlist của sync_urls (ngoài Google/SharePoint/OneDrive đặt
     # cứng trong core/url_allowlist.py). Phân cách bằng dấu phẩy; `host` khớp chính xác,
     # `*.host` khớp mọi tên miền con. Chỉ https, cổng 443. Sai cú pháp thì app KHÔNG

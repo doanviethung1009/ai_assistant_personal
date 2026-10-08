@@ -8,52 +8,26 @@ from __future__ import annotations
 
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import locks
 from app.models.app_setting import AppSetting
 from app.models.enums import SettingKey, TaskScope
 from app.models.task import Task
 from app.schemas.settings import normalize_names, normalize_urls
-from app.services.errors import ConflictError
 from app.services.task_service import _alive
 
 # Chặn kích thước danh sách assignee: DISTINCT trên cột có thể phình khi Jira sync kéo
 # hàng trăm người. Đủ cho dropdown/chọn "tôi là ai"; vượt thì cắt theo thứ tự chữ cái.
 MAX_ASSIGNEES = 500
 
-# Cùng khoá advisory với import_service (nguồn duy nhất của tên). PUT cài đặt phải xếp
-# hàng sau một lần nhập đang chạy: nếu không, PUT chen giữa lúc nhập đã lập kế hoạch
-# (đã đếm `unchanged`/`replaced`, đã ghi `before` vào audit) sẽ bị nhập ghi đè mà sổ
-# audit mô tả sai trạng thái trước đó, phá khả năng hoàn tác.
-IMPORT_LOCK_NAME = "builder:import"
+# Tên khoá và cách chờ nằm ở db/locks.py (dùng chung với nhập và upsert-batch). Giữ tên
+# ở đây vì import_service và test tham chiếu qua module này.
+IMPORT_LOCK_NAME = locks.IMPORT_LOCK_NAME
 # Chờ khoá tối đa bấy lâu rồi 409, thay vì treo request khi có lần nhập lớn đang chạy.
 SETTINGS_LOCK_TIMEOUT = "5s"
-
-
-async def _take_write_lock(session: AsyncSession) -> None:
-    """Lấy advisory lock của nhập (dạng CHỜ) trước khi ghi cài đặt; hết hạn thì 409.
-
-    Lock theo transaction nên tự nhả khi request commit/rollback. Hai PUT đồng thời
-    cũng được tuần tự hoá qua đây (cuối cùng thắng, không xen kẽ).
-    """
-    await session.execute(
-        text("SELECT set_config('lock_timeout', :v, true)"), {"v": SETTINGS_LOCK_TIMEOUT}
-    )
-    try:
-        await session.execute(
-            text("SELECT pg_advisory_xact_lock(hashtext(:name))"), {"name": IMPORT_LOCK_NAME}
-        )
-    except DBAPIError as exc:
-        orig = getattr(exc, "orig", None)
-        code = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
-        code = code or getattr(getattr(orig, "__cause__", None), "sqlstate", None)
-        if code != "55P03":
-            raise
-        await session.rollback()
-        raise ConflictError("Đang có lần nhập dữ liệu chạy, hãy thử lại sau.") from exc
 
 
 async def get_value(session: AsyncSession, key: SettingKey) -> Any | None:
@@ -90,7 +64,7 @@ async def get_current_users(session: AsyncSession) -> list[str]:
 async def set_current_users(session: AsyncSession, names: list[str]) -> list[str]:
     """Ghi đè toàn bộ danh sách. Chuẩn hoá lại ở đây để service an toàn khi gọi ngoài API."""
     clean = normalize_names(names)
-    await _take_write_lock(session)
+    await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
     await put_list(session, SettingKey.CURRENT_USERS, clean)
     return clean
 
@@ -102,7 +76,7 @@ async def get_sync_urls(session: AsyncSession) -> list[str]:
 async def set_sync_urls(session: AsyncSession, urls: list[str]) -> list[str]:
     """Ghi đè toàn bộ danh sách URL; kiểm https + allowlist (SSRF) trước khi lưu."""
     clean = normalize_urls(urls)
-    await _take_write_lock(session)
+    await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
     await put_list(session, SettingKey.SYNC_URLS, clean)
     return clean
 

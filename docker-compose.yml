@@ -82,6 +82,13 @@ services:
       # từ chối nhập thật (chỉ cho Kiểm tra). Web không có đăng nhập nên đây là lớp chặn
       # duy nhất khi web mở ra LAN. Xem docs/specs/import-json-to-postgres.md (M2).
       IMPORT_COMMIT_SECRET: ${IMPORT_COMMIT_SECRET:-}
+      # Khoá Fernet (32 byte base64 url-safe) mã hoá token tích hợp (Jira...) trước khi lưu ở Postgres.
+      # KHÁC API_KEY. Rỗng thì tạo/sửa kết nối trả 503. MẤT KHOÁ = phải nhập lại mọi token;
+      # đổi khoá cũng vậy. Không bao giờ log hay trả khoá/token về client.
+      INTEGRATION_SECRET_KEY: ${INTEGRATION_SECRET_KEY:-}
+      # Khoá cũ khi xoay khoá (danh sách phân cách dấu phẩy, tuỳ chọn). Core vẫn giải mã được token
+      # mã hoá bằng khoá cũ; khoá mới dùng để mã hoá lại. Bỏ trống nếu không xoay.
+      INTEGRATION_SECRET_KEY_OLD: ${INTEGRATION_SECRET_KEY_OLD:-}
       # Host bổ sung được phép cho URL đồng bộ (ngoài Google Docs/Sheets/Drive, SharePoint,
       # OneDrive). Danh sách phân cách dấu phẩy, chỉ https, KHÔNG nhận IP hay '*.com'.
       # Phải đặt GIỐNG NHAU ở service web: backend kiểm lúc lưu, web kiểm lúc fetch.

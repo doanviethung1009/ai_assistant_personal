@@ -123,6 +123,27 @@ Dữ liệu cá nhân nhạy cảm. Web đọc Chrome trên máy chạy web rồ
 
 Giới hạn đã biết: `COUNT(*)` chạy mỗi lần tải trang; tìm kiếm `q` dùng ILIKE không index (đủ cho quy mô cá nhân); muốn đặt lại `visit_count` thấp hơn phải xoá theo profile rồi đẩy lại.
 
+## 8. API Tích hợp (Integrations) và upsert hàng loạt (pha B4a)
+
+Lưu kết nối Jira ở server (token mã hoá Fernet bằng `INTEGRATION_SECRET_KEY`, **không bao giờ** trả về) và ghi task từ nguồn ngoài. Mọi route cần `X-API-Key`.
+
+| Method | Path | Ghi chú |
+|---|---|---|
+| `GET` | `/integrations?limit=&offset=` | `Page[...]` (mặc định 50, tối đa 100). Chỉ có `has_secret` và `secret_last4` |
+| `POST` | `/integrations` | `{kind:"jira", name, base_url, account_email, token, config}`. `base_url` chỉ `https://host` (không IP, không cổng, không path, không `localhost`/`.local`/`.internal`). Token 8 đến 512 ký tự, chỉ ghi. Thiếu `INTEGRATION_SECRET_KEY` mà có token thì 503. Trùng `(kind, name)` thì 409 |
+| `PATCH` | `/integrations/{id}` | Không gửi token thì giữ token cũ; `clear_token:true` để xoá. **Đổi `base_url` khi đang có token thì bắt buộc gửi token mới hoặc `clear_token`** (chặn gửi token cũ sang host khác) |
+| `DELETE` | `/integrations/{id}` | Xoá kết nối |
+| `POST` | `/tasks/upsert-batch` | **Cần `X-Import-Secret`.** `{source, items[] <= 1000}`, trần body 20 MB. `source` khác `manual`. Upsert theo `(source, external_id)` trên task còn sống. Trả `{added, updated, unchanged, skipped_personal, errors[], warnings[]}` |
+| `POST` | `/import/verify-secret` | Chỉ kiểm `X-Import-Secret`, trả 204 hoặc 403. Web dùng để xác minh mật khẩu thật trước khi tải URL hay parse Excel |
+
+Quy tắc `upsert-batch`:
+- Chỉ ghi `scope=work`. Task trùng khoá mà đang `personal` thì **không bị ghi đè** (đếm vào `skipped_personal`).
+- Chỉ ghi các trường client có gửi. **tags được gộp** (union), **`description` chỉ điền khi task đang rỗng**. `completed_at` và `created_at` lấy từ nguồn nếu có.
+- `raw_payload` được lọc khoá và giá trị nhạy cảm (Authorization, token, Bearer, JWT...); quá 64 KB (sau lọc) hoặc 256 KB (trước lọc) thì **vẫn upsert task**, bỏ payload và trả `warnings`.
+- Idempotent: gửi lại cùng lô thì `added=0`, `updated=0`, không đổi `updated_at`, không sinh event. Event `synced` khi tạo, `updated` kèm diff khi đổi (actor `integration:<source>`).
+- Xung đột với thao tác đồng thời (khoá dòng, lock `builder:import`) trả 409, thử lại được.
+- Xoay khoá: đặt khoá mới ở `INTEGRATION_SECRET_KEY` và khoá cũ ở `INTEGRATION_SECRET_KEY_OLD`.
+
 ---
 
 > 💡 **Lưu ý quan trọng cho AI Agent (LLM):**

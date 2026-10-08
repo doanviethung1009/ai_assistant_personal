@@ -2,14 +2,16 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { syncFromUrlAction, addSyncUrlAction, removeSyncUrlAction } from "@/app/actions";
+import { UpsertResult } from "@/components/upsert-result";
+import type { UpsertSummary } from "@/lib/types";
 
 export function UrlSyncManager({
   initialUrls,
-  canSync = true,
+  requireSecret = false,
 }: {
   initialUrls: string[];
-  /** false ở chế độ api: lưu danh sách được, nhưng cào + nhập task cần endpoint upsert của B4. */
-  canSync?: boolean;
+  /** true ở chế độ api: "Cào ngay" ghi vào Postgres nên cần mật khẩu nhập (IMPORT_COMMIT_SECRET). */
+  requireSecret?: boolean;
 }) {
   const [urls, setUrls] = useState<string[]>(initialUrls);
   // Đồng bộ lại khi server render lại (sau revalidate), để link bị server bỏ biến mất khỏi danh sách.
@@ -17,6 +19,9 @@ export function UrlSyncManager({
   const [newUrl, setNewUrl] = useState("");
   const [pending, startTransition] = useTransition();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [summary, setSummary] = useState<UpsertSummary | null>(null);
+  // Chỉ nằm trong state của ô nhập; xoá ngay sau mỗi lần cào, không lưu đâu khác.
+  const [secret, setSecret] = useState("");
 
   function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -59,11 +64,20 @@ export function UrlSyncManager({
   }
 
   function handleSync(url: string) {
+    if (requireSecret && !secret) {
+      setResult({ ok: false, message: "Nhập mật khẩu nhập dữ liệu trước khi cào." });
+      return;
+    }
     setResult(null);
+    setSummary(null);
+    const sent = secret;
+    setSecret("");
     startTransition(async () => {
-      const res = await syncFromUrlAction(url);
+      const res = await syncFromUrlAction(url, requireSecret ? sent : undefined);
       if (res.ok) {
-        setResult({ ok: true, message: `Thành công! Đã cào thêm ${res.count} task mới từ link.` });
+        const skipped = res.skipped_personal ? `, giữ nguyên ${res.skipped_personal} task cá nhân` : "";
+        setResult({ ok: true, message: `Thành công! Đã thêm/cập nhật ${res.count} task từ link${skipped}.` });
+        if (res.summary) setSummary(res.summary);
       } else {
         setResult({ ok: false, message: `Lỗi: ${res.error}` });
       }
@@ -78,11 +92,18 @@ export function UrlSyncManager({
         Chỉ nhận link <code>https</code> của Google Docs/Drive và SharePoint. Link OneDrive/SharePoint cá nhân,
         hoặc host khác, có thể cần thêm host qua <code>SYNC_URL_EXTRA_HOSTS</code> ở server.
       </p>
-      {!canSync ? (
-        <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-          Ở chế độ api, nút &ldquo;Cào ngay&rdquo; chưa dùng được: cào và nhập task cần pha B4. Danh sách link vẫn được lưu vào Postgres.
-        </p>
-      ) : null}
+      {requireSecret && (
+        <div className="mt-3">
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder="Mật khẩu nhập dữ liệu (cần khi bấm Cào ngay)"
+            className="w-full max-w-sm rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+          />
+        </div>
+      )}
 
       <form onSubmit={handleAdd} className="mt-3 flex items-center gap-2">
         <input
@@ -111,8 +132,7 @@ export function UrlSyncManager({
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => handleSync(url)}
-                  disabled={pending || !canSync}
-                  title={canSync ? undefined : "Cần pha B4 (endpoint upsert) để cào và nhập task ở chế độ api"}
+                  disabled={pending}
                   className="rounded bg-[var(--color-accent)] px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-[var(--color-accent-hover)] disabled:opacity-50"
                 >
                   Cào ngay
@@ -135,6 +155,7 @@ export function UrlSyncManager({
           {result.message}
         </p>
       )}
+      {summary && <UpsertResult summary={summary} />}
     </section>
   );
 }
