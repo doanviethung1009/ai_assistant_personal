@@ -96,7 +96,17 @@
 
 ## 12. Hook ghi vết Claude Code (nhánh `feat/claude-trace-hooks`, giai đoạn 1, chưa merge)
 
-- Hook `Stop`/`SubagentStop`/`SessionEnd` (`.claude/hooks/trace-hook.py` + `trace_redact.py`) ghi vết ngoài repo (`~/.claude/trace/ai_assistant_personal/`), lọc secret trước khi ghi. Chỉ THÊM; AI log viết tay, bảng `ai_logs`, `/ai-logs` giữ nguyên để so sánh. **Mặc định TẮT**, bật bằng `CLAUDE_TRACE_ENABLED=1` trong `.claude/settings.local.json` (gitignore). Chi tiết: `docs/CLAUDE_TRACE_HOOKS.md`.
-- **User chốt (2026-10-08):** lưu tóm tắt từng lượt + transcript đã lọc; dữ liệu Jira công ty **chưa được dùng để train** (chưa rõ chính sách). Giai đoạn sau (gỡ quy tắc ghi tay, số phận bảng/API/trang) chưa làm.
+- Hook `Stop`/`SubagentStop`/`SessionEnd` (`.claude/hooks/trace-hook.py` + `trace_redact.py`) ghi vết ngoài repo (`~/.claude/trace/ai_assistant_personal/`), lọc secret trước khi ghi. Giai đoạn 1 chỉ THÊM (nay đã sang giai đoạn 2, xem mục 13); AI log viết tay, bảng `ai_logs`, `/ai-logs` giữ nguyên để so sánh. **Mặc định TẮT**, bật bằng `CLAUDE_TRACE_ENABLED=1` trong `.claude/settings.local.json` (gitignore). Chi tiết: `docs/CLAUDE_TRACE_HOOKS.md`.
+- **User chốt (2026-10-08):** lưu tóm tắt từng lượt + transcript đã lọc; dữ liệu Jira công ty **chưa được dùng để train** (chưa rõ chính sách). Giai đoạn 2 (gỡ AI log viết tay) đã làm ở mục 13.
+
+## 13. Gỡ AI log viết tay + xoay vòng trace (nhánh `chore/remove-handwritten-ai-log`, chưa merge)
+
+- **Đã gỡ (User duyệt 2026-10-08):** rule `ai-logger.md`, mục 3.4 AGENTS.md (nay chỉ là con trỏ tới hook ghi vết), `scripts/add-ai-log.js`, `docs/ai_logs.md`, bảng `ai_logs` (migration `f3a8c1d5e7b9`, `down_revision d7e2a9c4b1f6`, downgrade tạo bảng RỖNG), API `/ai-logs` và `/import/ai-logs`, trang `/ai-logs`, nhánh import/export JSON nhật ký AI. Spec: `docs/specs/remove-handwritten-ai-log.md`.
+- **Bản sao log cũ** (72 mục + `ai_logs.md`) nằm NGOÀI repo: `~/.claude/trace/ai_assistant_personal/legacy-ai-logs/`. `data/ai-logs.json` của User để nguyên (gitignore), web thôi đọc.
+- **Giữ có chủ ý:** `ImportKind.AI_LOGS`, `ImportEntity.AI_LOG` và CHECK cũ ở `import_runs`/`import_audit` (dòng sổ cái cũ còn giá trị đó).
+- **`make migrate` trên DB thật sẽ XOÁ bảng `ai_logs` cùng dữ liệu** (hỏi User trước; xuất `\copy ai_logs ...` nếu muốn giữ).
+- **Xoay vòng trace:** transcript trong `sessions/` cũ hơn `CLAUDE_TRACE_RETENTION_DAYS` (mặc định 90) bị xoá khi `SessionEnd`.
+- **Đề xuất training:** `docs/LLM_TRAINING_DATA_PLAN.md` (chờ User chốt chính sách dữ liệu Jira).
+- **Chưa kiểm:** `make smoke`, `make gen-types` (không có Docker; `openapi.d.ts` sửa tay), migrate trên DB dev thật.
 
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

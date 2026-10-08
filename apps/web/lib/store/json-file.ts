@@ -31,10 +31,6 @@ export function dataFilePath(): string {
   return path.join(dataDir(), "builder-data.json");
 }
 
-export function aiLogsFilePath(): string {
-  return path.join(dataDir(), "ai-logs.json");
-}
-
 // ── Tuần tự hoá ghi ────────────────────────────────────────────────────
 
 let writeChain: Promise<unknown> = Promise.resolve();
@@ -70,13 +66,6 @@ export function save(): Promise<void> {
   return enqueue(async () => {
     const data = engine.snapshot();
     await writeAtomic(dataFilePath(), JSON.stringify(data, null, 2));
-  });
-}
-
-export function saveAiLogs(): Promise<void> {
-  return enqueue(async () => {
-    const data = engine.snapshotAiLogs();
-    await writeAtomic(aiLogsFilePath(), JSON.stringify(data, null, 2));
   });
 }
 
@@ -129,9 +118,6 @@ export function migrate(data: DataFile): DataFile {
     }
     data.schema_version = 3;
   }
-
-  // Không còn migrate ai_logs chung vào DataFile (SCHEMA_VERSION = 4).
-  // Đã dọn dẹp logic ai_logs.
 
   // v4 → v5: bổ sung `scope` cho task, suy từ source.
   //
@@ -224,57 +210,6 @@ async function initialise(): Promise<void> {
   });
 
   await save();
-  
-  // Khởi tạo file ai-logs.json
-  await initialiseAiLogs();
-}
-
-async function initialiseAiLogs(): Promise<void> {
-  const file = aiLogsFilePath();
-  try {
-    const raw = await readFile(file, "utf8");
-    const parsed: unknown = JSON.parse(raw);
-    engine.restoreAiLogs(parsed as { ai_logs?: any[] });
-    console.info(`[store] đã nạp ai_logs từ ${file}`);
-  } catch (error) {
-    console.info(`[store] chưa có ${file}, sẽ tạo mới khi có dữ liệu.`);
-    engine.restoreAiLogs({ ai_logs: [] });
-  }
-
-  engine.setAiLogsChangeHandler(() => {
-    void saveAiLogs().catch((error: unknown) => {
-      console.error("[store] ghi file ai-logs thất bại:", error);
-    });
-  });
-
-  // Ghi file rỗng ra đĩa ngay lần đầu để người dùng nhìn thấy
-  await saveAiLogs();
-}
-
-/**
- * Nạp lại ai-logs.json từ đĩa vào RAM.
- *
- * File này được ghi từ NGOÀI process web (scripts/add-ai-log.js, Agent, sửa
- * tay), trong khi engine chỉ nạp một lần lúc khởi động nên trang AI Trace sẽ
- * hiện dữ liệu cũ. Đọc lại trước mỗi lần liệt kê để đĩa là nguồn sự thật.
- *
- * Không gọi change handler: đây là đọc, ghi ngược lại ra đĩa là thừa và còn
- * có nguy cơ đè mất lần ghi của tiến trình khác.
- */
-export async function reloadAiLogsFromDisk(): Promise<void> {
-  try {
-    const raw = await readFile(aiLogsFilePath(), "utf8");
-    const parsed = JSON.parse(raw) as { ai_logs?: unknown };
-    engine.restoreAiLogs({
-      ai_logs: Array.isArray(parsed.ai_logs) ? parsed.ai_logs : [],
-    });
-  } catch (error) {
-    // Chưa có file thì giữ nguyên RAM. File đang bị ghi dở (JSON lỗi) thì
-    // cũng giữ bản cũ thay vì làm trang sập.
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      console.warn("[store] không đọc lại được ai-logs.json:", error);
-    }
-  }
 }
 
 export function ensureLoaded(): Promise<void> {

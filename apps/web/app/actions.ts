@@ -27,7 +27,6 @@ import {
 } from "@/lib/api";
 import {
   importJson,
-  importAiLogsJson,
   importNotesCsv,
   importProjectsCsv,
   importTasksCsv,
@@ -532,8 +531,6 @@ export async function importDataAction(
 
     if (kind === "json") {
       summary = await importJson(text, mode);
-    } else if (kind === "ai-logs-json") {
-      summary = await importAiLogsJson(text, mode);
     } else if (kind === "tasks-csv") {
       summary = await importTasksCsv(text, mode);
     } else if (kind === "projects-csv") {
@@ -760,7 +757,7 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   if (file.size > MAX_UPLOAD_BYTES) {
     return { ok: false, error: "File vượt quá 8 MB", status: 413 };
   }
-  if (kind !== "datafile" && kind !== "ai-logs") {
+  if (kind !== "datafile") {
     return { ok: false, error: `Loại file không hợp lệ: ${kind}` };
   }
 
@@ -798,10 +795,7 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
 
   try {
     const options = { dryRun, expectReplaced, expectSha256, secret, includePersonal };
-    const report =
-      kind === "datafile"
-        ? await api.importDataFile(text, options)
-        : await api.importAiLogsFile(text, options);
+    const report = await api.importDataFile(text, options);
     // Chỉ làm mới cache khi dữ liệu thật sự đổi.
     if (report.committed) revalidateAll();
     return { ok: true, report };

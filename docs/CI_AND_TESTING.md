@@ -27,8 +27,8 @@ Quyền của workflow chỉ là `contents: read`, và lượt chạy cũ của 
 
 | Nhóm | Cần DB | Ví dụ |
 |---|---|---|
-| Unit | Không | `normalize_tags`, validate schema, xác thực API key, app import được và có route `ai-logs` |
-| DB (`@pytest.mark.db`) | Có | vòng đời task (done, reopen, xoá mềm, khôi phục), note, `ai-logs` qua HTTP |
+| Unit | Không | `normalize_tags`, validate schema, xác thực API key, app import được |
+| DB (`@pytest.mark.db`) | Có | vòng đời task (done, reopen, xoá mềm, khôi phục), note qua HTTP |
 
 Test DB chỉ chạy khi có biến `TEST_DATABASE_URL`; không có thì tự bỏ qua (skip), nên `pytest` vẫn xanh trên máy không có Postgres.
 
@@ -41,7 +41,7 @@ Test DB chỉ chạy khi có biến `TEST_DATABASE_URL`; không có thì tự b�
 ```bash
 make up      # nếu stack chưa chạy
 make test    # pytest trên database <POSTGRES_DB>_test
-bash scripts/test-backend.sh -k ai_log -x   # truyền tham số cho pytest
+bash scripts/test-backend.sh -k task -x   # truyền tham số cho pytest
 ```
 
 > **Hàng rào:** `conftest.py` từ chối chạy (`pytest.exit`) nếu tên database trong `TEST_DATABASE_URL` không kết thúc bằng `_test`, và script thoát nếu URL test trùng URL dev.

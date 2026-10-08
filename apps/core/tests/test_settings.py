@@ -632,7 +632,7 @@ async def test_real_file_current_users_imported_then_unchanged(session: AsyncSes
         assert again.counts["settings"].unchanged >= 1
     await session.rollback()
     await session.execute(
-        text("TRUNCATE ai_logs, task_events, tasks, notes, projects, app_settings CASCADE")
+        text("TRUNCATE task_events, tasks, notes, projects, app_settings CASCADE")
     )
     await session.commit()
 

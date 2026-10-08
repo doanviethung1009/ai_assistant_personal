@@ -50,11 +50,11 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
 - **Đổi cấu trúc file JSON thì phải tăng `SCHEMA_VERSION` và viết bước
   migrate.** Xem `store/json-file.ts`. Thêm field mà không backfill thì dữ
   liệu cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai.
-  Hiện tại đang ở **v5** (v4 tách mảng `ai_logs` ra file riêng; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
+  Hiện tại đang ở **v6** (v4 từng tách mảng log ra file riêng, nay đã gỡ; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
   phải backfill thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
 - **Quy tắc Lưu trữ JSON (Local Storage Split vs Group):** Khi phát sinh tính năng/dữ liệu mới, BẮT BUỘC ĐÁNH GIÁ ĐẶC TÍNH DỮ LIỆU trước khi thêm vào JSON.
   - **Để chung (`builder-data.json`):** Dành cho dữ liệu cốt lõi, có tính ràng buộc (relational), số lượng bản ghi được kiểm soát, thường xuyên cập nhật/xoá (Ví dụ: `tasks`, `projects`, `notes`).
-  - **Tách riêng file mới (VD: `ai-logs.json`):** Dành cho dữ liệu dạng Append-only (chỉ thêm mới), lịch sử, log, hoặc dữ liệu có kích thước văn bản cực lớn. Vì cơ chế lưu file là Atomic Write (ghi đè toàn bộ), việc nhồi nhét dữ liệu phình to liên tục vào file chung sẽ tạo nút thắt cổ chai (I/O Bottleneck), làm giật lag toàn hệ thống. HÃY TÁCH RIÊNG nếu nhận thấy dữ liệu có tính chất này.
+  - **Tách riêng file mới (VD: một file log riêng):** Dành cho dữ liệu dạng Append-only (chỉ thêm mới), lịch sử, log, hoặc dữ liệu có kích thước văn bản cực lớn. Vì cơ chế lưu file là Atomic Write (ghi đè toàn bộ), việc nhồi nhét dữ liệu phình to liên tục vào file chung sẽ tạo nút thắt cổ chai (I/O Bottleneck), làm giật lag toàn hệ thống. HÃY TÁCH RIÊNG nếu nhận thấy dữ liệu có tính chất này.
 - **Nội dung note render bằng text node của JSX**, tuyệt đối không
   `dangerouslySetInnerHTML` — nội dung do người dùng dán, mở đường cho XSS.
 - **`lib/types.ts` không còn viết tay field của entity.** Nó alias sang

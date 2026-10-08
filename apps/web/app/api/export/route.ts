@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 
 import {
   buildJson,
-  buildAiLogsJson,
   buildNotesCsv,
   buildProjectsCsv,
   buildTasksCsv,
@@ -41,10 +40,6 @@ export async function GET(request: Request): Promise<Response> {
     if (format === "json" && entity === "all") {
       body = await buildJson();
       filename = `builder-data-${stamp()}.json`;
-      contentType = "application/json; charset=utf-8";
-    } else if (format === "json" && entity === "ai_logs") {
-      body = await buildAiLogsJson();
-      filename = `builder-ai-logs-${stamp()}.json`;
       contentType = "application/json; charset=utf-8";
     } else if (format === "json" && entity === "vault") {
       // Chỉ ciphertext, không có plaintext hay mật khẩu nên an toàn để sao lưu

@@ -1,7 +1,7 @@
 import "server-only";
 
 import * as engine from "./store/engine";
-import { ensureLoaded, reloadAiLogsFromDisk } from "./store/json-file";
+import { ensureLoaded } from "./store/json-file";
 import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
@@ -228,7 +228,7 @@ export interface ImportCallOptions {
  * file (Excel/Windows hay thêm) làm JSON.parse phía core lỗi nên bỏ ở đây.
  */
 async function postImport(
-  endpoint: "datafile" | "ai-logs",
+  endpoint: "datafile",
   text: string,
   options: ImportCallOptions,
 ): Promise<ImportReport> {
@@ -238,8 +238,7 @@ async function postImport(
     );
   }
   const params = new URLSearchParams({ dry_run: options.dryRun ? "true" : "false" });
-  // Chỉ áp cho datafile; ai-logs không có khái niệm scope.
-  if (endpoint === "datafile" && options.includePersonal) params.set("include_personal", "true");
+  if (options.includePersonal) params.set("include_personal", "true");
   if (!options.dryRun) {
     if (
       options.expectReplaced === undefined ||
@@ -270,11 +269,6 @@ async function postImport(
 /** Nhập file backup JSON (projects/tasks/notes) vào Postgres. */
 export function importDataFile(text: string, options: ImportCallOptions): Promise<ImportReport> {
   return postImport("datafile", text, options);
-}
-
-/** Nhập file ai-logs.json vào Postgres. */
-export function importAiLogsFile(text: string, options: ImportCallOptions): Promise<ImportReport> {
-  return postImport("ai-logs", text, options);
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────
@@ -841,31 +835,6 @@ export async function deleteGlobalTagApi(name: string): Promise<void> {
 export async function wipeAllDataApi(options?: WipeOptions): Promise<void> {
   if (IS_LOCAL) return local(() => engine.wipeAllData(options));
   return Promise.reject(new CoreApiError("Xoá hàng loạt chỉ hỗ trợ chế độ file", 501));
-}
-
-// ── AI Logs ───────────────────────────────────────────────────────────────
-
-export async function listAiLogs(): Promise<any[]> {
-  if (IS_LOCAL) {
-    await ready();
-    // Chế độ file: log được ghi từ ngoài process, phải đọc lại từ đĩa
-    if (DATA_SOURCE === "file") await reloadAiLogsFromDisk();
-    return local(() => engine.snapshotAiLogs().ai_logs ?? []);
-  }
-  const res = await coreFetch<any>("/api/v1/ai-logs?limit=100");
-  return res.items ?? [];
-}
-
-export async function createAiLog(input: any): Promise<any> {
-  if (IS_LOCAL) {
-    // Actually, local ai_logs uses a different flow via JSON file, but for consistency if we wanted to import we just push to the snapshot
-    // In our case, we will handle ai-logs directly in transfer.ts via read/write JSON, since it's a separate file.
-    // So this might just be a stub for API mode.
-  }
-  return coreFetch<any>("/api/v1/ai-logs", {
-    method: "POST",
-    body: JSON.stringify(input),
-  });
 }
 
 

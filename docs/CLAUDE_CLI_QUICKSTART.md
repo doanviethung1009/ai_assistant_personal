@@ -105,7 +105,7 @@ ngữ cảnh mới, `/compact` nén hội thoại dài.
    không bao giờ force push.
 
 Chỉ orchestrator được cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký tài liệu mới vào
-`apps/web/lib/docs.ts` và ghi AI log (`docs/ai_logs.md` + `scripts/add-ai-log.js`), một lần ở cuối task.
+`apps/web/lib/docs.ts`. Không còn ghi AI log tay; hook ghi vết (`docs/CLAUDE_TRACE_HOOKS.md`) thay thế.
 
 ## 7. Xử lý sự cố nhanh
 

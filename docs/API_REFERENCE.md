@@ -85,7 +85,6 @@ Base path: `/api/v1/import`
 | Phương thức | Endpoint | Body | Chức năng |
 |-------------|----------|------|-----------|
 | `POST` | `/datafile` | Nội dung `builder-data.json` | Nhập project, task, task_events, note |
-| `POST` | `/ai-logs` | Nội dung `ai-logs.json` | Nhập nhật ký AI |
 
 Tham số của cả hai endpoint:
 

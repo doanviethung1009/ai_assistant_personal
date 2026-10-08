@@ -140,14 +140,6 @@ class TaskEventType(StrEnum):
     RESTORED = "restored"
 
 
-class AiLogCategory(StrEnum):
-    APP = "app"
-    API = "api"
-    WEB = "web"
-    TOOL = "tool"
-    OTHER = "other"
-
-
 class ImportKind(StrEnum):
     """Loại file nguồn của một lần nhập (xem models/import_audit.py).
 
@@ -157,6 +149,8 @@ class ImportKind(StrEnum):
     """
 
     DATAFILE = "datafile"
+    # Di sản: tính năng ai-logs đã gỡ, giữ member vì CHECK ở DB và các dòng sổ cái cũ
+    # vẫn có giá trị này (đọc qua ORM không được vỡ).
     AI_LOGS = "ai_logs"
 
 
@@ -171,6 +165,7 @@ class ImportEntity(StrEnum):
     TASK = "task"
     TASK_EVENT = "task_event"
     NOTE = "note"
+    # Di sản như ImportKind.AI_LOGS: dòng import_audit cũ còn giá trị này.
     AI_LOG = "ai_log"
     # B2: cài đặt app_settings. entity_id của audit là uuid5 cố định theo khoá cài đặt.
     SETTING = "setting"

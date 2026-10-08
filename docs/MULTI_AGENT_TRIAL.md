@@ -21,7 +21,7 @@ Chạm cả ba tầng nên đúng là loại việc đáng dùng subagent: DB (c
 | 6 | Soát DB | `db-reviewer` | ~40 giây | ~34k | Không critical; 1 race nhỏ, 1 gợi ý index |
 | 7 | Soát code | `code-reviewer` | ~2,5 phút | ~76k | 🟡 CHANGES REQUESTED: test yếu, lệch Ownership, docs chưa làm |
 | 8 | Soát bảo mật | `security-auditor` | ~80 giây | ~43k | 🟡 Path injection qua `id` (medium), `page` không có trần |
-| 9 | Chốt | orchestrator | | | Sửa các phát hiện, viết docs, ghi AI log, commit |
+| 9 | Chốt | orchestrator | | | Sửa các phát hiện, viết docs, commit |
 
 Bước 6, 7, 8 chạy **song song** vì ba reviewer chỉ đọc và không đụng nhau.
 
@@ -82,7 +82,7 @@ Mỗi reviewer chỉ đọc, bối cảnh sạch, không biết quá trình vi�
 
 ### Bước 9: orchestrator chốt
 
-Xử lý phát hiện, viết tài liệu này, đăng ký docs, ghi AI log, commit. Không push khi chưa hỏi User.
+Xử lý phát hiện, viết tài liệu này, đăng ký docs, commit. Không push khi chưa hỏi User.
 
 ## 3. Luồng này bắt được gì
 
@@ -107,7 +107,7 @@ Xử lý phát hiện, viết tài liệu này, đăng ký docs, ghi AI log, com
 2. **Orchestrator sửa ngoài Ownership.** Spec ghi "không ai sửa `lib/store/**`", nhưng khi sinh lại type, `tsc` lỗi vì `engine.ts:321` gán `assignee` cho Note, nên orchestrator xoá đúng một dòng đó; ngoài ra thêm `assignee` vào `TaskRead`. Cả hai đều đúng kỹ thuật nhưng lệch phạm vi đã duyệt. `code-reviewer` đã đánh dấu. Cách làm sạch hơn: dừng lại hỏi User, hoặc tách thành PR riêng.
 3. **`frontend-dev` sửa file bằng một script Python chạy một lần trong terminal** (không lưu file), trái tinh thần luật "dùng Edit trực tiếp, không tạo script patch". Hook `no-patch-scripts.sh` chỉ chặn việc **Write** file tên `patch_*`, không chặn lệnh Python chạy trực tiếp. Hook không thay được việc dặn rõ trong prompt.
 4. **Diff `openapi.d.ts` lớn hơn phạm vi** (kéo theo cả `ai-logs` và dọn `assignee`) vì file này đã lệch từ lâu. Spec mục 6 đã dặn "diff lớn bất thường thì báo User"; điều đó cần được nêu rõ trong báo cáo.
-5. **Việc của orchestrator dễ bị quên:** `code-reviewer` phải nhắc đăng ký spec vào `lib/docs.ts`, cập nhật `API_REFERENCE.md`, `AI_HANDOFF_STATE.md` và AI log. Dev agent không làm những việc này.
+5. **Việc của orchestrator dễ bị quên:** `code-reviewer` phải nhắc đăng ký spec vào `lib/docs.ts`, cập nhật `API_REFERENCE.md`, `AI_HANDOFF_STATE.md`. Dev agent không làm những việc này.
 
 ## 5. Điều chưa kiểm chứng
 
@@ -129,7 +129,7 @@ Mỗi lệnh dưới đây gõ ở session Claude Code, cách nhau bởi các l�
 5. Chạy frontend-dev theo spec, bắt đầu từ trạng thái tsc xanh.
 6. Chạy song song db-reviewer, code-reviewer, security-auditor trên diff của nhánh.
 7. Tổng hợp phát hiện, chuyển lỗi về đúng agent hoặc tự sửa việc nhỏ, rồi chạy lại kiểm chứng.
-8. Cập nhật docs, AI log, commit. Hỏi trước khi push.
+8. Cập nhật docs, commit. Hỏi trước khi push.
 ```
 
 **Checklist orchestrator sau mỗi agent:**

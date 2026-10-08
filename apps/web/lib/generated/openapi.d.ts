@@ -534,41 +534,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/ai-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Danh sách nhật ký AI */
-        get: operations["list_ai_logs_api_v1_ai_logs_get"];
-        put?: never;
-        /** Ghi một nhật ký AI */
-        post: operations["create_ai_log_api_v1_ai_logs_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/ai-logs/{log_id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Chi tiết nhật ký AI */
-        get: operations["get_ai_log_api_v1_ai_logs__log_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/import/verify-secret": {
         parameters: {
             query?: never;
@@ -603,23 +568,6 @@ export interface paths {
         put?: never;
         /** Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá) */
         post: operations["import_datafile_api_v1_import_datafile_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/import/ai-logs": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Nhập ai-logs.json (GHI ĐÈ bản ghi đã có, không xoá) */
-        post: operations["import_ai_logs_api_v1_import_ai_logs_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -757,48 +705,6 @@ export interface components {
                 [key: string]: number;
             };
         };
-        /**
-         * AiLogCategory
-         * @enum {string}
-         */
-        AiLogCategory: "app" | "api" | "web" | "tool" | "other";
-        /** AiLogCreate */
-        AiLogCreate: {
-            /** @default other */
-            category: components["schemas"]["AiLogCategory"];
-            /** Prompt */
-            prompt: string;
-            /** Handling */
-            handling: string;
-            /** Response */
-            response: string;
-        };
-        /** AiLogRead */
-        AiLogRead: {
-            /** @default other */
-            category: components["schemas"]["AiLogCategory"];
-            /** Prompt */
-            prompt: string;
-            /** Handling */
-            handling: string;
-            /** Response */
-            response: string;
-            /**
-             * Id
-             * Format: uuid
-             */
-            id: string;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /**
-             * Updated At
-             * Format: date-time
-             */
-            updated_at: string;
-        };
         /** ComponentHealth */
         ComponentHealth: {
             /**
@@ -908,7 +814,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "file" | "project" | "task" | "task_event" | "note" | "ai_log" | "setting";
+            entity: "file" | "project" | "task" | "task_event" | "note" | "setting";
             /** Index */
             index?: number | null;
             /** Id */
@@ -1267,20 +1173,6 @@ export interface components {
             /** Is Dangerous */
             is_dangerous?: boolean | null;
         };
-        /** Page[AiLogRead] */
-        Page_AiLogRead_: {
-            /** Items */
-            items: components["schemas"]["AiLogRead"][];
-            /**
-             * Total
-             * @description Tổng số bản ghi khớp filter, không tính phân trang
-             */
-            total: number;
-            /** Limit */
-            limit: number;
-            /** Offset */
-            offset: number;
-        };
         /** Page[IntegrationRead] */
         Page_IntegrationRead_: {
             /** Items */
@@ -1416,7 +1308,7 @@ export interface components {
              * Entity
              * @enum {string}
              */
-            entity: "project" | "task" | "note" | "ai_log" | "setting";
+            entity: "project" | "task" | "note" | "setting";
             /**
              * Id
              * Format: uuid
@@ -3094,103 +2986,6 @@ export interface operations {
             };
         };
     };
-    list_ai_logs_api_v1_ai_logs_get: {
-        parameters: {
-            query?: {
-                category?: components["schemas"]["AiLogCategory"][] | null;
-                limit?: number;
-                offset?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Page_AiLogRead_"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    create_ai_log_api_v1_ai_logs_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["AiLogCreate"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiLogRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_ai_log_api_v1_ai_logs__log_id__get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                log_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["AiLogRead"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     verify_secret_api_v1_import_verify_secret_post: {
         parameters: {
             query?: never;
@@ -3268,63 +3063,6 @@ export interface operations {
                     } | null;
                     /** Sync Urls */
                     sync_urls?: unknown;
-                } & {
-                    [key: string]: unknown;
-                };
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ImportReport"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    import_ai_logs_api_v1_import_ai_logs_post: {
-        parameters: {
-            query?: {
-                /** @description true (mặc định): chạy thử rồi ROLLBACK, không ghi gì. */
-                dry_run?: boolean;
-                /** @description Bắt buộc khi dry_run=false: số bản ghi sẽ bị ghi đè, lấy từ báo cáo dry-run. Lệch số thực tế thì huỷ. */
-                expect_replaced?: number | null;
-                /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
-                expect_sha256?: string | null;
-            };
-            header?: {
-                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
-                "X-Import-Secret"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /**
-                     * Schema Version
-                     * @default 1
-                     */
-                    schema_version?: number;
-                    /** Exported At */
-                    exported_at?: string | null;
-                    /** Ai Logs */
-                    ai_logs: {
-                        [key: string]: unknown;
-                    }[];
                 } & {
                     [key: string]: unknown;
                 };

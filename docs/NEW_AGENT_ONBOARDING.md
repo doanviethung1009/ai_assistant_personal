@@ -28,7 +28,7 @@ Ngay khi bắt đầu một phiên chat, AI Agent KHÔNG ĐƯỢC đoán mò b�
 Toàn bộ luật tối cao nằm ở file gốc `AGENTS.md`. AI phải tuân thủ nghiêm ngặt 11 luật thép (Rule 3.1 đến 3.11). Dưới đây là các luật "tử huyệt" cấm vi phạm:
 
 1. **Rule 3.10 (Vòng đời Tính năng):** Làm xong 1 tính năng phải đi qua 3 bước: **Viết Code -> Cập nhật Docs -> Chạy Skill QC (Nghiệm thu)**. Bỏ qua bước nào coi như AI thất bại.
-2. **Rule 3.4 (Nhật ký AI Trace):** Làm xong bất cứ task nào (dù lớn hay nhỏ) đều BẮT BUỘC phải chạy script ghi log vào `data/ai-logs.json` và append vào `docs/ai_logs.md`.
+2. **Mục 3.4 (Ghi vết):** không còn ghi AI log bằng tay; hook ghi vết tự động (mặc định tắt), xem `docs/CLAUDE_TRACE_HOOKS.md`.
 3. **Rule 3.11 (Bảo vệ Git):** TUYỆT ĐỐI CẤM tự ý Push code lên Git nếu chưa hỏi và được User cho phép (Confirm).
 4. **Rule 3.9 (Minh bạch Hạ tầng):** Khi đụng vào file hệ thống, Docker, Makefile, AI phải comment giải thích từng dòng trong code và viết `.md` để User dễ kiểm soát.
 
@@ -53,7 +53,7 @@ AI không nên code bằng "bản năng" (zero-shot) đối với các tác vụ
 
 ## 4. Nếu bạn là Claude Code: làm việc theo mô hình orchestrator
 
-Việc nhỏ (1–2 file, một tầng) thì tự làm. Việc chạm từ hai tầng trở lên thì dùng subagent trong `.claude/agents/` (architect → backend-dev/frontend-dev → db-reviewer, code-reviewer, security-auditor). Chỉ session chính (orchestrator) được cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts`, ghi AI log và commit. Chi tiết: `docs/MULTI_AGENT_SYSTEM.md`.
+Việc nhỏ (1–2 file, một tầng) thì tự làm. Việc chạm từ hai tầng trở lên thì dùng subagent trong `.claude/agents/` (architect → backend-dev/frontend-dev → db-reviewer, code-reviewer, security-auditor). Chỉ session chính (orchestrator) được cập nhật `docs/AI_HANDOFF_STATE.md`, đăng ký `lib/docs.ts` và commit. Chi tiết: `docs/MULTI_AGENT_SYSTEM.md`.
 
 ---
 

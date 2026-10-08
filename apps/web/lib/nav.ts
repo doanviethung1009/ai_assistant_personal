@@ -11,7 +11,6 @@ import {
   Map,
   FileText,
   Terminal,
-  Sparkles,
   Settings,
   Database,
   Bot,
@@ -55,7 +54,6 @@ export const SECONDARY_NAV: NavItem[] = [
 ];
 
 export const AI_NAV: NavItem[] = [
-  { href: "/ai-logs", label: "Nhật ký AI (Trace)", icon: Sparkles },
   { href: "/ai/ai-agent-guide", label: "Cẩm nang AI (Agent IDEs)", icon: BookOpen },
   { href: "/ai/new-agent-onboarding", label: "Nhập môn AI", icon: Shield },
   { href: "/ai/multi-agent-system", label: "Multi-Agent", icon: Bot },

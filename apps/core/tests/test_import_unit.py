@@ -8,13 +8,12 @@ from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 
-from app.models.enums import AiLogCategory, TaskStatus
+from app.models.enums import TaskStatus
 from app.services.import_service import (
     _HSL_RE,
     TASK_FIELDS,
     _raise_if_lock_timeout,
     diff_fields,
-    map_ai_log_category,
     normalize_color,
     normalize_project_key,
 )
@@ -149,14 +148,6 @@ def test_normalize_color_hsl_separators() -> None:
     assert normalize_color("hsl(0 100% 50%)") == "#ff0000"
     assert normalize_color("HSL(0,100%,50%)") == "#ff0000"
     assert normalize_color("hsl(0deg, 100%, 50%)") == "#ff0000"
-
-
-def test_map_ai_log_category() -> None:
-    assert map_ai_log_category("TOOL") is AiLogCategory.TOOL
-    assert map_ai_log_category("UI/UX") is AiLogCategory.WEB
-    assert map_ai_log_category("DOCS") is AiLogCategory.OTHER
-    assert map_ai_log_category(None) is AiLogCategory.OTHER
-    assert map_ai_log_category("") is AiLogCategory.OTHER
 
 
 def test_diff_ignores_updated_created_and_raw_payload() -> None:

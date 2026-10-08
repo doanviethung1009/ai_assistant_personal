@@ -40,7 +40,7 @@
 ## 5. Ownership (không agent nào sửa file của agent khác)
 - **backend-dev:** `apps/core/app/models/note.py`, `schemas/note.py`, `services/note_service.py`, `api/v1/notes.py`, `apps/core/migrations/versions/*`, `scripts/smoke-test.sh` (thêm assertion).
 - **frontend-dev:** `apps/web/app/notes/**`, `apps/web/app/actions.ts`, `apps/web/lib/api.ts`, `apps/web/lib/store/*`, `apps/web/lib/types.ts` (chỉ phần helper nếu cần), `apps/web/components/note-*`.
-- **orchestrator:** `docs/API_REFERENCE.md`, `docs/huong-dan-su-dung.md`, `docs/AI_HANDOFF_STATE.md`, `docs/ai_logs.md`.
+- **orchestrator:** `docs/API_REFERENCE.md`, `docs/huong-dan-su-dung.md`, `docs/AI_HANDOFF_STATE.md`.
 - `apps/web/lib/generated/openapi.d.ts` do `make gen-types` sinh, không ai sửa tay.
 
 ## 6. Tiêu chí nghiệm thu (kiểm chứng được)

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Hook ghi vết phiên Claude Code (Stop / SubagentStop / SessionEnd).
 
-Vì sao có: nhật ký AI viết tay (docs/ai_logs.md) là lời tự khai của model nên
+Vì sao có: nhật ký AI viết tay (đã gỡ) là lời tự khai của model nên
 có thể sai hoặc thiếu, và quá ngắn để dùng làm dữ liệu train. Hook do harness
 chạy, không phụ thuộc model "nhớ" ghi.
 

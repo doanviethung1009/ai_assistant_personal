@@ -6,7 +6,7 @@ import "server-only";
  * Xuất hoạt động ở cả ba chế độ DATA_SOURCE; nhập CSV và nhập JSON kiểu cũ chỉ ở file/memory.
  * Chuyển dữ liệu từ file lên Postgres KHÔNG đi qua đây: dùng endpoint
  * POST /api/v1/import/datafile (xem lib/api.ts importDataFile và
- * docs/DATA_MIGRATION_TO_POSTGRES.md). Ở chế độ api, importJson/importAiLogsJson ném lỗi
+ * docs/DATA_MIGRATION_TO_POSTGRES.md). Ở chế độ api, importJson ném lỗi
  * chỉ về hướng đó vì đường POST từng bản ghi cũ làm hỏng dữ liệu.
  *
  * Ràng buộc quan trọng khi nhập từ instance khác: `project_id` trong file là
@@ -609,85 +609,3 @@ export async function importNotesCsv(
 function engineTasksOrEmpty(): StoredTask[] {
   return IS_LOCAL ? engine.allTasks() : [];
 }
-
-// ── AI Logs Export & Import ──────────────────────────────────────────────────
-
-export async function buildAiLogsJson(): Promise<string> {
-  let logs: any[] = [];
-  if (IS_LOCAL) {
-    await localReady();
-    logs = engine.snapshotAiLogs().ai_logs ?? [];
-  } else {
-    logs = await apiClient.listAiLogs();
-  }
-  return JSON.stringify({ schema_version: 1, exported_at: new Date().toISOString(), ai_logs: logs }, null, 2);
-}
-
-export async function importAiLogsJson(
-  text: string,
-  mode: ImportMode,
-): Promise<ImportSummary> {
-  if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
-  assertReplaceAllowed(mode);
-
-  let parsed: any;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new Error("Không phải JSON hợp lệ");
-  }
-
-  if (!parsed || !Array.isArray(parsed.ai_logs)) {
-    throw new Error("Thiếu mảng 'ai_logs'. Đây không phải file backup AiLogs.");
-  }
-
-  const logs = parsed.ai_logs as any[];
-  const summary = emptySummary();
-  summary.created_tasks = 0; // We repurpose this or just use a custom summary, but since it returns ImportSummary we use it
-  summary.created_projects = 0;
-  
-  // Custom tracking for ai_logs
-  let created = 0;
-
-  if (IS_LOCAL) {
-    await localReady();
-    const current = mode === "replace" ? [] : (engine.snapshotAiLogs().ai_logs ?? []);
-    
-    // Thêm tránh trùng lặp đơn giản (theo id)
-    const existingIds = new Set(current.map(l => l.id));
-    
-    for (const log of logs) {
-      if (!existingIds.has(log.id)) {
-        current.push(log);
-        existingIds.add(log.id);
-        created += 1;
-      }
-    }
-    
-    // Ghi đè file
-    engine.restoreAiLogs({
-      ai_logs: current
-    });
-    
-  } else {
-    // API mode
-    const existing = await apiClient.listAiLogs();
-    const existingIds = new Set(existing.map(l => l.id));
-    
-    for (const log of logs) {
-      if (!existingIds.has(log.id)) {
-        try {
-          await apiClient.createAiLog(log);
-          created += 1;
-        } catch (e) {
-          summary.skipped.push({ line: 0, reason: e instanceof Error ? e.message : String(e) });
-        }
-      }
-    }
-  }
-
-  // We can just add a warning to show how many ai logs were imported since ImportSummary doesn't have a field for it
-  summary.warnings.push(`Đã nhập ${created} nhật ký AI Logs thành công.`);
-  return summary;
-}
-
