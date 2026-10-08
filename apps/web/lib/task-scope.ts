@@ -56,6 +56,10 @@ interface ViewFields extends ScopeFields {
  * `mine` = personal HOẶC (work VÀ (giao cho một trong `owners`, hoặc không có
  * assignee và không đến từ tích hợp)). So khớp tên CHÍNH XÁC, phân biệt hoa
  * thường: tên hiển thị Jira phải khớp đúng chuỗi trong cài đặt người dùng.
+ *
+ * Chuỗi rỗng ('') ở assignee/external_id được coi như không có ở cả hai phía:
+ * backend chuẩn hoá '' thành NULL khi ghi, và `!t.assignee` / `!t.external_id`
+ * ở đây cho cùng kết quả. Engine file cũng chuẩn hoá '' thành null khi tạo/sửa assignee.
  */
 export function matchesView(
   t: ViewFields,

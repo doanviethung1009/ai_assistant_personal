@@ -12,8 +12,12 @@ const UNASSIGNED = "Chưa giao";
 
 /** Backend giới hạn limit <= 200 mỗi trang. */
 const FETCH_PAGE = 200;
-/** Chặn vòng lặp vô hạn nếu total thay đổi giữa các lần gọi (tối đa 20 000 task). */
-const MAX_FETCH_PAGES = 100;
+/**
+ * Trần số lần gọi mỗi lần render (25 x 200 = 5 000 task): chặn vòng lặp vô hạn nếu
+ * total đổi giữa các lần gọi và không để một request render kéo hàng chục nghìn dòng.
+ * Vượt trần thì danh sách bị cắt; cần phân trang server-side thật (S12).
+ */
+const MAX_FETCH_PAGES = 25;
 
 /**
  * Tải toàn bộ task công việc (kể cả đã đóng) bằng nhiều trang 200.
@@ -25,17 +29,27 @@ const MAX_FETCH_PAGES = 100;
  */
 async function listAllWorkTasks(): Promise<Task[]> {
   const all: Task[] = [];
+  // Phân trang offset có thể lặp task nếu dữ liệu đổi giữa hai lần gọi (task mới chèn
+  // lên đầu đẩy task cũ sang trang sau), nên lọc trùng theo id khi gộp.
+  const seen = new Set<string>();
+  let fetched = 0;
   for (let i = 0; i < MAX_FETCH_PAGES; i++) {
     const res = await listTasks({
       view: "work",
       includeClosed: true,
       limit: FETCH_PAGE,
-      offset: all.length,
+      offset: fetched,
       sortBy: "created_at",
       sortDesc: true,
     });
-    all.push(...res.items);
-    if (res.items.length === 0 || all.length >= res.total) break;
+    fetched += res.items.length;
+    for (const t of res.items) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        all.push(t);
+      }
+    }
+    if (res.items.length === 0 || fetched >= res.total) break;
   }
   return all;
 }

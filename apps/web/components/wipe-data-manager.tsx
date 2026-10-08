@@ -8,12 +8,14 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
   const [confirmText, setConfirmText] = useState("");
   const [wipeTarget, setWipeTarget] = useState<string>("tasks");
   const [assignee, setAssignee] = useState("");
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
 
   const handleWipe = () => {
+    setError(null);
     if (wipeTarget === "tasks_assignee" && !assignee.trim()) {
-      alert("Vui lòng nhập tên người cần xoá task!");
+      setError("Vui lòng nhập tên người cần xoá task. Không có gì bị xoá.");
       return;
     }
     if (confirmText !== "DELETE") {
@@ -49,7 +51,7 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
       try {
         await wipeAllDataAction(options);
       } catch {
-        alert("Xoá dữ liệu thất bại. Kiểm tra DATA_SOURCE và log của web.");
+        setError("Xoá dữ liệu thất bại. Kiểm tra DATA_SOURCE và log của web.");
         return;
       }
       setConfirmText("");
@@ -105,6 +107,12 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
         )}
       </div>
 
+      {error ? (
+        <p role="alert" className="mb-3 text-xs font-medium text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      ) : null}
+
       <div className="flex items-center gap-2">
         <input
           type="text"
@@ -116,7 +124,11 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
         />
         <button
           onClick={handleWipe}
-          disabled={pending || confirmText !== "DELETE"}
+          disabled={
+            pending ||
+            confirmText !== "DELETE" ||
+            (wipeTarget === "tasks_assignee" && !assignee.trim())
+          }
           className="rounded-md bg-red-600 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {pending ? "Đang xử lý..." : "Xoá Dữ Liệu"}

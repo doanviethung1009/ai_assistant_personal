@@ -207,6 +207,16 @@ export async function importBulkFileAction(formData: FormData) {
   }
 }
 
+/** Giữ phần tử là object thường có đủ các khoá kiểu chuỗi không rỗng; còn lại bỏ. */
+function cleanList(value: unknown, requiredStrings: string[]): Record<string, unknown>[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is Record<string, unknown> => {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) return false;
+    const rec = item as Record<string, unknown>;
+    return requiredStrings.every((k) => typeof rec[k] === "string" && rec[k] !== "");
+  });
+}
+
 export async function restoreFromJsonAction(jsonData: any) {
   if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
 
@@ -218,13 +228,24 @@ export async function restoreFromJsonAction(jsonData: any) {
     // Chạy migrate trước khi gộp: file cũ (v1-v4) thiếu `scope` (và trước đây có
     // thể thiếu cả `deleted_at`), nếu đưa nguyên vào RAM thì task biến mất khỏi
     // mọi view. File không ghi schema_version coi như v1 để migrate chạy đủ bước.
+    //
+    // VALIDATE TOÀN BỘ TRƯỚC KHI GHI: file là dữ liệu không đáng tin. Phần tử không
+    // phải object hoặc thiếu id/title bị loại ở đây; mọi bước có thể ném lỗi (lọc,
+    // migrate) đều chạy xong trước khi chạm vào db, nên không để lại trạng thái dở dang.
     const version = Number.isInteger(jsonData.schema_version) ? jsonData.schema_version : 1;
     const data = migrate({
       ...jsonData,
       schema_version: version,
-      projects: Array.isArray(jsonData.projects) ? jsonData.projects : [],
-      tasks: Array.isArray(jsonData.tasks) ? jsonData.tasks : [],
-      notes: Array.isArray(jsonData.notes) ? jsonData.notes : [],
+      projects: cleanList(jsonData.projects, ["id", "key", "name"]),
+      tasks: cleanList(jsonData.tasks, ["id", "title"]).map((t) => ({
+        ...t,
+        tags: Array.isArray(t.tags) ? t.tags : [],
+        events: Array.isArray(t.events) ? t.events : [],
+      })),
+      notes: cleanList(jsonData.notes, ["id", "title", "content"]).map((n) => ({
+        ...n,
+        tags: Array.isArray(n.tags) ? n.tags : [],
+      })),
     } as DataFile);
 
     const db = engine.state();

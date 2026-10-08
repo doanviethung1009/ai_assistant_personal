@@ -139,17 +139,21 @@ export function migrate(data: DataFile): DataFile {
   // thiếu scope sẽ biến mất khỏi mọi view. Chỉ đặt cho task CHƯA có giá trị
   // hợp lệ, nên chạy lại (hoặc nạp file đã là v5) không đảo lựa chọn của User.
   if (data.schema_version < 5) {
-    let backfilled = 0;
-    for (const task of data.tasks) {
-      if (parseScope(task.scope) === null) {
-        task.scope = defaultScopeFor(task.source);
-        backfilled += 1;
-      }
-    }
-    if (backfilled > 0) {
-      console.info(`[store] migrate v4→v5: đặt scope cho ${backfilled} task theo source`);
-    }
     data.schema_version = 5;
+  }
+
+  // Chuẩn hoá scope LUÔN chạy, kể cả file tự khai schema_version 5: file đến từ
+  // bên ngoài (restore JSON) có thể mang scope rác ('admin', '', object, vắng).
+  // Giá trị hợp lệ được giữ nguyên nên không đảo lựa chọn của User.
+  let normalized = 0;
+  for (const task of data.tasks) {
+    if (parseScope(task.scope) === null) {
+      task.scope = defaultScopeFor(task.source);
+      normalized += 1;
+    }
+  }
+  if (normalized > 0) {
+    console.info(`[store] migrate: chuẩn hoá scope cho ${normalized} task theo source`);
   }
 
   return data;

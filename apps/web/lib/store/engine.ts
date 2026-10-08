@@ -286,7 +286,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     created_at: created,
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
-    assignee: partial.assignee ?? null,
+    assignee: partial.assignee?.trim() || null,
     scope: partial.scope ?? defaultScopeFor(partial.source ?? "manual"),
     events:
       partial.events ??
@@ -829,6 +829,8 @@ export function createTask(input: CreateInput): TaskDetail {
 }
 
 export function patchTask(id: string, input: Record<string, unknown>): TaskDetail {
+  // Validate scope TRƯỚC mọi phép gán: payload sai không được sửa dở task trong RAM.
+  const nextScope = "scope" in input ? requireScope(input.scope) : undefined;
   const task = find(id);
   const oldStatus = task.status;
 
@@ -842,8 +844,11 @@ export function patchTask(id: string, input: Record<string, unknown>): TaskDetai
   }
   if ("priority" in input) task.priority = input.priority as TaskPriority;
   // Đổi scope không có side effect nào khác: chỉ quyết định task có được sync ghi đè không.
-  if ("scope" in input) task.scope = requireScope(input.scope);
-  if ("assignee" in input) task.assignee = (input.assignee as string | null) ?? null;
+  if (nextScope !== undefined) task.scope = nextScope;
+  // '' thành null, khớp backend (chuẩn hoá assignee rỗng thành NULL khi ghi).
+  if ("assignee" in input) {
+    task.assignee = ((input.assignee as string | null) ?? "").trim() || null;
+  }
   if ("due_at" in input) task.due_at = (input.due_at as string | null) ?? null;
   if ("scheduled_for" in input) {
     task.scheduled_for = (input.scheduled_for as string | null) ?? null;
