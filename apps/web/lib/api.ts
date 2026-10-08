@@ -10,6 +10,7 @@ import type {
   ImportReport,
   IntegrationConnection,
   IntegrationCreateBody,
+  IntegrationSyncResult,
   IntegrationUpdateBody,
   Note,
   NoteKind,
@@ -908,6 +909,23 @@ export function patchIntegration(id: string, body: IntegrationUpdateBody): Promi
 export async function deleteIntegration(id: string): Promise<void> {
   requireApiMode();
   await coreFetch<void>(`/api/v1/integrations/${pathId(id)}`, { method: "DELETE" });
+}
+
+/**
+ * Cào Jira theo kết nối đã lưu (B4b). Core tự gọi Jira bằng token đã giải mã; web chỉ
+ * kích hoạt. Mật khẩu IMPORT_COMMIT_SECRET đi DUY NHẤT qua header X-Import-Secret.
+ *
+ * Không đặt timeout ngắn: core có trần 5 phút cho một lượt sync. Ở đây dùng 6 phút để
+ * core là bên tự cắt trước và trả 504 có thông báo rõ.
+ */
+export async function syncIntegration(id: string, secret: string, since?: string): Promise<IntegrationSyncResult> {
+  requireApiMode();
+  const query = since ? `?since=${encodeURIComponent(since)}` : "";
+  return coreFetch<IntegrationSyncResult>(`/api/v1/integrations/${pathId(id)}/sync${query}`, {
+    method: "POST",
+    headers: { "X-Import-Secret": secret },
+    signal: AbortSignal.timeout(6 * 60_000),
+  });
 }
 
 /**

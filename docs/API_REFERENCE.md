@@ -126,6 +126,15 @@ Lưu kết nối Jira ở server (token mã hoá Fernet bằng `INTEGRATION_SECR
 | `DELETE` | `/integrations/{id}` | Xoá kết nối |
 | `POST` | `/tasks/upsert-batch` | **Cần `X-Import-Secret`.** `{source, items[] <= 1000}`, trần body 20 MB. `source` khác `manual`. Upsert theo `(source, external_id)` trên task còn sống. Trả `{added, updated, unchanged, skipped_personal, errors[], warnings[]}` |
 | `POST` | `/import/verify-secret` | Chỉ kiểm `X-Import-Secret`, trả 204 hoặc 403. Web dùng để xác minh mật khẩu thật trước khi tải URL hay parse Excel |
+| `POST` | `/integrations/{id}/sync?since=` | **Cần `X-Import-Secret`.** Chạy sync Jira Cloud ngay (polling, không webhook). `since` là ngày ISO tuỳ chọn (đồng bộ gia tăng). Trả `{fetched, pages, added, updated, unchanged, skipped_personal, errors[], warnings[], truncated}`. 409: đang có sync khác của kết nối này, hoặc thiếu token. 422: `since`/JQL/host bị chặn. 502/504: lỗi mạng hoặc Jira (thông báo cố định, không kèm body Jira). 503: giải mã token thất bại, cần nhập lại token |
+
+Sync Jira (B4b) chạy **trong core** bằng connector Python (ngoại lệ D-B4a, xem `.agents/rules/project.md`):
+- Chỉ Jira Cloud. `base_url` phải là `https://<tên>.atlassian.net`; core phân giải DNS, **chặn mọi IP riêng/loopback/metadata**, ghim đúng IP đã kiểm khi kết nối (chống DNS rebinding), không theo redirect, không gửi `Authorization` sang host khác.
+- Giới hạn: 100 trang, 30 giây mỗi request, 5 phút cả lần, 10 MB mỗi trang, 50 MB cả lần (vượt thì `truncated=true`, `last_sync_at` không đổi).
+- JQL mặc định dùng `current_users` (cài đặt B2); tên người dùng được escape.
+- Tương đương chế độ file: `priority`, `due_at`, `assignee` và project chỉ được ghi khi **tạo** task, task cũ giữ giá trị bạn đã sửa. Title, status, tags (gộp), `description` (chỉ khi rỗng) vẫn cập nhật.
+- Task bị bỏ qua nếu `external_url` thuộc host khác kết nối đang sync. Tối đa 50 project mới mỗi lần sync.
+- `raw_payload` chỉ giữ một tập field được phép, không lưu cả issue.
 
 Quy tắc `upsert-batch`:
 - Chỉ ghi `scope=work`. Task trùng khoá mà đang `personal` thì **không bị ghi đè** (đếm vào `skipped_personal`).

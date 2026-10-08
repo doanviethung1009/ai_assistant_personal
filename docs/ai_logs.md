@@ -892,6 +892,14 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
 - **Phản hồi:** B4a xong code và tài liệu; 597 test pass, tsc sạch. Chưa UAT, chưa `make smoke`. B4b (chạy sync) chưa làm.
 
 ### [09-10-2026 02:00] | Category: [API]
+- **Prompt:** Merge #16 (B4a) rồi làm B4b (chạy sync Jira ở backend); Jira là Cloud; lịch sử và Vault không cần ở Postgres.
+- **Xử lý:**
+  - Merge #16. Nhánh `feat/jira-sync-b4b`. backend-dev: connector Python (jira_client, jira_mapping, ssrf_guard, integration_sync_service) + `POST /integrations/{id}/sync`, 195 test mới. frontend-dev: bật "Cào ngay", vá SSRF `syncJiraAction` chế độ file.
+  - Review (bảo mật bắt buộc, code, web): sync ghi đè priority/due_at/assignee/project User đã sửa (đã đưa về create-only), giữ cả 100 trang trong RAM, dữ liệu Jira điều khiển project cục bộ, hai kết nối ghi đè task của nhau, thiếu vài dải IPv6/metadata, decompression bomb, rò khoá khi huỷ request; web: thiếu trần tổng chế độ file, `__proto__`, `issue.key` chưa kiểm. Bỏ cờ private-network vì Jira là Cloud.
+  - Phát hiện caplog trong test có thể vô nghĩa; tách chip riêng. Gỡ lịch sử Chrome tách chip riêng.
+- **Phản hồi:** B4b xong code và tài liệu; 810 test pass, tsc sạch. Chưa UAT với Jira Cloud thật, chưa `make smoke`. Chưa commit/push.
+
+### [09-10-2026 02:30] | Category: [API]
 - **Prompt:** Gỡ hẳn tính năng lịch sử duyệt web (User xác nhận không cần nữa, cả Postgres lẫn file JSON), trên nhánh `chore/remove-browser-history` từ `main`.
 - **Xử lý:**
   - Dùng git worktree riêng (`../ai_assistant_personal-rm-bh`) vì thư mục chính đang giữ thay đổi chưa commit của B4b; không đụng nhánh `feat/jira-sync-b4b`.

@@ -21,6 +21,12 @@ Giai đoạn hiện tại: **Phase 1** — task nhập tay qua web UI. Chưa có
 Hợp đồng giữa các bên chỉ gồm: OpenAPI schema do FastAPI sinh, và giao thức MCP.
 Không chia sẻ database trực tiếp giữa các service.
 
+**Ngoại lệ đã chốt (D-B4a, User duyệt):** connector Jira chạy bằng **Python trong `apps/core`**
+(`services/jira_client.py`, `ssrf_guard.py`), không phải TypeScript + MCP trong `mcp-servers/`.
+Lý do: token Jira phải giải mã được ở server và chỉ nên đi qua một tiến trình; thêm một service
+TS riêng sẽ khiến token đi qua hai tiến trình. Khi có nguồn thứ hai cần connector thật sự tách
+rời thì mới tạo `mcp-servers/`.
+
 ## Nguyên tắc thiết kế
 
 - **Task model đa nguồn từ đầu.** Mọi task có `source`, `external_id`, `raw_payload`.

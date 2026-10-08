@@ -268,3 +268,29 @@ class IntegrationRead(BaseModel):
     last_sync_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class SyncMessage(BaseModel):
+    """Một lỗi/cảnh báo của lần đồng bộ. `reason` là câu TỰ VIẾT, không chứa nội dung Jira."""
+
+    index: int | None = Field(
+        default=None, description="Vị trí issue trong dữ liệu đã tải (từ 0); null = cả lần sync"
+    )
+    external_id: str | None = Field(default=None, description="Khoá issue (PROJ-123) nếu có")
+    reason: str
+
+
+class SyncResult(BaseModel):
+    fetched: int = Field(description="Số issue Jira đã tải (kể cả issue bị loại do lỗi)")
+    pages: int
+    added: int
+    updated: int
+    unchanged: int
+    skipped_personal: int = Field(
+        description="Trùng khoá với task scope=personal nên bị bỏ qua, không ghi đè"
+    )
+    errors: list[SyncMessage] = Field(default_factory=list)
+    warnings: list[SyncMessage] = Field(default_factory=list)
+    truncated: bool = Field(
+        description="Chạm trần 100 trang: chưa lấy hết, và last_sync_at không được cập nhật"
+    )

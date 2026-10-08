@@ -53,3 +53,8 @@ def configure_logging(level: str = "INFO") -> None:
         logger.propagate = True
 
     logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+
+    # httpx/httpcore ở INFO/DEBUG in URL và chi tiết request/kết nối; connector tích hợp gọi
+    # ra ngoài kèm Authorization, nên giữ tối thiểu WARNING bất kể LOG_LEVEL.
+    for name in ("httpx", "httpcore"):
+        logging.getLogger(name).setLevel(logging.WARNING)

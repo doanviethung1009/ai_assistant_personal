@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlsplit
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -288,15 +289,30 @@ def _event(task: Task, kind: TaskEventType, actor: str, payload: dict[str, Any])
     return TaskEvent(task_id=task.id, event_type=kind, actor=actor, payload=jsonable(payload))
 
 
-def _wanted_values(p: _Prepared, project_ids: dict[str, uuid.UUID]) -> dict[str, Any]:
-    """Giá trị mong muốn của các trường mà client có gửi (cho cập nhật)."""
+def _same_host(url: str | None, host: str) -> bool:
+    """True nếu `url` rỗng hoặc có host trùng `host` (không phân biệt hoa thường)."""
+    if not url:
+        return True
+    try:
+        return (urlsplit(url).hostname or "").lower() == host.lower()
+    except ValueError:
+        return False
+
+
+def _wanted_values(
+    p: _Prepared, project_ids: dict[str, uuid.UUID], create_only: frozenset[str] = frozenset()
+) -> dict[str, Any]:
+    """Giá trị mong muốn của các trường mà client có gửi (cho cập nhật).
+
+    Trường trong `create_only` không bao giờ được đưa vào cập nhật (chỉ dùng khi tạo mới).
+    """
     sent = p.item.model_fields_set
     values: dict[str, Any] = {}
     for name in _SYNCED_FIELDS:
-        if name in sent:
+        if name in sent and name not in create_only:
             value = getattr(p.item, name)
             values[name] = _to_utc(value) if name == "due_at" else value
-    if "project_key" in sent:
+    if "project_key" in sent and "project_key" not in create_only:
         values["project_id"] = project_ids[p.project_key] if p.project_key else None
     return values
 
@@ -312,7 +328,13 @@ def _merge_wanted(task: Task, wanted: dict[str, Any]) -> dict[str, Any]:
 
 
 async def upsert_batch(
-    session: AsyncSession, source: TaskSource, items: Sequence[TaskUpsert]
+    session: AsyncSession,
+    source: TaskSource,
+    items: Sequence[TaskUpsert],
+    *,
+    actor: str | None = None,
+    create_only: frozenset[str] = frozenset(),
+    owner_host: str | None = None,
 ) -> TaskUpsertResult:
     """Upsert một lô task của một nguồn tích hợp, idempotent, trong MỘT transaction.
 
@@ -335,10 +357,22 @@ async def upsert_batch(
       được tính vào "hoàn thành hôm nay"). Khi một task cũ chuyển sang đóng ở lần update:
       `completed_at` của nguồn nếu có, không thì now().
 
+    `actor` là giá trị ghi vào `task_events.actor`; mặc định `integration:<source>` (route
+    upsert-batch). Connector chạy trong core truyền `integration:<tên kết nối>` để sổ sự
+    kiện nói rõ kết nối nào đã ghi. Chuỗi bị cắt về 100 ký tự (độ dài cột).
+
+    `create_only`: tên trường (`priority`, `due_at`, `assignee`, `project_key`...) chỉ được
+    ghi khi TẠO task, không bao giờ ghi đè task đã có. Jira sync dùng để giữ giá trị User
+    đã sửa tay (cùng ngữ nghĩa chế độ file); route upsert-batch không truyền, giữ hành vi cũ.
+
+    `owner_host`: chỉ dùng khi sync theo kết nối. Task đã có mà `external_url` thuộc host
+    KHÁC thì không bị ghi (vào `errors`), để hai kết nối khác Jira không ghi đè task của
+    nhau khi trùng `(source, external_id)`. Task không có external_url vẫn được cập nhật.
+
     Raises:
         ConflictError: 409 khi hết hạn chờ khoá hoặc va chạm unique với bên ghi khác.
     """
-    actor = f"integration:{source.value}"
+    actor = (actor or f"integration:{source.value}")[:100]
     errors: list[UpsertItemError] = []
     warnings: list[UpsertItemWarning] = []
 
@@ -407,9 +441,15 @@ async def upsert_batch(
             skipped_personal += 1
             continue
 
+        if owner_host is not None and not _same_host(task.external_url, owner_host):
+            errors.append(
+                UpsertItemError(index=p.index, reason="task thuộc nguồn/kết nối khác, không ghi đè")
+            )
+            continue
+
         diff = _apply_changes(
             task,
-            _merge_wanted(task, _wanted_values(p, project_ids)),
+            _merge_wanted(task, _wanted_values(p, project_ids, create_only)),
             p.payload,
             now,
             _to_utc(p.item.completed_at),
