@@ -862,3 +862,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Lệch spec cần User biết: allowlist áp cả chế độ file (trước đây lưu URL bất kỳ).
   - Server web cổng 3000 vẫn dừng để bảo vệ dữ liệu thật; dữ liệu thật không đổi hash.
 - **Phản hồi:** B2 xong code và docs, đang review. Chưa push; migration chỉ merge sau PR task-scope (#13).
+
+---
+
+### [09-10-2026 00:30] | Category: [API]
+- **Prompt:** (tiếp nối "làm b2 đi") xử lý kết quả review B2 của db-reviewer, code-reviewer, security-auditor.
+- **Xử lý:**
+  - code-reviewer kiểm trên mạng thật: Google Drive chuyển hướng 303 sang `drive.usercontent.google.com` (ngoài allowlist) nên link Drive hỏng; đã thêm host chính xác. OneDrive cá nhân chưa kiểm được nên KHÔNG thêm host, ghi vào tài liệu cần `SYNC_URL_EXTRA_HOSTS`.
+  - security-auditor: tải file không giới hạn bộ nhớ (đã stream có trần 20 MB + identity + kiểm content-type); Kelvin lọt Python (re.ASCII); host bổ sung nhận host một nhãn và hậu tố dùng chung (đã từ chối); báo cáo nhập che query của URL; handler 422 cho /settings bỏ input. `xlsx` 0.18.5 CVE tách thành chip riêng.
+  - db-reviewer: race PUT settings với nhập (PUT nay lấy advisory lock chung), `lock_timeout` cho migration, test so CHECK với enum.
+  - code-reviewer: thêm/xoá URL bị khoá bởi URL cũ không còn hợp lệ (đã lọc và báo số link bị bỏ).
+  - Tự kiểm chứng: 449 test pass (452 trên file thật), parity allowlist TS/Python 225 URL + 33 cấu hình, 0 lệch; dữ liệu thật không đổi hash.
+- **Phản hồi:** B2 xong vòng sửa; chưa push; migration chỉ merge sau PR task-scope (#13).

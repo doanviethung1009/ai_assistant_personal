@@ -124,7 +124,7 @@ COPY (SELECT id, scope FROM tasks
 TO STDOUT WITH CSV HEADER;
 ```
 
-**URL đồng bộ chỉ nhận một số host.** Khi lưu và khi fetch, URL phải là `https` và thuộc: Google Docs/Sheets/Drive (`docs.google.com`, `drive.google.com`, `*.googleusercontent.com`), SharePoint/OneDrive (`*.sharepoint.com`, `onedrive.live.com`, `1drv.ms`). Host khác (ví dụ Jira on-prem) phải thêm vào biến `SYNC_URL_EXTRA_HOSTS` (danh sách phân cách dấu phẩy, **đặt giống nhau cho cả api và web** trong `.env`/compose). **Thay đổi hành vi:** trước đây chế độ file lưu URL bất kỳ; nay link ngoài danh sách bị từ chối ngay lúc lưu, vì chính server web sẽ fetch nó (chống SSRF).
+**URL đồng bộ chỉ nhận một số host.** Khi lưu và khi fetch, URL phải là `https` và thuộc: Google Docs/Sheets/Drive (`docs.google.com`, `drive.google.com`, `drive.usercontent.google.com`, `*.googleusercontent.com`), SharePoint/OneDrive (`*.sharepoint.com`, `onedrive.live.com`, `1drv.ms`). **Link OneDrive cá nhân có thể cần thêm host** (OneDrive chuyển hướng tới host riêng như `*.files.1drv.com`; chưa kiểm được nên chưa đưa vào danh sách mặc định): thêm vào `SYNC_URL_EXTRA_HOSTS` sau khi tự kiểm. Host khác (ví dụ Jira on-prem) phải thêm vào biến `SYNC_URL_EXTRA_HOSTS` (danh sách phân cách dấu phẩy, **đặt giống nhau cho cả api và web** trong `.env`/compose; host phải có dấu chấm, wildcard `*.X` bị từ chối nếu X là hậu tố dùng chung như `github.io`, `nip.io`; cấu hình sai thì api không khởi động còn web từ chối tất cả). **Thay đổi hành vi:** trước đây chế độ file lưu URL bất kỳ; nay link ngoài danh sách bị từ chối ngay lúc lưu, vì chính server web sẽ fetch nó (chống SSRF).
 
 ## 6. Chưa chuyển (các pha sau)
 
