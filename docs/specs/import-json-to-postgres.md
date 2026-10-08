@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | **B1** | Nhập thực thể: projects, tasks, task_events, notes (file `builder-data.json`), ai_logs (file `ai-logs.json`). Replace có audit. | `import_runs`, `import_audit` | Không | **Có**: endpoint ghi hàng loạt có phá huỷ, Server Action mới |
 | **B2** | Cài đặt người dùng: `current_users`, `sync_urls`, danh sách assignee ở chế độ api; nhập `meta.current_users` từ file. | `app_settings` | B1 (dùng lại service nhập, mở rộng phần `meta`) | **Có**: `sync_urls` là URL do người dùng nhập mà server sẽ fetch (SSRF) |
-| **B3** | Lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `chrome-history.json`. | `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có**: lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; sửa lỗi nội suy shell có sẵn trong `scrapeChromeHistory` |
+| **B3** | (ĐÃ GỠ, xem PHA B3) Lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `chrome-history.json`. | `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có**: lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; sửa lỗi nội suy shell có sẵn trong `scrapeChromeHistory` |
 | **B4** | Jira sync chạy ở backend: lưu cấu hình kết nối (token mã hoá phía server), endpoint upsert hàng loạt cho integration, chạy sync theo yêu cầu; URL/Excel sync ở chế độ api dùng lại endpoint upsert. | `integration_connections` | B1 (chuẩn hoá key project), B2 (`current_users` cho JQL mặc định, `sync_urls`) | **Có, bắt buộc**: lưu token Jira ở server, outbound HTTP, dữ liệu ngoài không đáng tin |
 
 **Thứ tự đề xuất:** B1 → **S (`docs/specs/task-scope.md`, tách task công việc và cá nhân)** → B2 → B4. B3 làm song song với B2 hoặc B4 được, vì không chạm cùng file.
@@ -439,45 +439,9 @@ Rủi ro B1:
 
 ---
 
-# PHA B3: Lịch sử Chrome (gọn)
+# PHA B3: Lịch sử Chrome (ĐÃ GỠ)
 
-## 10. B3
-
-Vault không thuộc B3 (đã loại ở v2.1, xem 1.1).
-
-**Hiện trạng.** `lib/chrome-history.ts` copy file SQLite `History` của Chrome trên **máy chạy web**, đọc bằng `sqlite3` CLI, ghi đè `data/chrome-history.json` (`{synced_at, source_path, items: [{url, title, visit_count, last_visit_time}]}`); `/history` đọc file đó trực tiếp. `last_visit_time` là giờ địa phương **không có múi giờ** (`'localtime'` trong SQL).
-
-**Đề xuất.** Việc đọc Chrome **vẫn ở web** (backend chạy trong container, không thấy hồ sơ Chrome của host). Ở chế độ api, web đẩy kết quả lên core thay vì ghi file.
-
-| Bảng | Cột | Index/Constraint |
-|---|---|---|
-| `browser_history` (mới) | `id uuid PK`, `profile varchar(200)` (tên thư mục profile, không lưu đường dẫn tuyệt đối), `url text`, `title text`, `visit_count int ≥ 0`, `last_visit_at timestamptz`, `synced_at timestamptz` | unique `(profile, url_hash)` với `url_hash = sha256(url)` (URL dài không index trực tiếp được); index `last_visit_at DESC` |
-
-| Method | Path | Ghi chú |
-|---|---|---|
-| POST | `/api/v1/browser-history/batch` | `{ profile, items[] }`, ≤ 10 000 item mỗi lần, upsert theo `(profile, url_hash)`: lấy `visit_count` và `last_visit_at` lớn hơn |
-| GET | `/api/v1/browser-history?q=&profile=&limit=50&offset=` | `Page[...]`, phân trang server-side (rule 3.5) |
-| DELETE | `/api/v1/browser-history?profile=` | Xoá theo profile (thay cho xoá file) |
-| POST | `/api/v1/import/browser-history?dry_run=true` | Nhập `chrome-history.json`: đổi `last_visit_time` từ giờ `display_timezone` sang UTC; upsert như trên (với dữ liệu này "replace" nghĩa là lấy số lớn hơn, không bao giờ giảm) |
-
-**Bảo mật/riêng tư:**
-- Lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; URL có thể chứa token trong query string (link reset mật khẩu, OAuth `code=`). Đề xuất bỏ query string và fragment trước khi lưu (D-B3c).
-- **Lỗi có sẵn cần sửa trong B3:** `scrapeChromeHistory` dựng lệnh shell bằng nội suy chuỗi: `exec(\`sqlite3 -json "${tmpHistoryPath}" "${query}" > ...\`)`, trong đó `query` chứa `LIMIT ${limit}`. `limit` do client gửi qua `syncChromeHistoryAction` và không được kiểm tra kiểu ở Server Action, nên một chuỗi chứa `"` hay `;` sẽ thoát khỏi tham số. `customPath` cũng do client gửi, nhưng chỉ đi vào `fs.copyFileSync`. Cách sửa:
-  - Chuyển sang `execFile("sqlite3", ["-json", tmpPath, query])` và tự ghi stdout ra file, không dùng chuyển hướng của shell.
-  - Ép `limit` về số nguyên trong khoảng 1..10 000.
-  - Bắt `customPath` phải nằm dưới thư mục Chrome của user.
-- `security-auditor` bắt buộc: dữ liệu cá nhân nhạy cảm và sửa lỗi nội suy shell.
-
-**Ownership B3:**
-- backend-dev: model `browser_history.py`, migration `<rev>_add_browser_history.py`, schemas/services/routers tương ứng, mở rộng `import_service.py` (hoặc service nhập riêng), test.
-- frontend-dev: `lib/api.ts`, `lib/chrome-history.ts`, `app/actions-chrome.ts`, `app/history/page.tsx`, `components/chrome-history-manager.tsx`, `components/core-import-panel.tsx` (thêm loại file `chrome-history.json`).
-- **Không ai sửa:** `lib/vault/**`, `components/vault-import-manager.tsx`, `app/vault-actions.ts`.
-
-**Nghiệm thu B3:**
-- pytest: batch upsert idempotent (gửi hai lần không tăng số dòng, `visit_count` không giảm); giờ địa phương đổi đúng sang UTC theo `display_timezone`; query string và fragment bị bỏ (nếu D-B3c chốt); vượt 10 000 item → 422; `GET` phân trang đúng.
-- `grep -rn "vault" apps/core/app` → không có kết quả mới.
-- Web: `tsc`. `grep -n "exec(" apps/web/lib/chrome-history.ts` → rỗng (chỉ còn `execFile`). `git diff --name-only -- apps/web/lib/vault apps/web/components/vault-import-manager.tsx` → rỗng.
-- UAT: `/history` ở chế độ api phân trang 50/trang; nhập `chrome-history.json` hai lần không nhân đôi.
+Tính năng lịch sử duyệt web (pha B3) đã **gỡ hẳn** theo quyết định của User (nhánh `chore/remove-browser-history`, migration `d7e2a9c4b1f6` xoá bảng `browser_history`). File `data/chrome-history.json` của User được giữ nguyên, hệ thống không còn đọc hay ghi nó. Nội dung thiết kế gốc của B3 nằm trong lịch sử git (commit trước khi gỡ).
 
 ---
 

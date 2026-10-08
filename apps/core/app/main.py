@@ -70,11 +70,9 @@ async def handle_domain_error(request: Request, exc: DomainError) -> JSONRespons
 
 
 SETTINGS_PATH_PREFIX = "/api/v1/settings"
-# Các route có URL duyệt web (có thể mang token) trong body: 422 không được echo lại `input`.
+# Các route có dữ liệu nhạy cảm (URL đồng bộ, token) trong body: 422 không được echo lại `input`.
 _NO_ECHO_PREFIXES = (
     SETTINGS_PATH_PREFIX,
-    "/api/v1/browser-history",
-    "/api/v1/import/browser-history",
     # Body có API token của integration: 422 mà echo `input` là lộ token.
     "/api/v1/integrations",
     # raw_payload của nguồn ngoài có thể mang token/cookie: không echo lại trong 422.

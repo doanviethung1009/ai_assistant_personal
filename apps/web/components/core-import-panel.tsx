@@ -3,9 +3,7 @@
 import { useState, useTransition } from "react";
 
 import { importToCoreAction } from "@/app/actions";
-import { importChromeHistoryToCoreAction } from "@/app/actions-chrome";
 import type {
-  BrowserHistoryImportReport,
   EntityCounts,
   ImportIssue,
   ImportReport,
@@ -15,12 +13,11 @@ import type {
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_ISSUES_SHOWN = 50;
 
-type Kind = "datafile" | "ai-logs" | "chrome-history";
+type Kind = "datafile" | "ai-logs";
 
 const KIND_OPTIONS: { value: Kind; label: string }[] = [
   { value: "datafile", label: "JSON Project/Task/Note (builder-data.json)" },
   { value: "ai-logs", label: "JSON Nhật ký AI (ai-logs.json)" },
-  { value: "chrome-history", label: "JSON Lịch sử Chrome (chrome-history.json)" },
 ];
 
 const ENTITY_LABELS: Record<string, string> = {
@@ -121,8 +118,7 @@ export function CoreImportPanel() {
   }
 
   function run(dryRun: boolean) {
-    // Lịch sử Chrome có luồng riêng (HistoryImportFlow), không đi qua action datafile/ai-logs.
-    if (!file || kind === "chrome-history") return;
+    if (!file) return;
     const key = fileKey(file, kind);
     const form = new FormData();
     form.set("file", file);
@@ -257,12 +253,7 @@ export function CoreImportPanel() {
         </label>
       ) : null}
 
-      {kind === "chrome-history" ? (
-        // key theo file: đổi file thì state kiểm tra/mật khẩu của luồng lịch sử được dựng lại sạch.
-        <HistoryImportFlow key={file ? `${file.name}|${file.size}|${file.lastModified}` : "none"} file={file} />
-      ) : null}
-
-      <div className={kind === "chrome-history" ? "hidden" : "mt-4"}>
+      <div className="mt-4">
         <button
           type="button"
           disabled={!file || pending}
@@ -599,155 +590,5 @@ function IgnoredFields({ report }: { report: ImportReport }) {
         ))}
       </ul>
     </div>
-  );
-}
-
-/**
- * Luồng nhập chrome-history.json: Kiểm tra (dry-run) rồi Nhập thật với mật khẩu.
- *
- * Khác datafile: upsert của core chỉ lấy số lớn hơn, không ghi đè xuống và không xoá,
- * nên không có diff ghi đè hay expect_replaced; vẫn đòi mật khẩu vì lịch sử duyệt web
- * là dữ liệu nhạy cảm. Mật khẩu chỉ nằm trong state, xoá sau mỗi lần thử Nhập thật.
- */
-function HistoryImportFlow({ file }: { file: File | null }) {
-  const [profile, setProfile] = useState("Default");
-  const [secret, setSecret] = useState("");
-  const [report, setReport] = useState<BrowserHistoryImportReport | null>(null);
-  const [checkedProfile, setCheckedProfile] = useState<string | null>(null);
-  const [done, setDone] = useState<BrowserHistoryImportReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  function run(dryRun: boolean) {
-    if (!file) return;
-    const form = new FormData();
-    form.set("file", file);
-    form.set("dry_run", dryRun ? "1" : "0");
-    form.set("profile", profile.trim() || "Default");
-    if (!dryRun) form.set("import_secret", secret);
-    setError(null);
-    startTransition(async () => {
-      const result = await importChromeHistoryToCoreAction(form);
-      if (!dryRun) setSecret("");
-      if (!result.ok || !result.report) {
-        setError(result.error ?? "Nhập thất bại");
-        return;
-      }
-      if (dryRun) {
-        setReport(result.report);
-        setCheckedProfile(profile.trim() || "Default");
-        setDone(null);
-      } else {
-        setDone(result.report);
-        setReport(null);
-        setCheckedProfile(null);
-      }
-    });
-  }
-
-  const sameProfile = checkedProfile === (profile.trim() || "Default");
-  const canCommit = !pending && !!report && sameProfile && secret.length > 0;
-
-  return (
-    <div className="mt-4 flex flex-col gap-3">
-      <div>
-        <label htmlFor="history-import-profile" className={LABEL_CLASS}>
-          Profile gán cho file (tên thư mục, vd Default, Profile 1)
-        </label>
-        <input
-          id="history-import-profile"
-          type="text"
-          value={profile}
-          maxLength={200}
-          disabled={pending}
-          onChange={(e) => setProfile(e.target.value)}
-          className={INPUT_CLASS}
-        />
-      </div>
-      <div>
-        <button
-          type="button"
-          disabled={!file || pending}
-          onClick={() => run(true)}
-          className="rounded-md border border-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent)] disabled:opacity-50"
-        >
-          {pending ? "Đang xử lý…" : "Kiểm tra"}
-        </button>
-      </div>
-
-      {error ? (
-        <p
-          role="alert"
-          className="rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-sm text-[var(--color-danger)]"
-        >
-          {error}
-        </p>
-      ) : null}
-
-      {report ? (
-        <div className="flex flex-col gap-3 rounded-md border border-[var(--color-border)] p-3">
-          <HistoryCounts report={report} />
-          <p className="text-xs text-[var(--color-ink-muted)]">
-            Giờ trong file được hiểu là giờ hiển thị của hệ thống. URL bỏ query string và fragment
-            trước khi lưu. Chỉ tăng, không xoá và không ghi đè xuống.
-          </p>
-          {!sameProfile ? (
-            <p className="text-xs text-[var(--color-ink-muted)]">Đã đổi profile, cần Kiểm tra lại.</p>
-          ) : null}
-          <div>
-            <label htmlFor="history-import-secret" className={LABEL_CLASS}>
-              Mật khẩu nhập dữ liệu
-            </label>
-            <input
-              id="history-import-secret"
-              type="password"
-              autoComplete="new-password"
-              data-1p-ignore
-              data-lpignore="true"
-              value={secret}
-              disabled={pending}
-              onChange={(e) => setSecret(e.target.value)}
-              className={INPUT_CLASS}
-            />
-            <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-              Là giá trị <code>IMPORT_COMMIT_SECRET</code> của core. Chỉ cần khi Nhập thật.
-            </p>
-          </div>
-          <div>
-            <button
-              type="button"
-              disabled={!canCommit}
-              onClick={() => run(false)}
-              className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white disabled:opacity-40"
-            >
-              {pending ? "Đang nhập…" : "Nhập thật"}
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {done ? (
-        <div
-          role="status"
-          className="rounded-md border border-[var(--color-success)]/40 bg-[var(--color-success)]/10 px-3 py-2 text-sm"
-        >
-          <p className="text-[var(--color-success)]">Đã nhập lịch sử Chrome vào Postgres.</p>
-          <HistoryCounts report={done} />
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function HistoryCounts({ report }: { report: BrowserHistoryImportReport }) {
-  return (
-    <p className="text-xs">
-      Profile <code>{report.profile}</code>: nhận {report.received}, tạo mới {report.created}, cập
-      nhật {report.updated}, không đổi {report.unchanged}
-      {report.invalid > 0 ? (
-        <span className="text-[var(--color-danger)]">, bỏ qua {report.invalid} dòng không hợp lệ</span>
-      ) : null}
-      .
-    </p>
   );
 }
