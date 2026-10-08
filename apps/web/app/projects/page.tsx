@@ -36,7 +36,7 @@ export default async function ProjectsPage() {
           </p>
         </div>
         <div className="relative z-10">
-          {/* Chế độ api: sync Jira từ kết nối đã lưu cần B4b; cấu hình nằm ở trang Dữ liệu. */}
+          {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
           {IS_LOCAL && <JiraQuickSync />}
         </div>
       </div>

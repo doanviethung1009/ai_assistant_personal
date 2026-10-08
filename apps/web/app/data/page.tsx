@@ -150,7 +150,7 @@ export default async function DataPage({
 
       {tab === "dong-bo" && (
         // Người dùng hiện tại, URL đồng bộ, cào URL (upsert-batch) và kết nối Jira đều dùng
-        // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api chờ pha B4b.
+        // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api nằm ở nút Cào ngay (B4b).
         <div className="flex flex-col gap-8">
           <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
           {IS_LOCAL ? (

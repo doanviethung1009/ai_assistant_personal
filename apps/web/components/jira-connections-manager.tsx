@@ -1,17 +1,20 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import { AlertCircle, CheckCircle2, Clock, Edit2, KeySquare, Lock, Plus, Save, ServerCog, Trash2, UploadCloud, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { AlertCircle, CheckCircle2, Clock, Edit2, KeySquare, Loader2, Plus, RefreshCw, Save, ServerCog, Trash2, UploadCloud, X } from "lucide-react";
 
 import {
   clearIntegrationTokenAction,
   deleteIntegrationAction,
   migrateLocalIntegrationsAction,
   saveIntegrationAction,
+  syncIntegrationAction,
 } from "@/app/jira-actions";
 import { STORAGE_KEY } from "@/lib/jira-storage";
 import { formatDateTime } from "@/lib/format";
-import type { IntegrationConnection } from "@/lib/types";
+import { JIRA_URL_HINT } from "@/lib/jira-url-policy";
+import type { IntegrationConnection, IntegrationSyncResult } from "@/lib/types";
 
 const INPUT =
   "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/40";
@@ -27,6 +30,139 @@ interface LocalLeftover {
 interface Notice {
   ok: boolean;
   text: string;
+}
+
+/** Panel "Cào ngay" của MỘT kết nối: tự giữ mật khẩu, ngày bắt đầu, trạng thái chạy và kết quả. */
+function SyncPanel({ connection, disabled }: { connection: IntegrationConnection; disabled: boolean }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [secret, setSecret] = useState("");
+  const [since, setSince] = useState("");
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [needToken, setNeedToken] = useState(false);
+  const [result, setResult] = useState<IntegrationSyncResult | null>(null);
+
+  async function run(e: React.FormEvent) {
+    e.preventDefault();
+    if (running) return;
+    const sent = secret;
+    // Xoá mật khẩu khỏi state TRƯỚC khi await.
+    setSecret("");
+    setError(null);
+    setResult(null);
+    setNeedToken(false);
+    setRunning(true);
+    try {
+      const res = await syncIntegrationAction(connection.id, sent, since || undefined);
+      if (res.ok) {
+        setResult(res.result);
+        router.refresh(); // cập nhật last_sync_at hiển thị
+      } else {
+        setError(res.error);
+        setNeedToken(res.status === 503);
+      }
+    } catch {
+      setError("Không gọi được máy chủ web. Thử lại.");
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const blocked = !connection.has_secret;
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled || running || blocked}
+        title={blocked ? "Kết nối chưa có token: bấm Sửa và nhập token trước" : undefined}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-bold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {running ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+        {running ? "Đang cào..." : "Cào ngay"}
+      </button>
+      {blocked && <p className="mt-1 text-[11px] text-amber-600">Chưa có token. Bấm biểu tượng Sửa và nhập token để cào.</p>}
+      {open && !blocked && (
+        <form onSubmit={run} className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
+          <label className="text-[11px] font-bold">
+            Mật khẩu nhập/đồng bộ
+            <input
+              className={`${INPUT} mt-1 w-56 font-normal`}
+              type="password"
+              autoComplete="new-password"
+              required
+              maxLength={256}
+              value={secret}
+              onChange={(e) => setSecret(e.target.value)}
+              disabled={running}
+            />
+          </label>
+          <label className="text-[11px] font-bold">
+            Từ ngày (tuỳ chọn)
+            <input className={`${INPUT} mt-1 w-44 font-normal`} type="date" value={since} onChange={(e) => setSince(e.target.value)} disabled={running} />
+          </label>
+          <button type="submit" disabled={running || secret.length === 0} className="rounded-lg bg-[var(--color-ink)] px-4 py-2 text-xs font-bold text-[var(--color-surface)] hover:opacity-90 disabled:opacity-50">
+            {running ? "Đang chạy..." : "Bắt đầu"}
+          </button>
+          <p className="basis-full text-[11px] text-[var(--color-ink-muted)]">
+            Có thể mất vài phút với JQL rộng (tối đa 100 trang). Đừng đóng trang khi đang chạy.
+          </p>
+        </form>
+      )}
+      {running && (
+        <p role="status" className="mt-2 flex items-center gap-2 text-xs text-[var(--color-ink-muted)]">
+          <Loader2 className="size-3.5 animate-spin" /> Đang cào Jira, vui lòng đợi...
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mt-2 break-words rounded-lg border border-red-500/20 bg-red-500/10 p-2 text-xs text-red-700 dark:text-red-400">
+          {error}
+          {needToken && " (Bấm Sửa, nhập lại token rồi lưu.)"}
+        </p>
+      )}
+      {result && <SyncResultView result={result} />}
+    </div>
+  );
+}
+
+/** Kết quả sync. Chỉ render text node: `reason` có thể chứa nội dung từ Jira (untrusted). */
+function SyncResultView({ result }: { result: IntegrationSyncResult }) {
+  const errors = result.errors ?? [];
+  const warnings = result.warnings ?? [];
+  return (
+    <div className="mt-2 text-xs">
+      {result.truncated && (
+        <p role="alert" className="mb-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 font-medium text-amber-700 dark:text-amber-400">
+          Chạm trần 100 trang: chưa lấy hết, last_sync_at chưa đổi. Thu hẹp JQL hoặc dùng ô &ldquo;Từ ngày&rdquo; rồi cào lại.
+        </p>
+      )}
+      <p className="font-medium text-green-600 dark:text-green-400">
+        Đã tải {result.fetched} issue ({result.pages} trang) · Thêm mới: {result.added} · Cập nhật: {result.updated} · Không đổi: {result.unchanged}
+        {result.skipped_personal > 0 ? ` · Giữ nguyên ${result.skipped_personal} task cá nhân` : ""}
+      </p>
+      {warnings.length > 0 && (
+        <details className="mt-1 text-[var(--color-ink-muted)]">
+          <summary className="cursor-pointer">Cảnh báo ({warnings.length})</summary>
+          <ul className="mt-1 list-disc pl-5">
+            {warnings.map((w, i) => (
+              <li key={`w${i}`}>{w.external_id ? `${w.external_id}: ` : ""}{w.reason}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {errors.length > 0 && (
+        <details open className="mt-1 text-[var(--color-danger)]">
+          <summary className="cursor-pointer">Lỗi ({errors.length})</summary>
+          <ul className="mt-1 list-disc pl-5">
+            {errors.map((e, i) => (
+              <li key={`e${i}`}>{e.external_id ? `${e.external_id}: ` : `Mục ${e.index}: `}{e.reason}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
+  );
 }
 
 /** Mục thiếu id vẫn phải hiện ra (và xoá được): dùng vị trí làm khoá thay thế. */
@@ -60,8 +196,9 @@ function readLeftovers(): LocalLeftover[] {
  *
  * ══════════════════════════════════════════════════════════════════════
  *  TOKEN LÀ WRITE-ONLY. Ô token là password, autoComplete="new-password", và state
- *  của nó bị xoá NGAY khi gửi (không đợi kết quả). Danh sách chỉ hiện `****last4`. Sync
- *  thật cần pha B4b nên nút "Cào ngay" bị khoá, kèm lời giải thích.
+ *  của nó bị xoá NGAY khi gửi (không đợi kết quả). Danh sách chỉ hiện `****last4`.
+ *  "Cào ngay" (B4b) gọi core sync: mật khẩu nhập/đồng bộ cũng là password và bị xoá ngay
+ *  khi gửi; token Jira không bao giờ rời core.
  * ══════════════════════════════════════════════════════════════════════
  *
  * localStorage chỉ còn được đọc ở đường chuyển một lần (D-B4c): sau khi core xác nhận tạo
@@ -238,12 +375,8 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
         </div>
       </div>
 
-      <p className="mt-3 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-[var(--color-ink-muted)]">
-        <Lock className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
-        <span>
-          Đồng bộ Jira từ kết nối đã lưu cần pha <b>B4b</b> (endpoint <code>/integrations/&#123;id&#125;/sync</code> chưa có), nên nút
-          &ldquo;Cào ngay&rdquo; đang bị khoá. Hiện có thể lưu kết nối, và nhập task qua Excel/URL ở tab Nhập/Đồng bộ.
-        </span>
+      <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
+        {JIRA_URL_HINT} &ldquo;Cào ngay&rdquo; cần mật khẩu nhập/đồng bộ (IMPORT_COMMIT_SECRET) mỗi lần chạy.
       </p>
 
       {leftovers.length > 0 && (
@@ -294,15 +427,8 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
                     {c.last_sync_at ? `Đồng bộ lần cuối: ${formatDateTime(c.last_sync_at)}` : "Chưa đồng bộ"}
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled
-                    title="Cần pha B4b (endpoint sync phía core chưa có)"
-                    className="cursor-not-allowed rounded-lg bg-[var(--color-surface)] px-3 py-2 text-xs font-bold text-[var(--color-ink-muted)] opacity-60 border border-[var(--color-border)]"
-                  >
-                    Cào ngay (cần B4b)
-                  </button>
+                <div className="flex flex-wrap items-start gap-2">
+                  <SyncPanel connection={c} disabled={pending} />
                   <button type="button" onClick={() => startEdit(c)} disabled={pending} aria-label={`Sửa ${c.name}`} className="rounded-lg p-2 text-[var(--color-ink-muted)] hover:bg-blue-500/10 hover:text-blue-500 disabled:opacity-50">
                     <Edit2 className="size-4" />
                   </button>
@@ -334,6 +460,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
             <label className="text-xs font-bold">
               URL Jira
               <input className={`${INPUT} mt-1.5 font-normal`} required type="url" maxLength={2048} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://yourdomain.atlassian.net" />
+              <span className="mt-1 block text-[11px] font-normal text-[var(--color-ink-muted)]">{JIRA_URL_HINT}</span>
             </label>
             <label className="text-xs font-bold">
               Email đăng nhập

@@ -202,6 +202,8 @@ export type BrowserHistoryImportReport = Schemas["BrowserHistoryImportReport"];
 export type IntegrationConnection = Schemas["IntegrationRead"];
 export type IntegrationCreateBody = Schemas["IntegrationCreate"];
 export type IntegrationUpdateBody = Schemas["IntegrationUpdate"];
+/** Kết quả POST /integrations/{id}/sync (B4b). errors/warnings có external_id, không chứa body Jira. */
+export type IntegrationSyncResult = Schemas["SyncResult"];
 /**
  * OpenAPI ghi `status`/`priority` là bắt buộc vì có default, nhưng core chỉ ghi các trường
  * client THỰC SỰ gửi (model_fields_set). Làm optional để mapper được phép bỏ `priority`.
