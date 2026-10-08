@@ -23,6 +23,9 @@ _ENTITY_NEW = "entity IN ('project', 'task', 'task_event', 'note', 'ai_log', 'se
 
 
 def upgrade() -> None:
+    # DROP/ADD CONSTRAINT trên import_audit cần khoá ACCESS EXCLUSIVE; có transaction dài
+    # giữ bảng thì thất bại sau 5s thay vì xếp hàng chặn mọi truy vấn phía sau.
+    op.execute("SET LOCAL lock_timeout = '5s'")
     op.create_table(
         "app_settings",
         sa.Column("key", sa.String(length=64), nullable=False),
@@ -46,6 +49,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.execute("SET LOCAL lock_timeout = '5s'")
     # Dòng audit entity='setting' (nếu có) phải xoá trước, nếu không ADD CONSTRAINT cũ
     # thất bại. Chỉ mất dấu vết nhập cài đặt, không đụng dữ liệu nghiệp vụ.
     op.execute("DELETE FROM import_audit WHERE entity = 'setting'")

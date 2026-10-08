@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlsplit
 
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
@@ -103,7 +103,7 @@ MAX_TEXT = 200
 READ_BATCH = 1_000
 WRITE_BATCH = 500
 
-IMPORT_LOCK_NAME = "builder:import"
+IMPORT_LOCK_NAME = settings_service.IMPORT_LOCK_NAME
 NO_HANDLING = "(không ghi nhận)"
 
 # Field nhập được của từng thực thể, KHÔNG gồm id/created_at/updated_at/raw_payload.
@@ -1204,9 +1204,31 @@ def _reconcile_completed(r: _Parsed, target: Mapping[str, Any]) -> None:
         r.fallback.discard("completed_at")
 
 
-def _display_list(value: Any) -> list[Any] | None:
+def _redact_url(value: Any) -> str:
+    """Chỉ giữ scheme://host/path của URL; bỏ query và fragment.
+
+    Link chia sẻ Google/SharePoint thường mang token trong query (`?key=...`), và báo
+    cáo nhập đi qua log/proxy/UI. Bản đầy đủ chỉ nằm trong `import_audit.before` (cần cho
+    hoàn tác), không bao giờ trong ImportReport.
+    """
+    if not isinstance(value, str):
+        return "(không phải chuỗi)"
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return "(URL không hợp lệ)"
+    if not parts.scheme or not parts.hostname:
+        return "(URL không hợp lệ)"
+    # Dựng lại từ hostname (không dùng netloc) để user:pass@ cũng không lọt vào báo cáo.
+    port = f":{parts.port}" if parts.port else ""
+    return f"{parts.scheme}://{parts.hostname}{port}{parts.path}"[:MAX_TEXT]
+
+
+def _display_list(value: Any, *, redact_urls: bool = False) -> list[Any] | None:
     """Danh sách cài đặt cho báo cáo: từng phần tử cắt 200 ký tự, kiểu lạ thành None."""
-    return [_display(v) for v in value] if isinstance(value, list) else None
+    if not isinstance(value, list):
+        return None
+    return [_redact_url(v) if redact_urls else _display(v) for v in value]
 
 
 def setting_entity_id(key: SettingKey) -> uuid.UUID:
@@ -1245,7 +1267,14 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, l
             out[key] = normalize(raw)
         except ValueError as exc:
             # Thông điệp của normalize_* không chứa giá trị gốc (URL có thể mang token).
-            ctx.error("setting", "setting_invalid", f"{where} không hợp lệ: {exc}", id_=key.value)
+            hint = (
+                " Hãy xoá sync_urls khỏi file hoặc thêm host vào SYNC_URL_EXTRA_HOSTS."
+                if key is SettingKey.SYNC_URLS
+                else ""
+            )
+            ctx.error(
+                "setting", "setting_invalid", f"{where} không hợp lệ: {exc}.{hint}", id_=key.value
+            )
     return out
 
 
@@ -1283,6 +1312,7 @@ async def _plan_settings(
             continue
         counts.replaced += 1
         to_write[key] = new
+        redact = key is SettingKey.SYNC_URLS
         ctx.audit.append(
             _audit(
                 "setting",
@@ -1304,8 +1334,8 @@ async def _plan_settings(
                     changes=[
                         FieldChange(
                             field="value",
-                            old=_display_list(row.value),
-                            new=_display_list(new),
+                            old=_display_list(row.value, redact_urls=redact),
+                            new=_display_list(new, redact_urls=redact),
                         )
                     ],
                 )

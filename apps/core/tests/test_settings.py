@@ -638,3 +638,142 @@ async def test_real_file_current_users_imported_then_unchanged(session: AsyncSes
 
     sha_after, mtime_after, _ = _read_only_fingerprint(path)
     assert (sha_after, mtime_after) == (sha_before, mtime_before)
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Vòng sửa sau review
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def _hold_import_lock(session: AsyncSession) -> None:
+    """Giữ advisory lock của nhập ở một transaction khác, như một lần nhập đang chạy."""
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtext(:n))"), {"n": settings_service.IMPORT_LOCK_NAME}
+    )
+
+
+async def test_put_settings_waits_for_import_lock_then_409(
+    client: httpx.AsyncClient, session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings_service, "SETTINGS_LOCK_TIMEOUT", "200ms")
+    await _hold_import_lock(session)
+    try:
+        for path, body in [
+            ("/api/v1/settings/current-users", {"names": ["a"]}),
+            ("/api/v1/settings/sync-urls", {"urls": [SHEET]}),
+        ]:
+            resp = await client.put(path, json=body)
+            assert resp.status_code == 409, resp.text
+    finally:
+        await session.rollback()  # nhả khoá
+    # Hết khoá thì ghi bình thường; lần 409 không để lại gì.
+    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": []}
+    ok = await client.put("/api/v1/settings/current-users", json={"names": ["a"]})
+    assert ok.status_code == 200
+
+
+async def test_put_proceeds_once_import_lock_released(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    """Khoá giữ ngắn hơn timeout: PUT chờ rồi thành công (không 409)."""
+    await _hold_import_lock(session)
+    task = asyncio.create_task(
+        client.put("/api/v1/settings/current-users", json={"names": ["chờ"]})
+    )
+    await asyncio.sleep(0.3)
+    assert not task.done()  # đang chờ khoá
+    await session.rollback()
+    resp = await asyncio.wait_for(task, timeout=4)
+    assert resp.status_code == 200
+    assert resp.json() == {"names": ["chờ"]}
+
+
+def _check_values(defn: str) -> set[str]:
+    """Các giá trị chuỗi trong định nghĩa CHECK do pg_get_constraintdef trả về."""
+    import re
+
+    return set(re.findall(r"'([^']+)'", defn))
+
+
+@pytest.mark.parametrize(
+    ("constraint", "expected"),
+    [
+        ("ck_app_settings_key_valid", {m.value for m in SettingKey}),
+        ("ck_import_audit_entity_valid", {m.value for m in ImportEntity}),
+    ],
+)
+async def test_check_constraint_definitions_match_enums(
+    session: AsyncSession, constraint: str, expected: set[str]
+) -> None:
+    """`alembic check` không so CHECK: thêm giá trị enum mà quên migration sẽ lộ ở đây."""
+    defn = await session.scalar(
+        text("SELECT pg_get_constraintdef(oid) FROM pg_constraint WHERE conname = :n"),
+        {"n": constraint},
+    )
+    await session.rollback()
+    assert defn, constraint
+    assert _check_values(defn) == expected
+
+
+async def test_report_hides_url_query_but_audit_keeps_full_before(
+    session: AsyncSession,
+) -> None:
+    old = "https://docs.google.com/spreadsheets/d/OLD/edit?usp=sharing&key=OLDTOKEN#gid=1"
+    new = "https://contoso.sharepoint.com/sites/x/f.xlsx?e=NEWTOKEN&at=9"
+    await settings_service.set_sync_urls(session, [old])
+    await session.commit()
+    data = _file(sync_urls=[new])
+    dry = await _import(session, data, dry_run=True)
+    [rep] = dry.replacements
+    [change] = rep.changes
+    assert change.old == ["https://docs.google.com/spreadsheets/d/OLD/edit"]
+    assert change.new == ["https://contoso.sharepoint.com/sites/x/f.xlsx"]
+    blob = dry.model_dump_json()
+    assert "TOKEN" not in blob and "usp=" not in blob and "gid=1" not in blob
+
+    real = await _import(session, data, expect=1)
+    assert real.committed
+    assert "TOKEN" not in real.model_dump_json()
+    before = await session.scalar(text("SELECT before FROM import_audit"))
+    await session.rollback()
+    assert before == {"key": "sync_urls", "value": [old]}  # đầy đủ, cần cho hoàn tác
+
+
+def test_redact_url_helper() -> None:
+    redact = import_service._redact_url
+    assert redact("https://u:p@docs.google.com:443/a?k=1#f") == "https://docs.google.com:443/a"
+    assert redact("not a url") == "(URL không hợp lệ)"
+    assert redact("https://[::1/x") == "(URL không hợp lệ)"
+    assert redact(5) == "(không phải chuỗi)"
+    assert len(redact("https://docs.google.com/" + "a" * 500)) == 200
+
+
+async def test_setting_invalid_hint_for_sync_urls_without_echo(session: AsyncSession) -> None:
+    report = await _import(
+        session, _file(sync_urls=["https://evil.example.com/x?token=SECRET"]), dry_run=True
+    )
+    [err] = [i for i in report.issues if i.level == "error"]
+    assert err.code == "setting_invalid"
+    assert "SYNC_URL_EXTRA_HOSTS" in err.message and "xoá sync_urls" in err.message
+    assert "SECRET" not in err.message and "evil.example.com" not in err.message
+    names = await _import(session, _file(meta={"current_users": [""]}), dry_run=True)
+    [err2] = [i for i in names.issues if i.level == "error"]
+    assert "SYNC_URL_EXTRA_HOSTS" not in err2.message
+
+
+async def test_settings_422_does_not_echo_input(client: httpx.AsyncClient) -> None:
+    leaky = "https://evil.example.com/x?token=TOPSECRET"
+    resp = await client.put("/api/v1/settings/sync-urls", json={"urls": [leaky]})
+    assert resp.status_code == 422
+    assert "TOPSECRET" not in resp.text and "evil.example.com" not in resp.text
+    for err in resp.json()["detail"]:
+        assert set(err) == {"type", "loc", "msg"}
+    resp = await client.put("/api/v1/settings/current-users", json={"names": ["x", 1]})
+    assert resp.status_code == 422
+    assert all("input" not in e and "ctx" not in e for e in resp.json()["detail"])
+
+
+async def test_other_routes_keep_default_422_shape(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/v1/tasks", json={"title": 123})
+    assert resp.status_code == 422
+    assert any("input" in e for e in resp.json()["detail"])

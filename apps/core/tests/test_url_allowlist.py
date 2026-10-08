@@ -203,7 +203,13 @@ def test_parse_extra_hosts_normalizes_and_skips_blank() -> None:
 
 
 def test_default_lists_are_the_documented_ones() -> None:
-    exact = {"docs.google.com", "drive.google.com", "onedrive.live.com", "1drv.ms"}
+    exact = {
+        "docs.google.com",
+        "drive.google.com",
+        "drive.usercontent.google.com",
+        "onedrive.live.com",
+        "1drv.ms",
+    }
     assert set(ua.DEFAULT_EXACT_HOSTS) == exact
     assert set(ua.DEFAULT_SUFFIX_HOSTS) == {"googleusercontent.com", "sharepoint.com"}
 
@@ -235,5 +241,98 @@ def test_settings_refuses_to_start_with_bad_extra_host(
     monkeypatch: pytest.MonkeyPatch, bad: str
 ) -> None:
     monkeypatch.setenv("SYNC_URL_EXTRA_HOSTS", f"ok.example.org,{bad}")
+    with pytest.raises(ValidationError):
+        Settings(**_BASE)  # type: ignore[arg-type]
+
+
+# ── Vòng sửa sau review ─────────────────────────────────────────────
+
+
+def test_drive_usercontent_host_is_exact_only() -> None:
+    assert ua.check_sync_url("https://drive.usercontent.google.com/download?id=1") is None
+    # Chỉ host chính xác: không tên miền con, không host cha.
+    assert (
+        ua.check_sync_url("https://x.drive.usercontent.google.com/d") == ua.REASON_HOST_NOT_ALLOWED
+    )
+    assert ua.check_sync_url("https://usercontent.google.com/d") == ua.REASON_HOST_NOT_ALLOWED
+    assert ua.check_sync_url("https://drive.usercontent.google.com.evil.com/d") == (
+        ua.REASON_HOST_NOT_ALLOWED
+    )
+    # Chưa kiểm được trên mạng thật nên chưa thêm.
+    for host in ("api.onedrive.com", "x.files.1drv.com"):
+        assert ua.check_sync_url(f"https://{host}/x") == ua.REASON_HOST_NOT_ALLOWED
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://K.example.org/x",  # Kelvin: .lower() thành 'k' ASCII
+        "https://ſub.example.org/x",  # ſ (long s) khớp 's' khi IGNORECASE kiểu Unicode
+        "https://İ.example.org/x",  # İ (I chấm)
+        "https://ı.example.org/x",  # ı (i không chấm)
+    ],
+)
+def test_unicode_case_folding_lookalikes_are_rejected(url: str) -> None:
+    # Có host ASCII tương ứng trong allowlist thêm: bản Python cũ (re.IGNORECASE kiểu
+    # Unicode) từng nhận Kelvin vì lower() đưa nó về 'k'.
+    extra = ["k.example.org", "sub.example.org", "i.example.org"]
+    assert ua.check_sync_url(url, extra) == ua.REASON_BAD_NETLOC
+
+
+def test_ascii_counterparts_still_pass_with_extra() -> None:
+    assert ua.check_sync_url("https://k.example.org/x", ["k.example.org"]) is None
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [chr(0x212A) + ".example.org", "*." + chr(0x17F) + "ub.example.org", chr(0x130) + ".x.org"],
+)
+def test_parse_extra_hosts_rejects_non_ascii_even_if_it_lowercases_to_ascii(bad: str) -> None:
+    with pytest.raises(ValueError, match="ASCII"):
+        ua.parse_extra_hosts([bad])
+
+
+@pytest.mark.parametrize("bad", ["localhost", "api", "redis", "postgres", "core", "*.localhost"])
+def test_parse_extra_hosts_rejects_dotless_hosts(bad: str) -> None:
+    with pytest.raises(ValueError, match=r"dấu chấm|quá rộng"):
+        ua.parse_extra_hosts([bad])
+
+
+@pytest.mark.parametrize("suffix", sorted(ua.PUBLIC_SHARED_SUFFIXES))
+def test_parse_extra_hosts_rejects_wildcard_on_shared_suffixes(suffix: str) -> None:
+    with pytest.raises(ValueError, match="quá rộng"):
+        ua.parse_extra_hosts([f"*.{suffix}"])
+    # Host chính xác trong đuôi đó (một tenant cụ thể) vẫn cho phép.
+    exact, _ = ua.parse_extra_hosts([f"mine.{suffix}"])
+    assert exact == frozenset({f"mine.{suffix}"})
+
+
+@pytest.mark.parametrize("suffix", ["co.uk", "com.au", "org.uk", "ac.jp", "gov.vn", "xx.cn"])
+def test_parse_extra_hosts_rejects_two_label_country_suffix_heuristic(suffix: str) -> None:
+    with pytest.raises(ValueError, match="quá rộng"):
+        ua.parse_extra_hosts([f"*.{suffix}"])
+
+
+def test_parse_extra_hosts_allows_ordinary_wildcards() -> None:
+    _, suffix = ua.parse_extra_hosts(["*.example.co.uk", "*.cdn.example.net", "*.corp.example.org"])
+    assert suffix == frozenset({"example.co.uk", "cdn.example.net", "corp.example.org"})
+    assert ua.is_public_suffix("co.uk") and not ua.is_public_suffix("example.org")
+
+
+def test_public_shared_suffix_set_is_the_documented_one() -> None:
+    assert set(ua.PUBLIC_SHARED_SUFFIXES) == {
+        "github.io", "nip.io", "sslip.io", "xip.io", "herokuapp.com", "vercel.app",
+        "netlify.app", "pages.dev", "workers.dev", "ngrok.io", "ngrok-free.app",
+        "blogspot.com", "azurewebsites.net", "cloudfront.net", "amazonaws.com", "appspot.com",
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "bad", ["localhost", "*.github.io", "*.co.uk", chr(0x212A) + ".example.org"]
+)
+def test_settings_refuses_dotless_and_shared_suffix_hosts(
+    monkeypatch: pytest.MonkeyPatch, bad: str
+) -> None:
+    monkeypatch.setenv("SYNC_URL_EXTRA_HOSTS", bad)
     with pytest.raises(ValidationError):
         Settings(**_BASE)  # type: ignore[arg-type]

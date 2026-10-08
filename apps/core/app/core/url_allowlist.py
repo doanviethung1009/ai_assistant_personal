@@ -13,6 +13,10 @@
    - Cấm user:pass@ (`https://docs.google.com@evil.com/` là mánh đánh lừa mắt người),
      cổng khác 443, IP literal, host không phải ASCII (IDN dễ giả mạo), dấu chấm
      cuối (`host.`), khoảng trắng và ký tự điều khiển.
+
+ RỦI RO ĐÃ BIẾT (L2): `*.sharepoint.com` và `*.googleusercontent.com` nhận MỌI tenant /
+ mọi tài khoản, kể cả của kẻ tấn công. Allowlist chặn SSRF vào mạng nội bộ, KHÔNG
+ chứng minh nội dung file đáng tin; nội dung tải về vẫn là dữ liệu không đáng tin.
 ══════════════════════════════════════════════════════════════════════
 
 Module là HÀM THUẦN (không đọc config, không I/O) để test được không cần môi trường
@@ -33,6 +37,8 @@ DEFAULT_EXACT_HOSTS: frozenset[str] = frozenset(
     {
         "docs.google.com",
         "drive.google.com",
+        # Drive chuyển hướng 303 sang host này khi tải file (đã kiểm trên mạng thật).
+        "drive.usercontent.google.com",
         "onedrive.live.com",
         "1drv.ms",
     }
@@ -47,16 +53,45 @@ DEFAULT_SUFFIX_HOSTS: frozenset[str] = frozenset(
     }
 )
 
+# Đuôi miền mà MỌI người đều đăng ký được tên miền con (hosting dùng chung, DNS ma thuật).
+# Cho `*.github.io` là cho cả internet chứa file. Từ chối wildcard trên các đuôi này khi
+# cấu hình SYNC_URL_EXTRA_HOSTS. Best-effort, phải giữ đồng bộ ý với bản TS của web.
+PUBLIC_SHARED_SUFFIXES: frozenset[str] = frozenset(
+    {
+        "github.io",
+        "nip.io",
+        "sslip.io",
+        "xip.io",
+        "herokuapp.com",
+        "vercel.app",
+        "netlify.app",
+        "pages.dev",
+        "workers.dev",
+        "ngrok.io",
+        "ngrok-free.app",
+        "blogspot.com",
+        "azurewebsites.net",
+        "cloudfront.net",
+        "amazonaws.com",
+        "appspot.com",
+    }
+)
+
 MAX_URL_LEN = 2048
 ALLOWED_PORT = 443
 
 # Một nhãn DNS ASCII (không dấu gạch ở hai đầu) và host gồm >= 1 nhãn nối bằng dấu chấm.
 _LABEL = r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?"
-_HOST_RE = re.compile(rf"^{_LABEL}(?:\.{_LABEL})*$")
+# re.ASCII là BẮT BUỘC cùng IGNORECASE: không có nó, Python so khớp chữ hoa/thường theo
+# Unicode nên U+212A (ký hiệu Kelvin), U+017F (long s) lọt qua lớp [a-z] và host giả mạo được
+# chấp nhận (bản TS không có lỗ này).
+_HOST_RE = re.compile(rf"^{_LABEL}(?:\.{_LABEL})*$", re.ASCII)
 # netloc hợp lệ DUY NHẤT: host, tuỳ chọn ":443". Không cho user:pass@, [ipv6], cổng lạ,
 # cổng rỗng (`host:`). Dùng regex trên netloc thay vì tin `urlsplit().hostname`, vì
 # parser đó khoan dung với nhiều dạng bất thường.
-_NETLOC_RE = re.compile(rf"^(?P<host>{_LABEL}(?:\.{_LABEL})*)(?::{ALLOWED_PORT})?$", re.IGNORECASE)
+_NETLOC_RE = re.compile(
+    rf"^(?P<host>{_LABEL}(?:\.{_LABEL})*)(?::{ALLOWED_PORT})?$", re.IGNORECASE | re.ASCII
+)
 _FORBIDDEN_CHARS = re.compile(r"[\x00-\x20\x7f\\]")
 
 # Mã lý do từ chối: ổn định để test và để UI chọn thông điệp.
@@ -85,6 +120,19 @@ def _is_ip_literal(host: str) -> bool:
     return all(re.fullmatch(r"(?:0x[0-9a-f]+|[0-9]+)", part) for part in labels)
 
 
+def is_public_suffix(host: str) -> bool:
+    """True nếu `host` trông như đuôi miền dùng chung (không nên cho wildcard `*.host`).
+
+    BEST-EFFORT, KHÔNG dùng Public Suffix List: chỉ gồm tập hằng PUBLIC_SHARED_SUFFIXES
+    và heuristic đuôi hai nhãn dạng `co.uk`/`com.au` (nhãn đầu 2-3 ký tự, nhãn cuối đúng
+    2 ký tự). Mục đích là chặn cấu hình nhầm tay, không phải bảo đảm tuyệt đối.
+    """
+    if host in PUBLIC_SHARED_SUFFIXES:
+        return True
+    labels = host.split(".")
+    return len(labels) == 2 and 2 <= len(labels[0]) <= 3 and len(labels[1]) == 2
+
+
 def parse_extra_hosts(raw: Iterable[str]) -> tuple[frozenset[str], frozenset[str]]:
     """Kiểm và tách danh sách host bổ sung (SYNC_URL_EXTRA_HOSTS) thành (exact, suffix).
 
@@ -96,20 +144,29 @@ def parse_extra_hosts(raw: Iterable[str]) -> tuple[frozenset[str], frozenset[str
     exact: set[str] = set()
     suffix: set[str] = set()
     for item in raw:
-        entry = item.strip().lower()
+        stripped = item.strip()
+        # isascii TRƯỚC lower(): 'K' (Kelvin) hạ chữ thành 'k' ASCII và sẽ lọt qua kiểm tra.
+        if not stripped.isascii():
+            raise ValueError("SYNC_URL_EXTRA_HOSTS: chỉ chấp nhận ký tự ASCII")
+        entry = stripped.lower()
         if not entry:
             continue
         wildcard = entry.startswith("*.")
         host = entry[2:] if wildcard else entry
         if not _HOST_RE.match(host) or len(host) > 253:
-            raise ValueError(
-                f"SYNC_URL_EXTRA_HOSTS: '{item.strip()[:80]}' không phải tên host hợp lệ"
-            )
+            raise ValueError(f"SYNC_URL_EXTRA_HOSTS: '{stripped[:80]}' không phải tên host hợp lệ")
         if _is_ip_literal(host):
             raise ValueError("SYNC_URL_EXTRA_HOSTS: không chấp nhận địa chỉ IP")
-        if wildcard and "." not in host:
+        if "." not in host:
+            # Tên không có dấu chấm (localhost, api, redis, postgres) là host nội bộ, và
             # `*.com` sẽ mở cả một TLD.
-            raise ValueError(f"SYNC_URL_EXTRA_HOSTS: '*.{host}' quá rộng")
+            raise ValueError(
+                f"SYNC_URL_EXTRA_HOSTS: '{host}' phải là tên miền đầy đủ (có dấu chấm)"
+            )
+        if wildcard and is_public_suffix(host):
+            raise ValueError(
+                f"SYNC_URL_EXTRA_HOSTS: '*.{host}' quá rộng (đuôi dùng chung của nhiều bên)"
+            )
         (suffix if wildcard else exact).add(host)
     return frozenset(exact), frozenset(suffix)
 
