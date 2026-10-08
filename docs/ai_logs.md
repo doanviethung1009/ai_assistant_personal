@@ -899,6 +899,13 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Phát hiện caplog trong test có thể vô nghĩa; tách chip riêng. Gỡ lịch sử Chrome tách chip riêng.
 - **Phản hồi:** B4b xong code và tài liệu; 810 test pass, tsc sạch. Chưa UAT với Jira Cloud thật, chưa `make smoke`. Chưa commit/push.
 
+### [09-10-2026 03:00] | Category: [TOOL]
+- **Prompt:** Rà lại hướng dẫn chạy lần đầu cho đủ bước (sau khi B1 đến B4 merge).
+- **Xử lý:**
+  - Phát hiện: `make up` không build lại image nên api không khởi động sau khi kéo code mới (thêm `cryptography`, `httpcore`); `.env` có từ trước không tự có `IMPORT_COMMIT_SECRET`/`INTEGRATION_SECRET_KEY`; web mới ghi lại `builder-data.json` một chiều; máy không có Docker thì không dùng được chế độ api.
+  - Thêm `make env-fill` (`scripts/gen-env.sh --fill-missing`: chỉ điền biến thiếu hoặc rỗng, không đổi biến đã có, không in giá trị; đã thử trong thư mục tạm). Viết lại mục "Các bước" của `docs/DATA_MIGRATION_TO_POSTGRES.md` (bước 0 đến 8, bảng lỗi thường gặp), thêm hai dòng khoá vào bảng secret ở README.
+- **Phản hồi:** Hướng dẫn chạy lần đầu đủ bước; chưa chạy thật trên máy có Docker.
+
 ### [09-10-2026 02:30] | Category: [API]
 - **Prompt:** Gỡ hẳn tính năng lịch sử duyệt web (User xác nhận không cần nữa, cả Postgres lẫn file JSON), trên nhánh `chore/remove-browser-history` từ `main`.
 - **Xử lý:**
