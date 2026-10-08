@@ -279,8 +279,8 @@ export const DOCS: DocEntry[] = [
   },
   {
     slug: "spec-task-scope",
-    title: "Spec (DRAFT): Tách task công việc và cá nhân",
-    description: "Thêm cột tasks.scope (work/personal), định nghĩa 'việc của tôi', rào chắn để đồng bộ Jira và nhập file không đụng task cá nhân, kèm 15 quyết định chờ User chốt.",
+    title: "Spec: Tách task công việc và cá nhân",
+    description: "Thêm cột tasks.scope (work/personal), định nghĩa 'việc của tôi', rào chắn để đồng bộ Jira và nhập file không đụng task cá nhân (CHỐT, User đã duyệt 15 quyết định S1-S15).",
     category: "6. Spec thiết kế",
     file: path.join("docs", "specs", "task-scope.md"),
   },

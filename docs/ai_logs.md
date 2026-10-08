@@ -838,3 +838,15 @@ File này lưu trữ vết (trace) toàn bộ các quyết định, xử lý và
   - Tài liệu: `DATA_MIGRATION_TO_POSTGRES.md` (kèm SQL hoàn tác CHƯA chạy thử vì hook chặn DELETE qua psql), API_REFERENCE mục 5, HANDOFF mục 6, INDEX, sửa comment sai ở `lib/store/types.ts` và `transfer.ts`.
   - Sự cố: một lệnh bọc `bash -c` bị công cụ an toàn chặn (không xoá gì); chạy lại không bọc.
 - **Phản hồi:** B1 xong code và docs, 122 test pass, 2 test file thật pass (dữ liệu thật không đổi hash). Chưa push; đang soát lại.
+
+---
+
+### [08-10-2026 22:00] | Category: [API]
+- **Prompt:** "tách task Jira (công việc) và task cá nhân: theo hướng B và làm spec đi" rồi "hãy làm đi"
+- **Xử lý:**
+  - architect viết `docs/specs/task-scope.md` (cột `tasks.scope` work/personal, `view=mine`, rào chắn để nhập và đồng bộ không đụng task cá nhân); User duyệt S1-S15 theo đề xuất.
+  - Phát hiện lỗi có sẵn khi viết spec (đã tự kiểm xác nhận): `/team` ở chế độ api gọi `limit=10000` vượt 200 của backend; `wipeAllDataApi` là hàm không làm gì mà UI báo thành công; `listTasks` ở chế độ api bỏ qua assignee/forCurrentUser.
+  - backend-dev: migration `f6a2b4c8d1e3`, `_view_clause`, nhập B1 bỏ qua task personal (`skipped_personal`, `include_personal`), 211 test pass kể cả trên file thật chỉ đọc. frontend-dev: `lib/task-scope.ts` thuần, file JSON v5 + migrate, 4 tab `/tasks`, vùng nguy hiểm theo scope, Jira sync/Excel/URL/restore không ghi đè task personal. Parity: 'mine' mới = isMyTask cũ = 73 task.
+  - Review: code-reviewer APPROVED; security-auditor 🟡 (file v5 không kiểm scope; SSRF có sẵn để B2); db-reviewer không critical (chuẩn hoá assignee, ghi audit include_personal, lock_timeout migration). Gộp một vòng sửa.
+  - An toàn dữ liệu thật: sao lưu `data/` ra scratchpad và DỪNG server web cổng 3000 trong lúc sửa (hot-reload có thể ghi file thật ở trạng thái nửa vời khi code đổi lên v5).
+- **Phản hồi:** Code + docs xong, đang vòng sửa sau review. Chưa push; migration chỉ merge sau PR nhập B1 (#12).
