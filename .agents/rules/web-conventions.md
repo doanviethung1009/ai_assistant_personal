@@ -50,7 +50,7 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
 - **Đổi cấu trúc file JSON thì phải tăng `SCHEMA_VERSION` và viết bước
   migrate.** Xem `store/json-file.ts`. Thêm field mà không backfill thì dữ
   liệu cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai.
-  Hiện tại đang ở **v4** (v4 là tách mảng `ai_logs` ra file riêng). Thêm mảng mới thì
+  Hiện tại đang ở **v5** (v4 tách mảng `ai_logs` ra file riêng; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
   phải backfill thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
 - **Quy tắc Lưu trữ JSON (Local Storage Split vs Group):** Khi phát sinh tính năng/dữ liệu mới, BẮT BUỘC ĐÁNH GIÁ ĐẶC TÍNH DỮ LIỆU trước khi thêm vào JSON.
   - **Để chung (`builder-data.json`):** Dành cho dữ liệu cốt lõi, có tính ràng buộc (relational), số lượng bản ghi được kiểm soát, thường xuyên cập nhật/xoá (Ví dụ: `tasks`, `projects`, `notes`).

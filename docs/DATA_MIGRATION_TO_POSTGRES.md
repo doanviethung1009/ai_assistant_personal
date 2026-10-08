@@ -47,8 +47,11 @@
 | `external_url` không phải http/https | Bỏ, kèm cảnh báo | Chặn `data:` và scheme lạ |
 | `raw_payload` | **Không nhận** | Là dữ liệu không đáng tin |
 | Task `done` thiếu `completed_at` | Điền từ `updated_at` | Để thống kê "hoàn thành 7 ngày" đúng |
+| Task thiếu `scope` (file phiên bản cũ) | Suy từ `source`: `jira`/`github`/`gitlab` là `work`, còn lại `personal` | Xem `docs/specs/task-scope.md` |
 
 **Khi ghi đè,** các giá trị "dự phòng" nói trên **không** đè lên dữ liệu thật trong Postgres. Ví dụ file cũ không có `archived_at` thì note đã lưu trữ **không** bị bỏ lưu trữ; file thiếu `completed_at` thì ngày đóng thật trong DB được giữ.
+
+**Task cá nhân được bảo vệ:** nếu trong Postgres đã có một task `scope=personal` trùng với task trong file (cùng `id` hoặc cùng `(source, external_id)`), lần nhập **bỏ qua** nó và đếm `skipped_personal`, không ghi đè. Muốn ghi đè cả task cá nhân thì bật ô "Ghi đè cả task cá nhân đang có trong Postgres" trong panel (hoặc `include_personal=true` khi gọi API); đây là lựa chọn có chủ ý, hãy xem kỹ danh sách ghi đè trước khi nhập thật.
 
 Bản ghi đang ở **thùng rác** (trong DB hoặc trong file) bị bỏ qua, không bị hồi sinh.
 
@@ -112,6 +115,14 @@ ROLLBACK;  -- đổi thành COMMIT khi đã kiểm tra
 ```
 
 Giới hạn đã biết: hoán vị khoá (`projects.key` hoặc `(source, external_id)`) giữa hai bản ghi trong cùng một file bị từ chối với lỗi `natural_key_conflict` vì unique index không cho UPDATE tuần tự. `import_audit` chưa có chính sách xoá cũ; `before` giữ bản sao đầy đủ nên nếu sau này bạn xoá hẳn một note từng chứa bí mật thì bản sao trong audit vẫn còn.
+
+Nếu phải hạ migration `tasks.scope` (`alembic downgrade -1`) trên dữ liệu thật, các lựa chọn bạn đã sửa tay (task Jira chuyển thành cá nhân và ngược lại) sẽ mất. Lưu trước bằng:
+
+```sql
+COPY (SELECT id, scope FROM tasks
+      WHERE scope <> CASE WHEN source IN ('jira','github','gitlab') THEN 'work' ELSE 'personal' END)
+TO STDOUT WITH CSV HEADER;
+```
 
 ## 6. Chưa chuyển (các pha sau)
 

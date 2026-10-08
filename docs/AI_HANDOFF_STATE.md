@@ -45,4 +45,14 @@
 - **Rủi ro đã ghi nhận:** web không có đăng nhập; file cũ có thể ghi đè trạng thái mới hơn (đã có cờ "File cũ hơn" và xác nhận 2 lớp); `import_audit.before` giữ bản sao đầy đủ và chưa có chính sách xoá.
 - **`data/builder-data.json` là dữ liệu thật của User:** test chỉ mở chế độ đọc (kiểm sha256 không đổi); không bao giờ ghi hay chép vào repo.
 
+## 7. Tách task công việc và cá nhân (`scope`)
+
+- **Spec CHỐT:** `docs/specs/task-scope.md` (User duyệt S1-S15). Mỗi task có `scope` = `work` | `personal`; mặc định theo nguồn (`jira`/`github`/`gitlab` là work). "Việc của tôi" là bộ lọc `view=mine` (cá nhân + công việc giao cho tên trong `owner` + công việc tự tạo không assignee/không mã Jira), KHÔNG lưu thành cột. Định nghĩa dùng chung ở `apps/web/lib/task-scope.ts` (module thuần) và `_view_clause` ở backend; hai bên phải giữ tương đương.
+- **Rào chắn:** Jira sync, nhập Excel/URL, nhập JSON và (sau này) `upsert-batch` B4 KHÔNG ghi đè task `personal` (đếm `skipped_personal`); nhập JSON có `include_personal` tuỳ chọn. Đổi một task Jira sang personal = tách khỏi đồng bộ.
+- **File JSON lên phiên bản 5** (có migrate, kể cả khi restore); B2 sẽ dùng 6. Migration `f6a2b4c8d1e3` (`tasks.scope`, CHECK `ck_tasks_scope_valid`, down_revision `e5f1a3b7c9d2`): chỉ merge SAU PR nhập B1 (#12).
+- **Lần đầu web ở chế độ file nạp dữ liệu thật sau khi merge, nó sẽ ghi lại thành phiên bản 5.** Sao lưu `data/` trước (nhật ký `.bak` tự có, nhưng hãy chép thêm).
+- **Thứ tự pha mới:** B1 → S (xong code) → B2 → B4, B3 song song.
+- **Lỗi có sẵn đã sửa trong epic:** `/team` ở chế độ api không còn gọi `limit=10000` (backend cho tối đa 200); `listTasks` ở chế độ api truyền `view`/`owner`/`assignee`; vùng nguy hiểm ở chế độ api không còn giả vờ xoá (hiện thông báo); `restoreFromJsonAction` chạy migrate.
+- **Chưa làm / ghi nhận:** `file-upload-manager`, `url-sync-manager` chưa hiện `skipped_personal` (không thuộc Ownership frontend của epic); `/team` vẫn tải nhiều trang rồi lọc client-side (phân trang server-side là epic riêng); `/tasks` ở chế độ api nhận `size` tới 1000 còn backend tối đa 200 (lỗi có sẵn).
+
 *--- Bản cập nhật cuối cùng: [2026-10-08] ---*

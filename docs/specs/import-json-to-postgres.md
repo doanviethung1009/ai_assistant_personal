@@ -27,7 +27,12 @@
 | **B3** | Lịch sử Chrome lưu ở Postgres khi `DATA_SOURCE=api`; nhập từ `chrome-history.json`. | `browser_history` | Không phụ thuộc B1/B2 về code; chỉ xếp hàng migration | **Có**: lịch sử duyệt web là dữ liệu cá nhân nhạy cảm; sửa lỗi nội suy shell có sẵn trong `scrapeChromeHistory` |
 | **B4** | Jira sync chạy ở backend: lưu cấu hình kết nối (token mã hoá phía server), endpoint upsert hàng loạt cho integration, chạy sync theo yêu cầu; URL/Excel sync ở chế độ api dùng lại endpoint upsert. | `integration_connections` | B1 (chuẩn hoá key project), B2 (`current_users` cho JQL mặc định, `sync_urls`) | **Có, bắt buộc**: lưu token Jira ở server, outbound HTTP, dữ liệu ngoài không đáng tin |
 
-**Thứ tự đề xuất:** B1 → B2 → B4. B3 làm song song với B2 hoặc B4 được, vì không chạm cùng file.
+**Thứ tự đề xuất:** B1 → **S (`docs/specs/task-scope.md`, tách task công việc và cá nhân)** → B2 → B4. B3 làm song song với B2 hoặc B4 được, vì không chạm cùng file.
+
+> **Sửa đổi theo `task-scope.md` mục 3.5 (User đã duyệt, áp ngày 08-10-2026):**
+> - **B2:** file JSON lên phiên bản **6** (v5 đã dùng cho `scope`), backend `SUPPORTED_DATAFILE_VERSION = 6`. Mục tiêu "tách task cá nhân/team ở `/team`" do epic `scope` đảm nhận; B2 chỉ còn cung cấp `current_users` để web truyền vào tham số `owner`. `/tasks/assignees` chỉ lấy `scope = 'work'`.
+> - **B4:** `upsert-batch` chỉ khớp bản còn sống **và** `scope = 'work'`; khớp bản `personal` thì không ghi gì, đếm `skipped_personal`; task tạo mới luôn `scope = 'work'`; response thêm `skipped_personal`. Nghiệm thu thêm: task Jira đã chuyển `personal` không bị đổi sau hai lần sync.
+> - **B1 (đã code):** nhập JSON bỏ qua task `personal` trong DB (`skipped_personal`) trừ khi bật `include_personal`.
 
 **Migration phải tuyến tính.** Mỗi pha tạo revision với `down_revision` là head **lúc pha đó merge**. Nếu hai pha làm song song, pha merge sau phải sửa lại `down_revision` trước khi merge. Orchestrator kiểm `alembic heads` ra đúng một head sau mỗi lần merge.
 
