@@ -262,8 +262,8 @@ prod-build: ## Build image target prod
 	$(DC) -f docker-compose.yml -f docker-compose.prod.yml build
 
 .PHONY: prod-up
-prod-up: ## Dựng stack ở chế độ prod (không bind mount, không reload)
-	$(DC) -f docker-compose.yml -f docker-compose.prod.yml up -d
+prod-up: ## Dựng stack ở chế độ prod (không bind mount, không reload). EXPOSE_LAN=true trong .env thì mở web ra LAN
+	$(DC) -f docker-compose.yml -f docker-compose.prod.yml $$(grep -q '^EXPOSE_LAN=true' .env 2>/dev/null && echo "-f docker-compose.lan.yml") up -d
 
 .PHONY: prod-logs
 prod-logs: ## Log của stack prod
