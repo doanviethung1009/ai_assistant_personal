@@ -263,7 +263,7 @@ async def test_check_constraint_rejects_unknown_setting_key(session: AsyncSessio
 
 
 async def test_service_never_writes_unknown_key(session: AsyncSession) -> None:
-    assert {k.value for k in SettingKey} == {"current_users", "sync_urls"}
+    assert {k.value for k in SettingKey} == {"current_users", "sync_urls", "display_timezone"}
     with pytest.raises(AttributeError):
         await settings_service.put_list(session, "jira_token", [])  # type: ignore[arg-type]
     await session.rollback()
@@ -433,8 +433,8 @@ async def _setting(session: AsyncSession, key: str) -> Any:
     return value
 
 
-def test_supported_version_is_6() -> None:
-    assert SUPPORTED_DATAFILE_VERSION == 6
+def test_supported_version_is_7() -> None:
+    assert SUPPORTED_DATAFILE_VERSION == 7
 
 
 async def test_import_creates_settings_then_is_idempotent(session: AsyncSession) -> None:
@@ -777,3 +777,157 @@ async def test_other_routes_keep_default_422_shape(client: httpx.AsyncClient) ->
     resp = await client.post("/api/v1/tasks", json={"title": 123})
     assert resp.status_code == 422
     assert any("input" in e for e in resp.json()["detail"])
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Múi giờ hiển thị (display_timezone) và due_all_day khi nhập
+# ═══════════════════════════════════════════════════════════════════════
+
+TZ_URL = "/api/v1/settings/display-timezone"
+
+
+def test_normalize_timezone_rules() -> None:
+    from app.core.timezones import normalize_timezone
+
+    assert normalize_timezone("  Asia/Ho_Chi_Minh ") == "Asia/Ho_Chi_Minh"
+    assert normalize_timezone("UTC") == "UTC"
+    for bad in ("Mars/Base", "Factory", "localtime", "", "   ", "x" * 65, "Asia/\x00Tokyo"):
+        with pytest.raises(ValueError):
+            normalize_timezone(bad)
+
+
+async def test_display_timezone_defaults_to_env(client: httpx.AsyncClient) -> None:
+    body = (await client.get(TZ_URL)).json()
+    assert body == {
+        "timezone": app_config.display_timezone,
+        "default": app_config.display_timezone,
+        "source": "default",
+    }
+
+
+async def test_display_timezone_put_get_and_reset(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    put = await client.put(TZ_URL, json={"timezone": " America/New_York "})
+    assert put.status_code == 200
+    assert put.json()["timezone"] == "America/New_York"
+    assert put.json()["source"] == "setting"
+    assert (await client.get(TZ_URL)).json()["timezone"] == "America/New_York"
+    assert await _setting(session, "display_timezone") == "America/New_York"
+
+    info = (await client.get("/api/v1/system/info")).json()
+    assert info["display_timezone"] == "America/New_York"
+    assert info["display_timezone_default"] == app_config.display_timezone
+
+    reset = await client.put(TZ_URL, json={"timezone": None})
+    assert reset.status_code == 200 and reset.json()["source"] == "default"
+    assert await _setting(session, "display_timezone") is None
+    assert (await client.get("/api/v1/system/info")).json()["display_timezone"] == (
+        app_config.display_timezone
+    )
+
+
+@pytest.mark.parametrize("bad", ["Mars/Base", "Factory", "x" * 65, "", 5])
+async def test_display_timezone_put_rejects_invalid(client: httpx.AsyncClient, bad: Any) -> None:
+    resp = await client.put(TZ_URL, json={"timezone": bad})
+    assert resp.status_code == 422
+    assert (await client.get(TZ_URL)).json()["source"] == "default"
+
+
+async def test_timezones_catalog(client: httpx.AsyncClient) -> None:
+    body = (await client.get("/api/v1/settings/timezones")).json()
+    names = [item["name"] for item in body["items"]]
+    assert body["total"] == len(names) > 300
+    assert names == sorted(names)
+    assert "Factory" not in names
+    by_name = {item["name"]: item["utc_offset_minutes"] for item in body["items"]}
+    assert by_name["Asia/Ho_Chi_Minh"] == 420
+    assert by_name["Pacific/Kiritimati"] == 840
+
+
+async def test_bad_display_timezone_row_falls_back_to_env(
+    client: httpx.AsyncClient, session: AsyncSession
+) -> None:
+    await session.execute(
+        text("INSERT INTO app_settings (key, value) VALUES ('display_timezone', '\"Mars/Base\"')")
+    )
+    await session.commit()
+    body = (await client.get(TZ_URL)).json()
+    assert body["source"] == "default" and body["timezone"] == app_config.display_timezone
+    assert (await client.get("/api/v1/tasks/agenda")).status_code == 200
+
+
+async def test_import_display_timezone_valid_and_invalid(session: AsyncSession) -> None:
+    ok = await _import(session, _file(display_timezone="Asia/Tokyo"))
+    assert ok.committed, ok.issues
+    assert await _setting(session, "display_timezone") == "Asia/Tokyo"
+    # Cũng nhận ở meta (chế độ file của web ghi vào đó), và không bị liệt kê là field lạ.
+    meta = await _import(session, _file(meta={"display_timezone": "Europe/Paris"}), expect=1)
+    assert meta.committed
+    assert "meta" not in meta.ignored_fields
+    assert await _setting(session, "display_timezone") == "Europe/Paris"
+
+    bad = await _import(
+        session, _file(display_timezone="Mars/Base", meta={"current_users": ["An"]})
+    )
+    # Sai múi giờ chỉ là cảnh báo: phần còn lại vẫn nhập, giá trị cũ giữ nguyên.
+    assert bad.committed and bad.errors == 0
+    assert any(i.code == "setting_invalid" and i.level == "warning" for i in bad.issues)
+    assert await _setting(session, "display_timezone") == "Europe/Paris"
+    assert await _setting(session, "current_users") == ["An"]
+
+
+def _task_row(ext: str, **over: Any) -> dict[str, Any]:
+    row: dict[str, Any] = {
+        "id": str(uuid.uuid4()),
+        "title": f"Việc {ext}",
+        "source": "jira",
+        "external_id": ext,
+    }
+    row.update(over)
+    return row
+
+
+async def _all_day(session: AsyncSession) -> dict[str, bool]:
+    rows = (
+        await session.execute(
+            text("SELECT coalesce(external_id, title) AS k, due_all_day FROM tasks")
+        )
+    ).all()
+    await session.rollback()
+    return {r.k: r.due_all_day for r in rows}
+
+
+async def test_import_old_file_backfills_due_all_day(session: AsyncSession) -> None:
+    data = _file(
+        schema_version=6,
+        tasks=[
+            _task_row("J-1", due_at="2026-10-09T00:00:00.000Z"),  # Jira, nửa đêm UTC
+            _task_row("J-2", due_at="2026-10-09T10:00:00Z"),  # Jira nhưng có giờ
+            _task_row("J-3"),  # không hạn
+            _task_row("M-1", source="manual", external_id=None, title="manual",
+                      due_at="2026-10-09T00:00:00Z"),
+        ],
+    )
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert await _all_day(session) == {
+        "J-1": True,
+        "J-2": False,
+        "J-3": False,
+        "manual": False,
+    }
+
+
+async def test_import_v7_explicit_due_all_day_and_invalid_combo(session: AsyncSession) -> None:
+    data = _file(
+        tasks=[
+            _task_row("J-1", due_at="2026-10-09T00:00:00Z", due_all_day=True),
+            _task_row("J-2", due_at="2026-10-09T10:00:00Z", due_all_day=True),  # sai: hạ về false
+            _task_row("J-3", due_at="2026-10-09T00:00:00Z", due_all_day=False),
+        ]
+    )
+    report = await _import(session, data)
+    assert report.committed, report.issues
+    assert any(i.code == "due_all_day_dropped" for i in report.issues)
+    assert await _all_day(session) == {"J-1": True, "J-2": False, "J-3": False}

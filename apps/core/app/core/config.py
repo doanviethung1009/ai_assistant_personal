@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.core.timezones import normalize_timezone
 from app.core.url_allowlist import parse_extra_hosts
 
 
@@ -71,7 +72,8 @@ class Settings(BaseSettings):
     litellm_master_key: str | None = None
 
     # ── Hiển thị ────────────────────────────────────────────────────
-    # Chỉ dùng để quy đổi "hôm nay" cho view agenda. DB luôn lưu UTC.
+    # MẶC ĐỊNH khi chưa có dòng app_settings 'display_timezone'. Giá trị hiệu lực đọc qua
+    # services/clock.py (User đổi được lúc chạy). DB luôn lưu UTC.
     display_timezone: str = "Asia/Ho_Chi_Minh"
 
     # ── Thùng rác ───────────────────────────────────────────────────
@@ -84,6 +86,12 @@ class Settings(BaseSettings):
     # một API key tĩnh không có gì ngăn một client lỗi gọi lặp vô hạn.
     rate_limit_enabled: bool = True
     rate_limit_requests_per_minute: int = Field(default=120, ge=1)
+
+    @field_validator("display_timezone")
+    @classmethod
+    def _check_display_timezone(cls, value: str) -> str:
+        # Fail fast: tên sai thì app không lên, thay vì vỡ ở request đầu tiên tính "hôm nay".
+        return normalize_timezone(value)
 
     @field_validator("cors_origins", mode="before")
     @classmethod

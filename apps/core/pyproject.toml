@@ -19,6 +19,9 @@ dependencies = [
     "prometheus-client>=0.21,<1.0",
     # Mã hoá token tích hợp (Fernet) khi lưu ở Postgres, xem core/secrets.py.
     "cryptography>=43,<47",
+    # Cố định danh sách múi giờ IANA theo lock file thay vì theo tzdata của base image
+    # (zoneinfo, core/timezones.py). Không có gói này, image slim có thể thiếu /usr/share/zoneinfo.
+    "tzdata>=2024.1",
 ]
 
 [dependency-groups]

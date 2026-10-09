@@ -26,7 +26,8 @@ _KEY_CHECK = "key IN (" + ", ".join(f"'{member.value}'" for member in SettingKey
 
 
 class AppSetting(Base):
-    """Một cài đặt. `value` là JSON (hiện tại luôn là list[str])."""
+    """Một cài đặt. `value` là JSON: list[str] (current_users, sync_urls) hoặc chuỗi
+    (display_timezone)."""
 
     __tablename__ = "app_settings"
 

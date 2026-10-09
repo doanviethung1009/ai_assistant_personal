@@ -27,7 +27,7 @@ import logging
 import math
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -99,8 +99,9 @@ _BEARER_RE = re.compile(r"Bearer\s+\S+", re.IGNORECASE)
 _TOKEN_QUERY_RE = re.compile(r"([?&](?:access_)?token=)[^&\s#]*", re.IGNORECASE)
 _JWT_RE = re.compile(r"eyJ[\w-]{5,}\.[\w-]{5,}\.[\w-]*")
 
-# Trường nguồn ngoài sở hữu, có thể bị upsert ghi đè. Cố ý KHÔNG có spent_minutes,
-# scope, completed_at do User/hệ thống quản. `tags` và `description` có luật gộp riêng
+# Trường nguồn ngoài sở hữu, có thể bị upsert ghi đè. `due_at` đi cùng `due_all_day` nên xử
+# lý riêng trong `_wanted_values`. Cố ý KHÔNG có spent_minutes, scope, completed_at do
+# User/hệ thống quản. `tags` và `description` có luật gộp riêng
 # trong `_merge_wanted`.
 _SYNCED_FIELDS = (
     "title",
@@ -108,7 +109,6 @@ _SYNCED_FIELDS = (
     "assignee",
     "status",
     "priority",
-    "due_at",
     "scheduled_for",
     "estimate_minutes",
     "tags",
@@ -116,6 +116,10 @@ _SYNCED_FIELDS = (
 )
 
 _CLOSED = (TaskStatus.DONE, TaskStatus.CANCELLED)
+
+# Từ raw_payload lần sync trước suy ra (due_at, due_all_day) mà NGUỒN đã đặt; None = không
+# biết. Do connector cung cấp (Jira: jira_mapping.previous_due) vì định dạng payload là của nó.
+DueBaseline = Callable[[dict[str, Any] | None], tuple[datetime | None, bool] | None]
 
 
 class PayloadDropped(ValueError):
@@ -207,7 +211,10 @@ def prepare_payload(raw: dict[str, Any] | None) -> dict[str, Any] | None:
 
 
 def _to_utc(value: datetime | None) -> datetime | None:
-    """Không múi giờ = giờ địa phương theo display_timezone (cùng quy ước B3)."""
+    """Không múi giờ = giờ địa phương theo múi giờ hiển thị hiệu lực (cùng quy ước B3).
+
+    Giá trị hiệu lực: cài đặt của User nếu có, không thì env (xem services/clock.py).
+    """
     if value is not None and value.tzinfo is None:
         return value.replace(tzinfo=clock.display_tz())
     return value
@@ -310,8 +317,14 @@ def _wanted_values(
     values: dict[str, Any] = {}
     for name in _SYNCED_FIELDS:
         if name in sent and name not in create_only:
-            value = getattr(p.item, name)
-            values[name] = _to_utc(value) if name == "due_at" else value
+            values[name] = getattr(p.item, name)
+    if "due_at" not in create_only:
+        if "due_at" in sent:
+            values["due_at"] = _to_utc(p.item.due_at)
+            # Hạn mới mà nguồn không nói "cả ngày" thì là hạn có giờ.
+            values["due_all_day"] = bool(p.item.due_all_day)
+        elif p.item.due_all_day is not None:
+            values["due_all_day"] = p.item.due_all_day
     if "project_key" in sent and "project_key" not in create_only:
         values["project_id"] = project_ids[p.project_key] if p.project_key else None
     return values
@@ -327,6 +340,40 @@ def _merge_wanted(task: Task, wanted: dict[str, Any]) -> dict[str, Any]:
     return merged
 
 
+def _resolve_due(
+    task: Task,
+    wanted: dict[str, Any],
+    item: TaskUpsert,
+    baseline_of: DueBaseline | None,
+    payload_available: bool = True,
+) -> bool:
+    """Chỉnh `wanted` về hạn: giữ cờ cả ngày khi hạn không đổi; áp luật "chỉ ghi đè nếu User
+    chưa sửa". Trả True nếu phải GIỮ hạn hiện có dù nguồn muốn đổi (User đã sửa tay).
+
+    Thứ tự bắt buộc: so với `task.raw_payload` CŨ, trước khi `_apply_changes` ghi đè nó.
+    """
+    if "due_at" not in wanted:
+        return False
+    # Client không nói gì về cờ mà hạn không đổi (vd Excel gửi lại cùng due_at): giữ cờ cũ.
+    if item.due_all_day is None and wanted["due_at"] == task.due_at:
+        wanted["due_all_day"] = task.due_all_day
+    unchanged = (wanted["due_at"], wanted["due_all_day"]) == (task.due_at, task.due_all_day)
+    if unchanged or baseline_of is None:
+        return False
+    if not payload_available:
+        # raw_payload của lần này bị bỏ (quá lớn/sâu/hết ngân sách lô) nên KHÔNG làm mới được
+        # baseline. Nếu vẫn ghi hạn mới, baseline cũ lệch hạn và lần sau bị coi nhầm là "User
+        # sửa tay" mãi mãi. Hoãn việc đổi hạn tới lần sync có payload; không đếm là sửa tay.
+        del wanted["due_at"], wanted["due_all_day"]
+        return False
+    if task.due_at is None:
+        return False
+    if baseline_of(task.raw_payload) == (task.due_at, task.due_all_day):
+        return False
+    del wanted["due_at"], wanted["due_all_day"]
+    return True
+
+
 async def upsert_batch(
     session: AsyncSession,
     source: TaskSource,
@@ -335,6 +382,7 @@ async def upsert_batch(
     actor: str | None = None,
     create_only: frozenset[str] = frozenset(),
     owner_host: str | None = None,
+    due_baseline: DueBaseline | None = None,
 ) -> TaskUpsertResult:
     """Upsert một lô task của một nguồn tích hợp, idempotent, trong MỘT transaction.
 
@@ -364,6 +412,11 @@ async def upsert_batch(
     `create_only`: tên trường (`priority`, `due_at`, `assignee`, `project_key`...) chỉ được
     ghi khi TẠO task, không bao giờ ghi đè task đã có. Jira sync dùng để giữ giá trị User
     đã sửa tay (cùng ngữ nghĩa chế độ file); route upsert-batch không truyền, giữ hành vi cũ.
+
+    `due_baseline`: bật luật "hạn chỉ ghi đè khi User chưa sửa tay" (đừng đưa `due_at` vào
+    `create_only` cùng lúc). Hàm này suy từ `raw_payload` cũ ra hạn mà nguồn đã đặt lần
+    trước; nếu hạn hiện có KHÁC giá trị đó thì User đã sửa nên hạn được giữ và đếm vào
+    `kept_manual_due`. Task chưa có hạn luôn nhận hạn mới.
 
     `owner_host`: chỉ dùng khi sync theo kết nối. Task đã có mà `external_url` thuộc host
     KHÁC thì không bị ghi (vào `errors`), để hai kết nối khác Jira không ghi đè task của
@@ -417,7 +470,7 @@ async def upsert_batch(
             wanted_projects[p.project_key] = p.item.project_name
     project_ids = await _resolve_projects(session, wanted_projects)
 
-    added = updated = unchanged = skipped_personal = 0
+    added = updated = unchanged = skipped_personal = kept_manual_due = 0
     now = clock.now_utc()
     new_events: list[TaskEvent] = []
 
@@ -447,9 +500,12 @@ async def upsert_batch(
             )
             continue
 
+        wanted = _wanted_values(p, project_ids, create_only)
+        if _resolve_due(task, wanted, p.item, due_baseline, p.payload is not None):
+            kept_manual_due += 1
         diff = _apply_changes(
             task,
-            _merge_wanted(task, _wanted_values(p, project_ids, create_only)),
+            _merge_wanted(task, wanted),
             p.payload,
             now,
             _to_utc(p.item.completed_at),
@@ -489,6 +545,7 @@ async def upsert_batch(
         updated=updated,
         unchanged=unchanged,
         skipped_personal=skipped_personal,
+        kept_manual_due=kept_manual_due,
         errors=sorted(errors, key=lambda e: e.index),
         warnings=sorted(warnings, key=lambda w: w.index),
     )
@@ -511,6 +568,7 @@ def _build_task(p: _Prepared, source: TaskSource, project_ids: dict[str, uuid.UU
         priority=item.priority,
         project_id=project_ids[p.project_key] if p.project_key else None,
         due_at=_to_utc(item.due_at),
+        due_all_day=bool(item.due_all_day) and item.due_at is not None,
         scheduled_for=item.scheduled_for,
         estimate_minutes=item.estimate_minutes,
         tags=list(item.tags),

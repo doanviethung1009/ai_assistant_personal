@@ -54,7 +54,7 @@ logger = logging.getLogger(__name__)
 _LOCK_NAMESPACE = "builder:integration-sync:"
 # Trường chỉ ghi khi TẠO task (không đè task đã có): giữ giá trị User sửa tay, và task cũ
 # không bị chuyển project. Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
-CREATE_ONLY = frozenset({"priority", "due_at", "assignee", "project_key"})
+CREATE_ONLY = frozenset({"priority", "assignee", "project_key"})
 # Tên project do Jira điều khiển; trần số project MỚI mỗi lần sync để dữ liệu Jira (hoặc kẻ
 # giả Jira) không tràn danh sách project cục bộ.
 MAX_NEW_PROJECTS = 50
@@ -163,6 +163,7 @@ async def _write_batch(items: list[TaskUpsert], actor: str, owner_host: str) -> 
                 actor=actor,
                 create_only=CREATE_ONLY,
                 owner_host=owner_host,
+                due_baseline=jira_mapping.previous_due,
             )
             await session.commit()
         except BaseException:
@@ -202,6 +203,7 @@ class _Progress:
     updated: int = 0
     unchanged: int = 0
     skipped_personal: int = 0
+    kept_manual_due: int = 0
     errors: list[SyncMessage] = field(default_factory=list)
     warnings: list[SyncMessage] = field(default_factory=list)
     error_overflow: int = 0
@@ -291,6 +293,7 @@ async def _flush(
     progress.updated += result.updated
     progress.unchanged += result.unchanged
     progress.skipped_personal += result.skipped_personal
+    progress.kept_manual_due += result.kept_manual_due
     for err in result.errors:
         progress.error(
             SyncMessage(
@@ -429,6 +432,16 @@ async def _run(
                 ) from None
             raise
 
+        if progress.kept_manual_due:
+            # Đếm gộp, không liệt kê nội dung Jira.
+            progress.warn(
+                SyncMessage(
+                    reason=(
+                        f"Giữ hạn đã sửa tay ở {progress.kept_manual_due} task "
+                        "(hạn trên Jira khác nhưng không ghi đè)."
+                    )
+                )
+            )
         if duplicates:
             progress.warn(SyncMessage(reason=f"{duplicates} issue lặp giữa các trang đã bỏ qua"))
         for note in jira.notes:

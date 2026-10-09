@@ -23,7 +23,8 @@ from app.models.enums import (
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
 from app.schemas.task import MAX_OWNER_LEN, MAX_OWNERS, TaskCreate, TaskUpdate, TaskView
-from app.services.clock import local_day_bounds_utc, local_today, now_utc
+from app.services import clock
+from app.services.clock import local_day_bounds_utc, local_today, now_utc, today_all_day_cutoff
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 from app.services.jsonable import jsonable
 
@@ -313,6 +314,9 @@ async def update_task(
         if old_value == new_value:
             continue
         setattr(task, field_name, new_value)
+        if field_name == "due_at":
+            # Hạn sửa tay luôn là thời điểm cụ thể; hạn cả ngày chỉ do đồng bộ Jira tạo ra.
+            task.due_all_day = False
         if field_name in _TRACKED_FIELDS:
             diff[field_name] = {"from": old_value, "to": new_value}
 
@@ -464,6 +468,33 @@ def _alive_in_view(view: TaskView, owners: Sequence[str]) -> ColumnElement[bool]
     return _alive() if clause is None else and_(_alive(), clause)
 
 
+def _overdue_clause(now: datetime, cutoff: datetime) -> ColumnElement[bool]:
+    """Quá hạn: task có giờ so `now`; task cả ngày so ngày hạn < hôm nay (`cutoff`).
+
+    NGUỒN DUY NHẤT của luật quá hạn phía SQL (agenda, stats); bản Python là
+    `TaskRead.is_overdue`. Xem services/clock.py::today_all_day_cutoff.
+    """
+    return and_(
+        Task.due_at.is_not(None),
+        or_(
+            and_(Task.due_all_day.is_(False), Task.due_at < now),
+            and_(Task.due_all_day.is_(True), Task.due_at < cutoff),
+        ),
+    )
+
+
+def _due_soon_clause(now: datetime, cutoff: datetime) -> ColumnElement[bool]:
+    """Sắp đến hạn trong 7 ngày; hạn cả ngày của hôm nay tính là sắp đến hạn, chưa quá hạn."""
+    week = timedelta(days=7)
+    return and_(
+        Task.due_at.is_not(None),
+        or_(
+            and_(Task.due_all_day.is_(False), Task.due_at >= now, Task.due_at < now + week),
+            and_(Task.due_all_day.is_(True), Task.due_at >= cutoff, Task.due_at < cutoff + week),
+        ),
+    )
+
+
 async def get_agenda(
     session: AsyncSession,
     reference: date | None = None,
@@ -474,6 +505,8 @@ async def get_agenda(
     """Việc của hôm nay. View áp cho cả 5 nhóm TRƯỚC bước loại trùng in_progress."""
     today = reference or local_today()
     now = now_utc()
+    # Quá hạn luôn tính theo hôm nay THẬT (như `now`), không theo `reference`.
+    cutoff = today_all_day_cutoff(local_today())
     day_start, day_end = local_day_bounds_utc(today)
     open_only = Task.status.notin_(CLOSED_STATUSES)
     alive = _alive_in_view(view, owners)
@@ -481,7 +514,7 @@ async def get_agenda(
     overdue = await _fetch(
         session,
         select(Task)
-        .where(alive, open_only, Task.due_at.is_not(None), Task.due_at < now)
+        .where(alive, open_only, _overdue_clause(now, cutoff))
         .order_by(Task.due_at.asc()),
     )
 
@@ -506,9 +539,7 @@ async def get_agenda(
             alive,
             open_only,
             Task.scheduled_for.is_(None),
-            Task.due_at.is_not(None),
-            Task.due_at >= now,
-            Task.due_at < now + timedelta(days=7),
+            _due_soon_clause(now, cutoff),
         )
         .order_by(Task.due_at.asc()),
     )
@@ -555,6 +586,8 @@ async def get_stats(
     """
     today = reference or local_today()
     now = now_utc()
+    # Quá hạn luôn tính theo hôm nay THẬT (như `now`), không theo `reference`.
+    cutoff = today_all_day_cutoff(local_today())
     day_start, day_end = local_day_bounds_utc(today)
 
     alive = _alive_in_view(view, owners)
@@ -576,9 +609,7 @@ async def get_stats(
         select(
             # Phải quy về timezone hiển thị trước khi lấy date, nếu không
             # key sẽ là ngày UTC và lệch với reference_date (ngày địa phương).
-            func.date(
-                func.timezone(settings.display_timezone, Task.completed_at)
-            ).label("day"),
+            func.date(func.timezone(clock.display_tz().key, Task.completed_at)).label("day"),
             func.count(),
         )
         .where(
@@ -604,8 +635,7 @@ async def get_stats(
         .where(
             alive,
             Task.status.notin_(CLOSED_STATUSES),
-            Task.due_at.is_not(None),
-            Task.due_at < now,
+            _overdue_clause(now, cutoff),
         )
     )
     trash_total = await session.scalar(

@@ -12,6 +12,7 @@ from app.core.config import settings
 from app.models.enums import TaskEventType, TaskPriority, TaskScope, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
+from app.services import clock
 
 # Giới hạn tham số `owner` của view=mine (spec task-scope 3.1): chặn đầu vào
 # không đáng tin làm phình mệnh đề IN.
@@ -172,6 +173,8 @@ class TaskRead(BaseModel):
     project_id: uuid.UUID | None
     project: ProjectSummary | None = None
     due_at: datetime | None
+    # Bắt buộc, không default. Hạn cả ngày: `due_at` là 00:00 UTC của ngày lịch.
+    due_all_day: bool
     scheduled_for: date | None
     estimate_minutes: int | None
     spent_minutes: int
@@ -193,6 +196,10 @@ class TaskRead(BaseModel):
     def is_overdue(self) -> bool:
         if self.due_at is None or self.status.is_closed:
             return False
+        if self.due_all_day:
+            # Hạn cả ngày: so NGÀY hạn (ngày UTC chính là ngày lịch) với hôm nay theo múi giờ
+            # hiển thị. Khớp `_overdue_clause` trong task_service.
+            return self.due_at.astimezone(UTC).date() < clock.local_today()
         return self.due_at < datetime.now(UTC)
 
     @computed_field  # type: ignore[prop-decorator]

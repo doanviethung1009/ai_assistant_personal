@@ -5,6 +5,7 @@ from datetime import date, datetime
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     Date,
     DateTime,
@@ -13,6 +14,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    false,
     func,
     text,
 )
@@ -58,6 +60,11 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # ── Thời gian ───────────────────────────────────────────────────
     due_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), default=None, index=True
+    )
+    # Hạn là CẢ NGÀY (Jira `duedate`): `due_at` khi đó luôn là 00:00 UTC của ngày lịch, và
+    # quá hạn tính theo NGÀY ở múi giờ người dùng, không theo giờ. Xem services/clock.py.
+    due_all_day: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
     )
     # Ngày dự định làm, dùng cho view agenda hàng ngày. Khác due_at (hạn chót).
     scheduled_for: Mapped[date | None] = mapped_column(Date, default=None, index=True)
@@ -131,6 +138,12 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         CheckConstraint("length(btrim(title)) > 0", name="title_not_blank"),
         # CHECK tường minh vì enum_column() không sinh CHECK ở DB.
         CheckConstraint("scope IN ('work', 'personal')", name="scope_valid"),
+        # Hạn cả ngày phải là đúng nửa đêm UTC (cách lưu chuẩn, không phụ thuộc múi giờ).
+        CheckConstraint(
+            "NOT due_all_day OR (due_at IS NOT NULL "
+            "AND (due_at AT TIME ZONE 'UTC')::time = '00:00')",
+            name="due_all_day_midnight",
+        ),
         Index("ix_tasks_tags", "tags", postgresql_using="gin"),
         # Phủ đúng truy vấn của view agenda. Partial để index chỉ chứa task
         # còn sống, vốn là toàn bộ dữ liệu mà nghiệp vụ quan tâm.

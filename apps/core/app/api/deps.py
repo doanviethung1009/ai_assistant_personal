@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.security import require_api_key
-from app.db.session import get_session
+from app.db.session import SessionFactory, get_session
+from app.services import clock
 
 logger = logging.getLogger(__name__)
 
@@ -64,3 +65,20 @@ def guard_import_secret(request: Request, secret: str | None) -> None:
             status_code=403,
             detail="Thiếu hoặc sai mật khẩu nhập dữ liệu (header X-Import-Secret).",
         )
+
+
+async def bind_display_tz() -> None:
+    """Gắn múi giờ hiệu lực cho request (xem services/clock.py).
+
+    PHẢI là `async def`: dependency đồng bộ chạy trong threadpool nên ContextVar đặt ở đó
+    không truyền về task của request.
+
+    KHÔNG dùng SessionDep: route sync Jira cố ý không giữ session suốt lúc gọi Jira, mà
+    session của dependency sống đến hết request. Cache miss thì mở session riêng, đọc
+    một dòng rồi đóng ngay (cache còn hạn thì không chạm DB).
+    """
+    if clock.is_display_tz_cached():
+        await clock.load_display_tz(None)
+        return
+    async with SessionFactory() as session:
+        await clock.load_display_tz(session)

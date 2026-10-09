@@ -33,8 +33,9 @@ from app.schemas.task import clean_assignee
 
 # v5 thêm `tasks.scope` (spec task-scope S11); v6 thêm `sync_urls` cấp file (B2).
 # Web lên phiên bản mới mà backend chưa lên thì mọi file mới xuất sẽ bị 422. Backend
-# nhận cả v5 và v6 (và cũ hơn): `ge=1, le=` ở envelope.
-SUPPORTED_DATAFILE_VERSION = 6
+# nhận cả v5 và v6 (và cũ hơn): `ge=1, le=` ở envelope. v7 thêm `tasks.due_all_day` và
+# `display_timezone` (cài đặt múi giờ).
+SUPPORTED_DATAFILE_VERSION = 7
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Envelope
@@ -58,6 +59,9 @@ class DataFileEnvelope(BaseModel):
     # Danh sách URL đồng bộ (v6). None/vắng = không đụng cài đặt trong DB. Để Any: giá
     # trị sai kiểu phải ra lỗi theo dòng (code `setting_invalid`) chứ không 422 chung chung.
     sync_urls: Any = None
+    # Múi giờ hiển thị (v7; cũng nhận `meta.display_timezone` do chế độ file của web ghi).
+    # Để Any: giá trị sai chỉ là cảnh báo và bị bỏ qua, không làm hỏng cả lần nhập.
+    display_timezone: Any = None
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -118,6 +122,8 @@ class ImportTask(_Row):
     # khớp được. Phần còn lại bị bỏ và báo trong ignored_fields.
     project: dict[str, Any] | None = None
     due_at: datetime | None = None
+    # None/vắng (file < v7) = suy theo heuristic backfill của migration, xem _parse_task.
+    due_all_day: bool | None = None
     scheduled_for: date | None = None
     # Không ràng buộc ở đây: ngoài khoảng cho phép thì chuyển null + cảnh báo
     # thay vì từ chối cả task.

@@ -14,6 +14,7 @@ import base64
 import logging
 import uuid
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import httpcore
@@ -779,3 +780,82 @@ async def test_audit_lines_include_client_and_since_even_when_rejected(
     done = [r for r in records if r.audit_action == "done"]  # type: ignore[attr-defined]
     assert len(done) == 1 and done[0].since_minutes > 0  # type: ignore[attr-defined]
     assert TOKEN not in caplog.text and AUTH_B64 not in caplog.text
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Hạn: cập nhật từ Jira chỉ khi User chưa sửa tay
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def _events_of(task_id: Any) -> list[TaskEvent]:
+    async with SessionFactory() as s:
+        stmt = select(TaskEvent).where(TaskEvent.task_id == task_id)
+        return list((await s.execute(stmt)).scalars())
+
+
+async def _first_sync(client: httpx.AsyncClient, jira, duedate: str | None) -> tuple[str, Task]:  # type: ignore[no-untyped-def]
+    jira(lambda r: _page(_issue("DBA-1", duedate=duedate)))
+    cid = await _create(client)
+    assert (await client.post(_sync_url(cid), headers=HEADERS)).json()["added"] == 1
+    return cid, (await _tasks())[0]
+
+
+async def test_jira_due_change_applies_when_user_did_not_edit(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    cid, task = await _first_sync(client, jira, "2026-03-05")
+    assert task.due_all_day is True
+
+    jira(lambda r: _page(_issue("DBA-1", duedate="2026-04-01")))
+    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    assert data["updated"] == 1
+    after = (await _tasks())[0]
+    assert after.due_at == datetime(2026, 4, 1, tzinfo=UTC) and after.due_all_day is True
+    changed = [e.payload["changes"] for e in await _events_of(task.id) if e.payload]
+    assert any("due_at" in c for c in changed)
+
+
+async def test_jira_due_change_is_ignored_after_user_edit(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    cid, task = await _first_sync(client, jira, "2026-03-05")
+    await _patch(client, str(task.id), due_at="2027-01-01T09:00:00Z")
+
+    jira(lambda r: _page(_issue("DBA-1", duedate="2026-12-12")))
+    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    after = (await _tasks())[0]
+    assert after.due_at == datetime(2027, 1, 1, 9, tzinfo=UTC) and after.due_all_day is False
+    assert any("Giữ hạn đã sửa tay" in w["reason"] for w in data["warnings"])
+
+
+async def test_jira_removing_due_clears_it_when_user_did_not_edit(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    cid, _ = await _first_sync(client, jira, "2026-03-05")
+    jira(lambda r: _page(_issue("DBA-1")))  # không còn duedate
+    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    assert data["updated"] == 1
+    after = (await _tasks())[0]
+    assert after.due_at is None and after.due_all_day is False
+
+
+async def test_jira_due_kept_when_previous_payload_unknown(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    cid, task = await _first_sync(client, jira, "2026-03-05")
+    async with SessionFactory() as s:
+        await s.execute(text("UPDATE tasks SET raw_payload = NULL WHERE id = :i"), {"i": task.id})
+        await s.commit()
+    jira(lambda r: _page(_issue("DBA-1", duedate="2026-04-01")))
+    await client.post(_sync_url(cid), headers=HEADERS)
+    after = (await _tasks())[0]
+    assert after.due_at == datetime(2026, 3, 5, tzinfo=UTC)  # an toàn: không đoán
+
+
+async def test_jira_sets_due_on_task_without_one(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+    cid, task = await _first_sync(client, jira, None)
+    assert task.due_at is None and task.due_all_day is False
+    jira(lambda r: _page(_issue("DBA-1", duedate="2026-05-06")))
+    await client.post(_sync_url(cid), headers=HEADERS)
+    after = (await _tasks())[0]
+    assert after.due_at == datetime(2026, 5, 6, tzinfo=UTC) and after.due_all_day is True

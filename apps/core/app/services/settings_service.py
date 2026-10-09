@@ -7,16 +7,26 @@ Chỉ nhận khoá khai báo ở `SettingKey`. Dữ liệu vào đã được ch
 from __future__ import annotations
 
 from typing import Any
+from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.core.timezones import normalize_timezone, utc_offset_minutes, valid_timezone_names
 from app.db import locks
 from app.models.app_setting import AppSetting
 from app.models.enums import SettingKey, TaskScope
 from app.models.task import Task
-from app.schemas.settings import normalize_names, normalize_urls
+from app.schemas.settings import (
+    DisplayTimezoneRead,
+    TimezoneList,
+    TimezoneOption,
+    normalize_names,
+    normalize_urls,
+)
+from app.services import clock
 from app.services.task_service import _alive
 
 # Chặn kích thước danh sách assignee: DISTINCT trên cột có thể phình khi Jira sync kéo
@@ -43,7 +53,7 @@ async def _get_list(session: AsyncSession, key: SettingKey) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
-async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> None:
+async def put_value(session: AsyncSession, key: SettingKey, value: Any) -> None:
     """Upsert một dòng. `updated_at` đặt tường minh vì ON CONFLICT không kích hoạt `onupdate`.
 
     KHÔNG chuẩn hoá: người gọi phải đưa giá trị đã qua `normalize_*` (API và đường nhập
@@ -55,6 +65,11 @@ async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> 
         set_={"value": stmt.excluded.value, "updated_at": func.now()},
     )
     await session.execute(stmt)
+
+
+async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> None:
+    """Ghi cài đặt dạng danh sách chuỗi (xem `put_value`)."""
+    await put_value(session, key, value)
 
 
 async def get_current_users(session: AsyncSession) -> list[str]:
@@ -79,6 +94,49 @@ async def set_sync_urls(session: AsyncSession, urls: list[str]) -> list[str]:
     await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
     await put_list(session, SettingKey.SYNC_URLS, clean)
     return clean
+
+
+async def get_display_timezone(session: AsyncSession) -> DisplayTimezoneRead:
+    """Múi giờ hiệu lực + mặc định env + nguồn. Đọc thẳng DB, không qua cache."""
+    default = settings.display_timezone
+    raw = await get_value(session, SettingKey.DISPLAY_TIMEZONE)
+    if isinstance(raw, str):
+        try:
+            return DisplayTimezoneRead(
+                timezone=normalize_timezone(raw), default=default, source="setting"
+            )
+        except ValueError:
+            pass  # dòng hỏng: coi như chưa đặt, khớp hành vi của clock.load_display_tz
+    return DisplayTimezoneRead(timezone=default, default=default, source="default")
+
+
+async def set_display_timezone(session: AsyncSession, name: str | None) -> DisplayTimezoneRead:
+    """Đặt (tên đã chuẩn hoá) hoặc xoá (None) múi giờ hiển thị, rồi làm mới cache cục bộ."""
+    await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
+    if name is None:
+        await session.execute(
+            delete(AppSetting).where(AppSetting.key == SettingKey.DISPLAY_TIMEZONE.value)
+        )
+    else:
+        await put_value(session, SettingKey.DISPLAY_TIMEZONE, normalize_timezone(name))
+    result = await get_display_timezone(session)
+    # Commit TRƯỚC khi làm mới cache: nếu invalidate trước commit, request khác (hoặc
+    # bind_display_tz) có thể đọc lại giá trị CŨ rồi cache thêm 10 giây. Route ghi không có
+    # thêm commit nào khác phải chờ, nên commit tại đây là an toàn.
+    await session.commit()
+    clock.invalidate_display_tz_cache()
+    # Request hiện tại (serialize phản hồi) cũng phải dùng giá trị mới.
+    clock.set_request_tz(ZoneInfo(result.timezone))
+    return result
+
+
+def list_timezones() -> TimezoneList:
+    """Danh mục IANA. Không phân trang: ~600 tên tĩnh (< 25 KB), không phải dữ liệu tăng dần."""
+    items = [
+        TimezoneOption(name=name, utc_offset_minutes=utc_offset_minutes(name))
+        for name in sorted(valid_timezone_names())
+    ]
+    return TimezoneList(items=items, total=len(items))
 
 
 async def list_assignees(session: AsyncSession) -> list[str]:

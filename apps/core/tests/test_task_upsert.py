@@ -827,3 +827,42 @@ async def test_upsert_rejected_when_secret_not_configured(
     resp = await client.post(URL, json=_batch([_item("J-1")]))
     assert resp.status_code == 403 and "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
     assert await _tasks() == []
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  due_all_day
+# ═══════════════════════════════════════════════════════════════════════
+
+
+@pytest.mark.db
+@pytest.mark.parametrize(
+    "due_at", ["2026-10-09T10:00:00Z", "2026-10-09T00:00:01Z", "2026-10-09T00:00:00", None]
+)
+async def test_all_day_requires_midnight_utc(client: httpx.AsyncClient, due_at: str | None) -> None:
+    resp = await client.post(URL, json=_batch([_item("D-1", due_at=due_at, due_all_day=True)]))
+    assert resp.status_code == 422
+    assert await _tasks("D-1") == []
+
+
+@pytest.mark.db
+async def test_all_day_created_and_flag_kept_when_due_resent_without_flag(
+    client: httpx.AsyncClient,
+) -> None:
+    midnight = "2026-10-09T00:00:00Z"
+    assert (
+        await client.post(URL, json=_batch([_item("D-1", due_at=midnight, due_all_day=True)]))
+    ).json()["added"] == 1
+    [t] = await _tasks("D-1")
+    assert t.due_all_day is True
+
+    # Client không biết khái niệm cả ngày (vd Excel) gửi lại đúng hạn cũ: cờ giữ nguyên.
+    again = (await client.post(URL, json=_batch([_item("D-1", due_at=midnight)]))).json()
+    assert again["unchanged"] == 1
+    assert (await _tasks("D-1"))[0].due_all_day is True
+
+    # Đổi sang hạn có giờ mà không nói gì về cờ: thành hạn có giờ.
+    moved = (
+        await client.post(URL, json=_batch([_item("D-1", due_at="2026-10-09T10:00:00Z")]))
+    ).json()
+    assert moved["updated"] == 1
+    assert (await _tasks("D-1"))[0].due_all_day is False

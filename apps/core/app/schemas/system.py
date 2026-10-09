@@ -16,7 +16,8 @@ class SystemInfo(BaseModel):
     app_name: str
     version: str
     environment: str
-    display_timezone: str
+    display_timezone: str = Field(description="Giá trị hiệu lực (cài đặt, hoặc mặc định)")
+    display_timezone_default: str = Field(description="Mặc định từ env DISPLAY_TIMEZONE")
     trash_retention_days: int
     rate_limit_enabled: bool
     rate_limit_requests_per_minute: int
