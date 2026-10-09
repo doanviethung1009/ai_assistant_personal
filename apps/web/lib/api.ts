@@ -408,6 +408,8 @@ export interface ListTasksOptions {
   projectId?: string;
   query?: string;
   includeClosed?: boolean;
+  /** ISO datetime: chỉ task tạo từ thời điểm này trở đi. */
+  createdAfter?: string;
   limit?: number;
   offset?: number;
   sortBy?: string;
@@ -430,6 +432,7 @@ export async function listTasks(options: ListTasksOptions = {}): Promise<Paged<T
   if (options.projectId) params.set("project_id", options.projectId);
   if (options.query) params.set("q", options.query);
   if (options.includeClosed) params.set("include_closed", "true");
+  if (options.createdAfter) params.set("created_after", options.createdAfter);
   params.set("limit", String(options.limit ?? 100));
   params.set("offset", String(options.offset ?? 0));
   if (options.sortBy) params.set("sort_by", options.sortBy);
@@ -1043,6 +1046,7 @@ export async function upsertTasksBatch(
     updated: 0,
     unchanged: 0,
     skipped_personal: 0,
+    kept_manual_due: 0,
     errors: [],
     warnings: [],
   };
@@ -1066,6 +1070,7 @@ export async function upsertTasksBatch(
     total.updated += res.updated;
     total.unchanged += res.unchanged;
     total.skipped_personal += res.skipped_personal;
+    total.kept_manual_due += res.kept_manual_due;
     for (const e of res.errors ?? []) total.errors?.push({ ...e, index: e.index + offset });
     for (const w of res.warnings ?? []) total.warnings?.push({ ...w, index: w.index + offset });
     offset += chunk.length;
