@@ -13,7 +13,11 @@ from app.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+# scope="function": phần sau yield của get_session (commit) phải chạy TRƯỚC khi response được
+# gửi. Mặc định (scope="request", FastAPI >= 0.118) nó chạy SAU khi gửi, nên client nhận 2xx
+# khi transaction chưa commit và request kế tiếp đọc dữ liệu cũ. Đổi lại: không được dùng
+# session trong BackgroundTasks hay response streaming (session đã đóng lúc đó).
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 ApiKeyDep = Annotated[str, Depends(require_api_key)]
 
 # Khai bằng Header(alias=...) để OpenAPI (và types sinh cho web) có header này.

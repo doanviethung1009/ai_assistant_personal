@@ -34,7 +34,11 @@ SessionFactory = async_sessionmaker(
 
 
 async def get_session() -> AsyncGenerator[AsyncSession, None]:
-    """Dependency của FastAPI. Commit khi handler chạy xong, rollback nếu lỗi."""
+    """Dependency của FastAPI. Commit khi handler chạy xong, rollback nếu lỗi.
+
+    Chỉ commit trước khi gửi response khi được khai với scope="function" (xem SessionDep
+    ở api/deps.py); đừng dùng get_session trực tiếp trong Depends().
+    """
     async with SessionFactory() as session:
         try:
             yield session
