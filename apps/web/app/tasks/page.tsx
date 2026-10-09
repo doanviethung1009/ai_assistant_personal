@@ -4,7 +4,8 @@ import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { ApiErrorPanel } from "@/components/api-error";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { TaskItem } from "@/components/task-item";
-import { listProjects, listTasks, IS_LOCAL } from "@/lib/api";
+import { TaskSummary } from "@/components/task-summary";
+import { getStats, listProjects, listTasks, IS_LOCAL } from "@/lib/api";
 import { TASK_VIEWS, parseView } from "@/lib/task-scope";
 import {
   OPEN_STATUSES,
@@ -12,6 +13,7 @@ import {
   VIEW_LABELS,
   type Paged,
   type Project,
+  type Stats,
   type Task,
   type TaskStatus,
   type TaskView,
@@ -53,9 +55,11 @@ export default async function TasksPage({
 
   let result: Paged<Task>;
   let projects: Project[];
+  // Tóm tắt chỉ là phần phụ: lỗi thống kê không được làm hỏng cả danh sách.
+  let stats: Stats | null = null;
 
   try {
-    [result, projects] = await Promise.all([
+    [result, projects, stats] = await Promise.all([
       listTasks({
         query: params.q,
         view,
@@ -67,6 +71,7 @@ export default async function TasksPage({
         sortDesc: true,
       }),
       listProjects(),
+      getStats({ view }).catch(() => null),
     ]);
   } catch (error) {
     return (
@@ -98,6 +103,8 @@ export default async function TasksPage({
           {IS_LOCAL && <JiraQuickSync />}
         </div>
       </div>
+
+      {stats && <TaskSummary stats={stats} />}
 
       <div className="relative rounded-2xl bg-gradient-to-br from-[var(--color-surface-raised)] to-[var(--color-surface)] p-2 shadow-sm border border-[var(--color-border)]">
         <QuickAddForm

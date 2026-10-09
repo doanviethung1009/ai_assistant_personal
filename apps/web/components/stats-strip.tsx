@@ -2,7 +2,7 @@ import { formatMinutes } from "@/lib/format";
 import type { Stats } from "@/lib/types";
 import { CircleDot, Clock, CheckCircle2, AlertTriangle } from "lucide-react";
 
-function StatCard({
+export function StatCard({
   label,
   value,
   tone = "neutral",
