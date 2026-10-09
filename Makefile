@@ -38,8 +38,8 @@ env-fill: ## Bổ sung IMPORT_COMMIT_SECRET và INTEGRATION_SECRET_KEY vào .env
 # ── Vòng đời stack ─────────────────────────────────────────────────────
 
 .PHONY: up
-up: ## Dựng profile core (postgres, redis, api, web)
-	$(DC) up -d
+up: ## Dựng profile core (postgres, redis, api, web). EXPOSE_LAN=true trong .env thì giữ web mở ra LAN
+	$(DC) $$(grep -q '^EXPOSE_LAN=true' .env 2>/dev/null && echo '-f docker-compose.yml -f docker-compose.lan.yml') up -d
 	@echo ""
 	@echo "  Web   http://localhost:$${WEB_PORT:-3000}"
 	@echo "  API   http://localhost:$${API_PORT:-8000}/docs"
@@ -251,8 +251,8 @@ lan-up: ## Mở web ra LAN để máy khác trong nhà dùng chung. Đọc READM
 	@echo ""
 
 .PHONY: lan-down
-lan-down: ## Đóng lại, web chỉ còn truy cập từ 127.0.0.1
-	$(DC) up -d web
+lan-down: ## Đóng lại, web chỉ còn truy cập từ 127.0.0.1 (đặt EXPOSE_LAN=false trong .env, nếu không make up sẽ mở lại)
+	$(DC) -f docker-compose.yml up -d web
 	@echo "  Đã đóng. Web chỉ còn trả lời ở 127.0.0.1:$${WEB_PORT:-3000}."
 
 # ── Production ─────────────────────────────────────────────────────────
