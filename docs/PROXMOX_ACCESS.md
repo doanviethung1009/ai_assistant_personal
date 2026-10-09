@@ -210,8 +210,80 @@ Ansible hiện chỉ **thêm** khóa, không tự gỡ khóa đã có; gỡ ph�
 
 ## 6. Quy tắc an toàn
 
+
 1. Mỗi người, mỗi máy một khóa riêng; khóa riêng **không** copy sang máy khác, không đưa lên git/chat.
 2. Khóa quản trị có passphrase; khóa tự động hóa (`ai_assistant_deploy`) không passphrase nên chỉ để trên máy tin cậy, quyền `600`.
 3. Quản lý prod bằng quyền tối thiểu và qua runbook; chỉ đọc/chẩn đoán trực tiếp.
 4. Giữ đường lui (Shell web, `qm guest exec`) trước khi đổi bất cứ cấu hình SSH nào.
 5. Định kỳ (mỗi quý) rà `authorized_keys` ở node và VM, gỡ khóa không còn dùng.
+
+## 7. File cấu hình (`.env`) của từng môi trường và cách lấy thông tin
+
+Có **hai nhóm file cấu hình khác nhau**, đừng nhầm:
+
+### 7.1 `.env` của ứng dụng: nằm TRÊN từng VM
+
+| Môi trường | File | Sinh bởi | Ghi chú |
+|---|---|---|---|
+| dev | `192.168.100.201:/srv/builder-ai/dev/.env` | Ansible (`make env`) | `ENVIRONMENT=development`, `COMPOSE_PROJECT_NAME=builder-dev` |
+| staging | `192.168.100.202:/srv/builder-ai/staging/.env` | Ansible | `ENVIRONMENT=staging`, `IMAGE_TAG` do deploy ghi |
+| prod | `192.168.100.203:/srv/builder-ai/prod/.env` | Ansible | `ENVIRONMENT=production`; quyền `600`, chủ `deploy` |
+
+- Mỗi môi trường có **khóa ngẫu nhiên riêng** (`API_KEY`, `POSTGRES_PASSWORD`, `LITELLM_*`, `GRAFANA_ADMIN_PASSWORD`...). Chúng chỉ tồn tại
+  trên VM đó, **không** trong git, **không** trong tài liệu, nên cũng không có trong chat. Đây là chủ ý.
+- Ansible sinh `.env` **một lần** và không ghi đè (đổi `API_KEY`/mật khẩu DB làm app và Postgres lệch nhau). Nên muốn
+  biết giá trị thật thì phải đọc từ VM.
+- Biến cố định theo môi trường (`COMPOSE_PROJECT_NAME`, `ENVIRONMENT`, `CORS_ORIGINS`) do Ansible đặt lại mỗi lần `make pve-config`.
+
+Xem **tên biến (che giá trị bí mật)**, an toàn để chia sẻ:
+
+```bash
+ssh ai-prod "grep -E '^[A-Z_]+=' /srv/builder-ai/prod/.env | sed -E 's/^([A-Z_]*(KEY|PASSWORD|SECRET|TOKEN|SALT)[A-Z_]*)=.*/\1=<ẩn>/'"
+```
+
+Xem **giá trị thật** của một biến (chỉ khi cần, đừng dán vào chat/git):
+
+```bash
+ssh ai-prod "grep '^API_KEY=' /srv/builder-ai/prod/.env"
+```
+
+Cần `API_KEY` của môi trường nào thì đọc ở VM đó. Web gọi API qua Server Action phía server nên **người dùng không bao giờ cần API key**;
+chỉ dùng khi gọi API trực tiếp (ví dụ `curl -H "X-API-Key: ..." http://localhost:8000/api/v1/tasks` chạy trên VM).
+
+Sửa `.env`: chỉ sửa trên VM (`nano /srv/builder-ai/<env>/.env`), rồi `make prod-up` để container nhận giá trị mới. Đổi
+`NEXT_PUBLIC_*` thì phải build lại (xem deploy-runbook.md Case 4). **Không** commit `.env`.
+
+### 7.2 Bản đối chiếu giữa các môi trường
+
+| Biến | dev | staging | prod |
+|---|---|---|---|
+| `ENVIRONMENT` | development | staging | production |
+| `COMPOSE_PROJECT_NAME` | builder-dev | builder-staging | builder-prod |
+| `CORS_ORIGINS` | `http://192.168.100.201:3000` | `http://192.168.100.202:3000` | `http://192.168.100.203:3000` |
+| `IMAGE_TAG` | (không dùng, build tại chỗ) | do deploy ghi | do deploy ghi |
+| Khóa bí mật | riêng | riêng | riêng (**không dùng chung**) |
+
+Hiện **staging và prod thiếu hai biến** mà code mới ở `main` cần: `IMPORT_COMMIT_SECRET` và `INTEGRATION_SECRET_KEY` (hai VM này sinh `.env` từ
+nhánh `uat`/`prod` cũ). Trước khi deploy phiên bản mới lên đó, chạy trên VM: `make env-fill` (chỉ bổ sung biến còn thiếu, không đổi biến đã có).
+
+### 7.3 Token Proxmox và khóa SSH: nằm TRÊN MÁY DEV của bạn
+
+| Thứ | Ở đâu | Dùng cho |
+|---|---|---|
+| `infra/proxmox/.env.pve` | máy dev, trong repo nhưng bị `.gitignore` | `make pve-check` (token chỉ đọc) |
+| `infra/proxmox/.env.pve.deploy` | như trên | `make pve-vm`, `pve-snapshot` (token ghi) |
+| `~/.ssh/ai_assistant_deploy` | máy dev | khóa riêng SSH vào cả 3 VM (user `deploy`) |
+| `~/.ssh/isec_admin` | máy dev (tạo ở mục 1) | khóa riêng SSH vào node Proxmox |
+
+Mất hoặc muốn dùng trên máy khác: copy theo cách an toàn (không qua chat), `chmod 600`, hoặc tạo token/khóa mới (PROXMOX_OPERATIONS.md mục 8).
+CI dùng bản sao trong GitHub Secrets (`DEPLOY_SSH_KEY`, `PVE_*`), chưa tạo.
+
+### 7.4 Địa chỉ truy cập từng môi trường
+
+| Môi trường | Web | API docs | Cách mở |
+|---|---|---|---|
+| dev | `http://192.168.100.201:3000` | `:8000/docs` | `make lan-up` trên VM, hoặc SSH tunnel (mục 4.3) |
+| staging | `http://192.168.100.202:3000` | `:8000/docs` | như trên |
+| prod | `http://192.168.100.203:3000` | `:8000/docs` | SSH tunnel; app chưa có đăng nhập nên **không** mở ra LAN |
+
+Mặc định web/API bind `127.0.0.1` trong VM; xem mục 4.3.
