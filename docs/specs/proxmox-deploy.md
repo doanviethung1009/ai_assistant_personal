@@ -1,6 +1,6 @@
 # Spec: Quy trình dựng VM trên Proxmox và deploy theo runbook (dev / staging / prod)
 
-- Trạng thái: DRAFT (User đã chốt Q2–Q5 ngày 2026-10-09; còn Q1 và Q6 ở mục 7)
+- Trạng thái: CHỐT MỘT PHẦN (2026-10-09). Q1 (token chỉ đọc), Q2–Q5, Q6 (repo public), Q7 (RAM) đã giải quyết; còn lại là phần chưa làm ở docs/SYSTEMS_INVENTORY.md mục 8
 - Tác giả: Claude (orchestrator, theo vai trò architect)
 
 ## 1. Bối cảnh & phạm vi
@@ -160,7 +160,7 @@ Theo AGENTS.md mục 3.9: mọi file cấu hình phải có comment từng quy�
 - **Q3 (chốt):** Ubuntu 24.04 LTS (hỗ trợ đến 2029, khớp README/runbook, cloud image chính thức cho cloud-init).
 - **Q4 (chốt):** phương án B, xem 4.6–4.7.
 - **Q5 (chốt):** dev `192.168.100.201` (dự trữ, dùng khi cần VM dev), staging `.202`, prod `.203`, runner `.204` (đề xuất), gateway `192.168.100.1`.
-- **Q7 (chặn dựng VM):** RAM không đủ cho kế hoạch ban đầu. Chọn một: (a) giảm `agent-hub` 6→4 GB (đang dùng ~3.5 GB), dành 2 GB; (b) staging chỉ bật khi cần (VM tắt không chiếm RAM); (c) hạ cấu hình: prod 3 GB, staging 2 GB, runner 512 MB; (d) kết hợp (b)+(c).
+- **Q7 (đã giải quyết: tắt VM 140, 150; dev 2.5 GB, staging 3 GB, prod 5 GB):** RAM không đủ cho kế hoạch ban đầu. Chọn một: (a) giảm `agent-hub` 6→4 GB (đang dùng ~3.5 GB), dành 2 GB; (b) staging chỉ bật khi cần (VM tắt không chiếm RAM); (c) hạ cấu hình: prod 3 GB, staging 2 GB, runner 512 MB; (d) kết hợp (b)+(c).
 - **Q6 (mới):** repo GitHub đang để private hay public? Quyết định cách VM kéo image GHCR (private cần token `read:packages`).
 - **Rủi ro:** môi trường test có thể bị xoá/cài lại, nên mọi thứ phải dựng lại được từ code. Chứng chỉ tự ký sẽ đổi nếu cài lại Proxmox, khi đó phải cập nhật fingerprint.
 - **Rủi ro:** snapshot không thay thế backup (nằm cùng storage với VM).

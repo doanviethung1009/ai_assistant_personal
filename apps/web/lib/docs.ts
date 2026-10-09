@@ -383,6 +383,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "PROXMOX_OPERATIONS.md"),
   },
   {
+    slug: "systems-inventory",
+    title: "Hồ sơ các hệ thống",
+    description:
+      "Inventory vận hành: sơ đồ, danh mục hệ thống, thông tin node và VM dev/staging/prod, cổng, phụ thuộc, bí mật nằm đâu, việc còn thiếu, nhật ký thay đổi.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "SYSTEMS_INVENTORY.md"),
+  },
+  {
     slug: "proxmox-access",
     title: "Truy cập server: khóa SSH và quản lý",
     description:

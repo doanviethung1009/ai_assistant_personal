@@ -13,7 +13,7 @@ Cập nhật: 2026-10-09. Thiết kế và lý do nằm ở [spec](specs/proxmox
 | Dựng VM staging / prod | **Đã có** `make pve-vm ENV=dev\|staging\|prod` (mục 13). **VM staging `ai-stg-01` (192.168.100.202) đã dựng và SSH được (2026-10-09)**; prod chưa dựng |
 | Cấu hình VM bằng Ansible | **Đã có** `make pve-config ENV=...`, đã áp lên staging, chạy lần 2 `changed=0` (mục 5) |
 | Thử build + chạy stack trên staging | **Đã thử** (2026-10-09): build, up, migrate, health OK; `make smoke` 93/98 (5 lỗi là race của backend, xem PROXMOX_OPERATIONS.md mục 11) |
-| CI build image + deploy tự động | Mô tả (mục 7), chưa viết workflow |
+| CI build image + deploy tự động | Workflow đã viết và merge (`build-images.yml`, `deploy.yml`); `Build images` đã build+đẩy được image api, bước Trivy còn lỗi chưa rõ nguyên nhân; `Deploy` **chưa chạy được** (cần runner tự host, Environments, Secrets) |
 | Tab "Hạ tầng" trên web | Chưa làm (mục 10) |
 
 Khi một mục chuyển sang "Đã có", cập nhật bảng này.
