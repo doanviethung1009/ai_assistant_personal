@@ -195,7 +195,7 @@ Chi tiết cần biết:
   `address already in use`. Vì vậy cần Docker Compose ≥ 2.24 (VM đã có 5.6.0).
 - Bật rồi tắt: `make lan-down` (web về `127.0.0.1`). Kiểm tra trạng thái: `docker ps --format '{{.Names}} {{.Ports}}' | grep web`:
   thấy `0.0.0.0:3000->3000/tcp` là đang mở, thấy `127.0.0.1:3000->3000/tcp` là đang đóng.
-- **Dễ bị đóng lại ngoài ý muốn:** chạy lại `make up` (hoặc `docker compose up -d` với file gốc) sẽ đưa web về `127.0.0.1`. Với dev, mở lại bằng `make lan-up`.
+- **Không còn bị đóng ngoài ý muốn:** VM dev có `EXPOSE_LAN=true` trong `.env`, nên `make up` cũng giữ web mở ra LAN (như `make prod-up` ở staging/prod). `docker compose up -d` gõ tay với file gốc thì vẫn đưa web về `127.0.0.1`. Muốn đóng hẳn: đặt `EXPOSE_LAN=false` trong `.env` rồi `make lan-down`.
 - **Chỉ dùng `make lan-up` cho dev.** Nó chỉ nạp `docker-compose.yml` (chế độ dev: bind mount, hot reload). Chạy trên staging/prod sẽ làm container
   `web` tạo lại theo cấu hình dev và phá cấu hình production.
 - **Cảnh báo bảo mật:** web chưa có đăng nhập, ai tới được cổng này đều xem/sửa/xóa mọi task và sổ tay như chủ app.
@@ -211,7 +211,7 @@ Muốn tắt cho một môi trường: đặt `expose_lan: false` (hoặc sửa 
 
 | Môi trường | Cách mở web ra LAN | Cách đóng lại |
 |---|---|---|
-| dev | `make lan-up` | `make lan-down` |
+| dev | `EXPOSE_LAN=true` (Ansible đặt sẵn) + `make up`; hoặc `make lan-up` | `EXPOSE_LAN=false` + `make lan-down` |
 | staging | `EXPOSE_LAN=true` + `make prod-up` (hoặc `scripts/deploy.sh`) | `EXPOSE_LAN=false` + `make prod-up` |
 | prod | như staging (khi đã deploy stack) | như staging |
 
