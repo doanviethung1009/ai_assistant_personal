@@ -1,0 +1,14 @@
+---
+# ═══════════════════════════════════════════════════════════════════════
+#  Biến VM Ubuntu mới (từ template cloud-init) thành máy chạy được stack Docker Compose.
+#
+#  Dùng:  make pve-config ENV=staging         (hoặc CHECK=1 để chỉ xem thay đổi, không áp)
+#  IDEMPOTENT: chạy lần 2 phải báo changed=0. Nếu không, có task viết sai.
+#  Giải thích từng bước: docs/PROXMOX_DEPLOY.md mục 5.
+# ═══════════════════════════════════════════════════════════════════════
+- name: Cấu hình VM môi trường
+  hosts: "{{ target | default('staging') }}"
+  roles:
+    - base
+    - docker
+    - app

@@ -1,0 +1,38 @@
+---
+# ── Thư mục app + bản checkout đúng nhánh môi trường ────────────────────
+# Cần compose/Makefile để chạy runbook (deploy-runbook.md). Image sẽ kéo từ GHCR khi CI sẵn sàng;
+# trong lúc đó vẫn build tại chỗ được (make prod-build).
+- name: Thư mục gốc app
+  ansible.builtin.file: {path: "{{ app_root }}", state: directory, owner: "{{ ansible_user }}", mode: "0755"}
+
+- name: Checkout nhánh {{ branch }}
+  ansible.builtin.git:
+    repo: "{{ repo_url }}"
+    dest: "{{ app_root }}/{{ env_name }}"
+    version: "{{ branch }}"
+    # Không ghi đè thay đổi tay trên server: có sửa tay thì task báo lỗi để người xử lý,
+    # đúng nguyên tắc "server chỉ pull, không chỉnh tay" của runbook.
+    update: false
+  become: false
+  become_user: "{{ ansible_user }}"
+  register: checkout
+
+# .env sinh một lần với khoá ngẫu nhiên (make env). KHÔNG ghi đè nếu đã có, vì đổi API_KEY/mật khẩu
+# DB làm app và Postgres lệch nhau. `creates` làm task idempotent.
+- name: Sinh .env (một lần)
+  ansible.builtin.command:
+    cmd: make env
+    chdir: "{{ app_root }}/{{ env_name }}"
+    creates: "{{ app_root }}/{{ env_name }}/.env"
+  become: false
+
+- name: Đặt biến theo môi trường trong .env
+  ansible.builtin.lineinfile:
+    path: "{{ app_root }}/{{ env_name }}/.env"
+    regexp: "^{{ item.key }}="
+    line: "{{ item.key }}={{ item.value }}"
+  loop:
+    - {key: COMPOSE_PROJECT_NAME, value: "builder-{{ env_name }}"}
+    - {key: ENVIRONMENT, value: "{{ 'production' if env_name == 'prod' else 'staging' }}"}
+    - {key: CORS_ORIGINS, value: "http://{{ ansible_host }}:{{ web_port }}"}
+  become: false

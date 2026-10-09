@@ -49,3 +49,8 @@ Thumbs.db
 # Claude Code: cài đặt cá nhân, không commit
 .claude/settings.local.json
 CLAUDE.local.md
+
+# Cho phép commit file mẫu của Proxmox (file thật .env.pve vẫn bị ẩn)
+!.env.pve.example
+!.env.pve.deploy.example
+infra/proxmox/ansible/collections/

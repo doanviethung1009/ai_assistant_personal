@@ -1,0 +1,62 @@
+---
+# ── Gói nền + guest agent ───────────────────────────────────────────────
+- name: Cài gói nền
+  ansible.builtin.apt:
+    name: [qemu-guest-agent, chrony, ufw, unattended-upgrades, curl, ca-certificates, git, make, htop]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# Guest agent: để Proxmox thấy IP của VM, tắt máy êm (shutdown) và snapshot nhất quán.
+- name: Bật qemu-guest-agent
+  # --check: gói chưa được cài thật nên dịch vụ/nhóm chưa tồn tại; chỉ bỏ qua lỗi ở chế độ xem thử.
+  ignore_errors: "{{ ansible_check_mode }}"
+  ansible.builtin.systemd: {name: qemu-guest-agent, state: started, enabled: true}
+
+# Đồng bộ giờ: log, cert và token hết hạn đều phụ thuộc đồng hồ đúng.
+- name: Bật chrony
+  # --check: gói chưa được cài thật nên dịch vụ/nhóm chưa tồn tại; chỉ bỏ qua lỗi ở chế độ xem thử.
+  ignore_errors: "{{ ansible_check_mode }}"
+  ansible.builtin.systemd: {name: chrony, state: started, enabled: true}
+
+- name: Đặt múi giờ khớp NEXT_PUBLIC_DISPLAY_TZ
+  community.general.timezone: {name: Asia/Ho_Chi_Minh}
+
+# Chỉ bản vá BẢO MẬT, và KHÔNG tự reboot (reboot bất ngờ làm sập stack giữa lúc dùng).
+- name: Bật unattended-upgrades
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+    mode: "0644"
+
+# ── SSH: chỉ khoá, không root, không mật khẩu ───────────────────────────
+# Dùng drop-in thay vì sửa sshd_config để không đụng file gốc của gói openssh.
+- name: Siết SSH
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/99-hardening.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      MaxAuthTries 3
+    mode: "0644"
+    # Kiểm cú pháp TRƯỚC khi ghi: file lỗi thì sshd không lên, mất kết nối với VM.
+    validate: /usr/sbin/sshd -t -f %s
+  notify: reload ssh
+
+# ── Firewall ────────────────────────────────────────────────────────────
+# LƯU Ý: Docker tự chèn luật iptables riêng và BỎ QUA ufw cho cổng nó publish. Vì vậy
+# bảo vệ thật sự của DB/Redis là compose không publish cổng ra host (docker-compose.prod.yml
+# đã `ports: !override []`), không phải ufw. ufw ở đây chỉ che SSH và các dịch vụ ngoài Docker.
+- name: ufw mặc định chặn vào, cho ra
+  community.general.ufw: {default: deny, direction: incoming}
+- name: ufw cho ra
+  community.general.ufw: {default: allow, direction: outgoing}
+- name: ufw cho SSH từ LAN
+  community.general.ufw: {rule: allow, port: "22", proto: tcp, src: "{{ admin_cidr }}"}
+- name: ufw cho web từ LAN
+  community.general.ufw: {rule: allow, port: "{{ web_port }}", proto: tcp, src: "{{ admin_cidr }}"}
+- name: Bật ufw
+  community.general.ufw: {state: enabled}

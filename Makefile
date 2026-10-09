@@ -154,6 +154,18 @@ trash: ## Xem thùng rác qua API
 health: ## Gọi readiness probe
 	@curl -fsS http://localhost:$${API_PORT:-8000}/health/ready | python3 -m json.tool
 
+.PHONY: pve-check
+pve-check: ## Đọc thông tin Proxmox bằng token chỉ đọc (infra/proxmox/.env.pve)
+	@bash infra/proxmox/scripts/pve-check.sh
+
+.PHONY: pve-vm
+pve-vm: ## Dựng VM môi trường trên Proxmox: make pve-vm ENV=staging|prod [DRY=1]
+	@bash infra/proxmox/scripts/pve-vm.sh $(ENV) $(if $(DRY),--dry-run,)
+
+.PHONY: pve-config
+pve-config: ## Cấu hình VM bằng Ansible: make pve-config ENV=staging|prod [CHECK=1 chỉ xem thay đổi]
+	@cd infra/proxmox/ansible && ANSIBLE_COLLECTIONS_PATH=collections ../.venv/bin/ansible-playbook site.yml -e target=$(ENV) $(if $(CHECK),--check --diff,)
+
 .PHONY: lint
 lint: ## Ruff cho backend, tsc cho frontend
 	$(API) ruff check app migrations tests
