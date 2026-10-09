@@ -1,0 +1,47 @@
+---
+# ── Docker Engine + Compose plugin từ kho CHÍNH THỨC của Docker ─────────
+# Không dùng docker.io của Ubuntu: bản cũ hơn, có thể thiếu Compose ≥ 2.24 (cần cho thẻ !override).
+- name: Thư mục khoá apt
+  ansible.builtin.file: {path: /etc/apt/keyrings, state: directory, mode: "0755"}
+
+- name: Tải khoá GPG của Docker
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+
+- name: Thêm kho apt của Docker
+  ansible.builtin.apt_repository:
+    repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+    filename: docker
+    state: present
+
+- name: Cài Docker
+  ansible.builtin.apt:
+    name: [docker-ce, docker-ce-cli, containerd.io, docker-compose-plugin, docker-buildx-plugin]
+    state: present
+    update_cache: true
+
+# Giới hạn dung lượng log container. Mặc định log không xoay vòng, một container ồn
+# có thể đầy đĩa VM (40-60 GB) và làm sập cả stack.
+- name: Cấu hình daemon Docker
+  ansible.builtin.copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {"max-size": "10m", "max-file": "3"}
+      }
+    mode: "0644"
+  notify: restart docker
+
+- name: Bật Docker
+  # --check: gói chưa được cài thật nên dịch vụ/nhóm chưa tồn tại; chỉ bỏ qua lỗi ở chế độ xem thử.
+  ignore_errors: "{{ ansible_check_mode }}"
+  ansible.builtin.systemd: {name: docker, state: started, enabled: true}
+
+# Thành viên nhóm docker ≈ root trên máy. Chỉ user deploy, và VM này chỉ phục vụ app.
+- name: Cho user deploy dùng docker
+  # --check: gói chưa được cài thật nên dịch vụ/nhóm chưa tồn tại; chỉ bỏ qua lỗi ở chế độ xem thử.
+  ignore_errors: "{{ ansible_check_mode }}"
+  ansible.builtin.user: {name: "{{ ansible_user }}", groups: docker, append: true}

@@ -1,0 +1,68 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Build 1 LẦN, chạy mọi nơi: sau khi CI xanh trên main, build image api + web, quét lỗ hổng,
+#  đẩy lên GHCR với tag là commit SHA. Staging rồi prod KÉO đúng image này (không build lại),
+#  nên prod chạy đúng thứ đã được test ở staging.
+#
+#  Chạy trên GitHub-hosted runner (có internet). Giải thích: docs/PROXMOX_DEPLOY.md mục 7.
+# ═══════════════════════════════════════════════════════════════════════
+name: Build images
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write # đẩy image lên ghcr.io/<owner>/...
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    # Chỉ build khi CI thành công (hoặc chạy tay).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - {name: api, context: apps/core, image: ai-assistant-api}
+          - {name: web, context: apps/web, image: ai-assistant-web}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # workflow_run chạy trên nhánh mặc định; phải checkout đúng commit đã qua CI.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Tính tag
+        id: meta
+        run: |
+          sha="${{ github.event.workflow_run.head_sha || github.sha }}"
+          echo "tag=sha-${sha::7}" >> "$GITHUB_OUTPUT"
+          echo "repo=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${{ matrix.image }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build và đẩy
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          target: prod
+          push: true
+          tags: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
+          # NEXT_PUBLIC_* nhúng lúc build; image dùng chung mọi môi trường nên múi giờ cố định ở đây.
+          build-args: |
+            NEXT_PUBLIC_DISPLAY_TZ=Asia/Ho_Chi_Minh
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Quét lỗ hổng (Trivy)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          # Mới bật: chỉ BÁO, chưa chặn. Đổi thành "1" sau khi xử lý hết lỗ hổng CRITICAL hiện có.
+          exit-code: "0"

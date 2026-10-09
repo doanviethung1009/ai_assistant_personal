@@ -1,0 +1,58 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Deploy tự động theo nhánh: push uat → staging, push prod → production (có người duyệt).
+#
+#  Chạy trên runner TỰ HOST (LXC trong LAN, nhãn "proxmox"), vì GitHub-hosted runner không với
+#  được 192.168.100.x. Image đã được workflow "Build images" tạo sẵn từ commit main; nhánh uat/prod
+#  chỉ fast-forward nên cùng SHA, không build lại. Giải thích: docs/PROXMOX_DEPLOY.md mục 7, 8.
+#
+#  Cần Environment "staging" và "production" (production bật Required reviewers) và secrets:
+#    DEPLOY_SSH_KEY  khoá riêng SSH của user deploy (theo Environment)
+#    PVE_TOKEN_ID, PVE_TOKEN_SECRET, PVE_HOST, PVE_TLS_FINGERPRINT   (token GHI, cho snapshot prod)
+# ═══════════════════════════════════════════════════════════════════════
+name: Deploy
+
+on:
+  push:
+    branches: [uat, prod]
+
+# Mỗi môi trường chạy tuần tự, không bao giờ hai lượt deploy song song lên cùng một VM.
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, proxmox]
+    environment: ${{ github.ref_name == 'prod' && 'production' || 'staging' }}
+    env:
+      HOST: ${{ github.ref_name == 'prod' && '192.168.100.203' || '192.168.100.202' }}
+      ENVDIR: ${{ github.ref_name == 'prod' && 'prod' || 'staging' }}
+      VMID: ${{ github.ref_name == 'prod' && '203' || '202' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tính tag image (7 ký tự đầu của SHA, khớp workflow Build images)
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+      - name: Snapshot VM trước khi deploy (prod)
+        if: github.ref_name == 'prod'
+        env:
+          PVE_HOST: ${{ secrets.PVE_HOST }}
+          PVE_TOKEN_ID: ${{ secrets.PVE_TOKEN_ID }}
+          PVE_TOKEN_SECRET: ${{ secrets.PVE_TOKEN_SECRET }}
+          PVE_TLS_FINGERPRINT: ${{ secrets.PVE_TLS_FINGERPRINT }}
+        run: bash infra/proxmox/scripts/pve-snapshot.sh "$VMID" "pre-${TAG//-/_}"
+      - name: Cài khoá SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+      - name: Deploy qua SSH
+        run: |
+          ssh -i ~/.ssh/deploy_key -o IdentitiesOnly=yes "deploy@$HOST" \
+            "cd /srv/builder-ai/$ENVDIR && git fetch -q origin ${{ github.ref_name }} && git merge --ff-only FETCH_HEAD && bash scripts/deploy.sh $TAG"
+      - name: Xoá khoá
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
