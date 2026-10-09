@@ -112,6 +112,7 @@ async def test_idempotent_and_updated_at_untouched(client: httpx.AsyncClient) ->
         "skipped_personal": 0,
         "errors": [],
         "warnings": [],
+        "kept_manual_due": 0,
     }
     stamps = {t.external_id: (t.updated_at, t.created_at) for t in await _tasks()}
 
@@ -331,6 +332,7 @@ async def test_empty_batch_is_noop(client: httpx.AsyncClient) -> None:
         "skipped_personal": 0,
         "errors": [],
         "warnings": [],
+        "kept_manual_due": 0,
     }
 
 

@@ -811,7 +811,7 @@ async def test_jira_due_change_applies_when_user_did_not_edit(
     assert data["updated"] == 1
     after = (await _tasks())[0]
     assert after.due_at == datetime(2026, 4, 1, tzinfo=UTC) and after.due_all_day is True
-    changed = [e.payload["changes"] for e in await _events_of(task.id) if e.payload]
+    changed = [e.payload.get("changes", {}) for e in await _events_of(task.id) if e.payload]
     assert any("due_at" in c for c in changed)
 
 
