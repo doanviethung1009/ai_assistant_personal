@@ -414,6 +414,14 @@ export const DOCS: DocEntry[] = [
     category: "8. Proxmox & Server",
     file: path.join("docs", "specs", "proxmox-deploy.md"),
   },
+  {
+    slug: "spec-user-timezone",
+    title: "Spec: Múi giờ chọn được và sửa quá hạn Jira",
+    description:
+      "Chọn múi giờ trên UI, lưu trong app_settings, hạn cả ngày (due_all_day), quy tắc quá hạn theo ngày địa phương, sync Jira cập nhật hạn.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "user-timezone.md"),
+  },
 ];
 
 /** Thư mục gốc chứa tài liệu. Mặc định là gốc repo, tính từ apps/web. */
