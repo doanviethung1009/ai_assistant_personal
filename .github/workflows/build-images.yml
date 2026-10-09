@@ -25,6 +25,8 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     strategy:
+      # api lỗi không được huỷ job web (đã gặp: Trivy của api fail làm web bị cancelled, không có image web).
+      fail-fast: false
       matrix:
         include:
           - {name: api, context: apps/core, image: ai-assistant-api}
@@ -59,6 +61,8 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: Quét lỗ hổng (Trivy)
+        # Bước này mới chỉ BÁO (exit-code 0), nên lỗi chạy công cụ cũng không được chặn việc build/đẩy image.
+        continue-on-error: true
         uses: aquasecurity/trivy-action@v0.33.1
         with:
           image-ref: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
