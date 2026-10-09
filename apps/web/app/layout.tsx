@@ -3,7 +3,8 @@ import Link from "next/link";
 import { Menu } from "lucide-react";
 
 import { MainNav } from "@/components/main-nav";
-import { DATA_SOURCE } from "@/lib/api";
+import { DATA_SOURCE, getDisplayTimezoneApi } from "@/lib/api";
+import { TimezoneProvider } from "@/lib/timezone-context";
 import { ChatAssistant } from "@/components/chat-assistant";
 
 import "./globals.css";
@@ -13,12 +14,20 @@ export const metadata: Metadata = {
   description: "Quản lý công việc cá nhân, theo dõi task hàng ngày",
 };
 
-export default function RootLayout({
+// Layout đọc múi giờ từ backend lúc chạy; không để Next prerender lúc build (build không có api).
+export const dynamic = "force-dynamic";
+
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  // Múi giờ lấy ở server rồi chuyển xuống client qua context, để server render và hydrate
+  // dùng cùng một chuỗi. Hàm này có dự phòng nên layout không vỡ khi API sập.
+  const { timezone } = await getDisplayTimezoneApi();
+
   return (
     <html lang="vi">
       <body className="flex h-screen overflow-hidden bg-[var(--color-surface)] antialiased">
+        <TimezoneProvider tz={timezone}>
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-[var(--color-accent)] focus:px-3 focus:py-2 focus:text-white"
@@ -95,6 +104,7 @@ export default function RootLayout({
         
         {/* Chat AI Assistant Layer */}
         <ChatAssistant />
+        </TimezoneProvider>
       </body>
     </html>
   );

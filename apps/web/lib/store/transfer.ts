@@ -103,6 +103,9 @@ export async function collect(): Promise<DataFile> {
   };
 }
 
+// Ghi chú: ở chế độ api, múi giờ nằm trong app_settings của backend và đi theo đường
+// import/datafile riêng, nên bản xuất ở chế độ api không mang meta.display_timezone.
+
 export async function buildJson(): Promise<string> {
   return JSON.stringify(await collect(), null, 2);
 }
@@ -216,6 +219,7 @@ async function apply(
         priority: task.priority,
         project_id: key ? (currentByKey.get(key) ?? null) : null,
         due_at: task.due_at,
+        due_all_day: task.due_all_day,
         scheduled_for: task.scheduled_for,
         estimate_minutes: task.estimate_minutes,
         tags: task.tags,
@@ -524,7 +528,17 @@ export async function importJson(
   // Ở chế độ api, nhập JSON phải đi qua endpoint có dry-run, báo cáo ghi đè và audit.
   if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   const data = parseDataFile(text);
-  return apply(data.projects, data.tasks, data.notes, mode);
+  const summary = await apply(data.projects, data.tasks, data.notes, mode);
+  // Múi giờ là cài đặt (cùng nhóm current_users), chỉ thay khi nhập kiểu replace và file có
+  // mang theo. Tên rác thì cảnh báo, không làm hỏng cả lần nhập.
+  if (mode === "replace" && data.meta?.display_timezone) {
+    try {
+      engine.setDisplayTimezone(data.meta.display_timezone);
+    } catch {
+      summary.warnings.push("Bỏ qua display_timezone không hợp lệ trong file");
+    }
+  }
+  return summary;
 }
 
 export async function importProjectsCsv(

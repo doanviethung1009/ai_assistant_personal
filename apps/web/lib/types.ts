@@ -54,10 +54,18 @@ type WithRequiredDeletedAt<
   project?: ProjectSummary | null;
 };
 
-export type Task = WithRequiredDeletedAt<Schemas["TaskRead"]>;
+/**
+ * TẠM THỜI (epic user-timezone): `due_all_day` đã có ở backend nhưng
+ * lib/generated/openapi.d.ts chưa được sinh lại. Giao với `{ due_all_day: boolean }`
+ * để tsc chạy được; sau `make gen-types` field này đã có trong schema nên phần giao
+ * thành thừa và có thể gỡ.
+ */
+type WithDueAllDay<T> = T & { due_all_day: boolean };
+
+export type Task = WithDueAllDay<WithRequiredDeletedAt<Schemas["TaskRead"]>>;
 export type TaskEvent = Schemas["TaskEventRead"];
 /** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
-export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
+export type TaskDetail = WithDueAllDay<WithRequiredDeletedAt<Schemas["TaskDetail"]>> & {
   events: TaskEvent[];
 };
 
@@ -110,7 +118,34 @@ export type PurgeResponse = Schemas["PurgeResponse"];
 
 export type ComponentHealth = Schemas["ComponentHealth"];
 export type HealthResponse = Schemas["HealthResponse"];
-export type SystemInfo = Schemas["SystemInfo"];
+/**
+ * `display_timezone_default` mới (epic user-timezone), chưa có trong openapi.d.ts đã sinh.
+ * `display_timezone` nay là giá trị hiệu lực (setting nếu có, không thì env).
+ */
+export type SystemInfo = Schemas["SystemInfo"] & {
+  display_timezone_default: string;
+};
+
+/**
+ * Múi giờ hiển thị (GET/PUT /settings/display-timezone). Khai tay vì openapi.d.ts chưa
+ * sinh lại; sau `make gen-types` đổi thành alias Schemas["DisplayTimezoneRead"] ...
+ */
+export interface DisplayTimezoneRead {
+  /** Giá trị hiệu lực. */
+  timezone: string;
+  /** Mặc định từ env DISPLAY_TIMEZONE của backend. */
+  default: string;
+  source: "setting" | "default";
+}
+export interface TimezoneOption {
+  name: string;
+  /** Offset tại thời điểm gọi API (DST làm đổi), chỉ để hiển thị. */
+  utc_offset_minutes: number;
+}
+export interface TimezoneList {
+  items: TimezoneOption[];
+  total: number;
+}
 
 /**
  * Page[T] của core API là generic thật (`Page_TaskRead_`, `Page_NoteRead_`),
@@ -203,6 +238,8 @@ export type IntegrationSyncResult = Schemas["SyncResult"];
  * client THỰC SỰ gửi (model_fields_set). Làm optional để mapper được phép bỏ `priority`.
  */
 export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority"> & {
+  /** Hạn cả ngày (Jira duedate). Chưa có trong openapi.d.ts đã sinh, xem WithDueAllDay. */
+  due_all_day?: boolean | null;
   status?: Schemas["TaskUpsert"]["status"];
   priority?: Schemas["TaskUpsert"]["priority"];
 };

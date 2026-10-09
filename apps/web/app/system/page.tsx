@@ -306,9 +306,25 @@ export default async function SystemPage() {
             <ConfigItem label="Tên ứng dụng" value={info.app_name} />
             <ConfigItem label="Môi trường" value={info.environment} />
             <ConfigItem
-              label="Timezone hiển thị"
-              value={info.display_timezone}
+              label="Timezone hiển thị (hiệu lực)"
+              value={`${info.display_timezone}${
+                info.display_timezone === info.display_timezone_default
+                  ? " (mặc định)"
+                  : " (bạn đã chọn)"
+              }`}
             />
+            <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2">
+              <dt className="text-xs text-[var(--color-ink-muted)]">Timezone mặc định (env)</dt>
+              <dd className="mt-0.5 text-sm font-medium">
+                {info.display_timezone_default}{" "}
+                <Link
+                  href="/data?tab=dong-bo"
+                  className="text-xs font-normal text-[var(--color-accent)] underline"
+                >
+                  Đổi ở trang Dữ liệu
+                </Link>
+              </dd>
+            </div>
             <ConfigItem
               label="Giữ thùng rác"
               value={`${info.trash_retention_days} ngày`}

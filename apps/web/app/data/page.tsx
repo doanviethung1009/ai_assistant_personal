@@ -11,6 +11,7 @@ import { FileUploadManager } from "@/components/file-upload-manager";
 import { JiraConnectionsManager } from "@/components/jira-connections-manager";
 import { JiraSyncManager } from "@/components/jira-sync-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
+import { TimezonePicker } from "@/components/timezone-picker";
 import { UrlSyncManager } from "@/components/url-sync-manager";
 import { VaultImportManager } from "@/components/vault-import-manager";
 import { WipeDataManager } from "@/components/wipe-data-manager";
@@ -18,13 +19,15 @@ import {
   IS_LOCAL,
   getAssigneesApi,
   getCurrentUsersApi,
+  getDisplayTimezoneApi,
   getSyncUrlsApi,
   listIntegrations,
   listNotes,
   listProjects,
   listTasks,
+  listTimezonesApi,
 } from "@/lib/api";
-import type { IntegrationConnection } from "@/lib/types";
+import type { IntegrationConnection, TimezoneOption } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -59,6 +62,15 @@ export default async function DataPage({
   let connections: IntegrationConnection[] = [];
   let connectionsTotal = 0;
   let connectionsError: string | null = null;
+
+  // Múi giờ chỉ cần ở tab đồng bộ. Danh mục lỗi không được làm sập trang: ô nhập vẫn gõ tay được.
+  const { timezone, default: tzDefault, source: tzSource } = await getDisplayTimezoneApi();
+  let timezoneOptions: TimezoneOption[] = [];
+  if (tab === "dong-bo") {
+    timezoneOptions = await listTimezonesApi()
+      .then((list) => list.items)
+      .catch(() => []);
+  }
 
   try {
     const [tasks, projects, notes, urls, users, assigneeList, integrationPage] = await Promise.all([
@@ -150,6 +162,10 @@ export default async function DataPage({
         // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api nằm ở nút Cào ngay (B4b).
         <div className="flex flex-col gap-8">
           <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
+          <TimezonePicker
+            current={{ timezone, default: tzDefault, source: tzSource }}
+            options={timezoneOptions}
+          />
           {IS_LOCAL ? (
             <JiraSyncManager
               taskCount={taskCount}
