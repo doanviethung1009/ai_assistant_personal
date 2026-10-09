@@ -51,7 +51,7 @@ Không đổi API của sản phẩm. Phía Proxmox chỉ dùng API sẵn có (`
 
 | Môi trường | Nhánh git | `ENVIRONMENT` | VM | vCPU / RAM / disk (đề xuất) | Duyệt người |
 |---|---|---|---|---|---|
-| dev | `main` | `development` | máy cá nhân (`make dev`); IP .201 dự trữ | — | không |
+| dev | `main` | `development` | VM `ai-dev-01` (.201, id 201), 2 / 2.5 GB / 30 GB; vẫn chạy được `make dev` trên máy cá nhân | — | không |
 | staging | `uat` | `staging` | `ai-stg-01` (.202) | 2 / 4 GB / 40 GB | không |
 | prod | `prod` | `production` | `ai-prod-01` (.203) | 2 / 6 GB / 60 GB + disk dữ liệu 40 GB | **bắt buộc** |
 | runner CI | — | — | LXC `ai-ci-01` (.204) | 1 / 1 GB / 10 GB | — |

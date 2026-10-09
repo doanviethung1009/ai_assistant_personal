@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # ═══════════════════════════════════════════════════════════════════════
-#  Dựng một VM môi trường (staging | prod) từ template 9000 qua API Proxmox.
+#  Dựng một VM môi trường (dev | staging | prod) từ template 9000 qua API Proxmox.
 #
 #  Dùng:
-#    bash infra/proxmox/scripts/pve-vm.sh staging --dry-run   # chỉ in kế hoạch
+#    bash infra/proxmox/scripts/pve-vm.sh dev|staging|prod --dry-run   # chỉ in kế hoạch
 #    bash infra/proxmox/scripts/pve-vm.sh staging             # dựng thật
 #    make pve-vm ENV=staging
 #
@@ -32,9 +32,10 @@ CI_USER="${PVE_CI_USER:-deploy}"
 # ── Thông số từng môi trường ────────────────────────────────────────────
 # id VM = octet cuối của IP (quy ước ở docs/PROXMOX_DEPLOY.md mục 4).
 case "$ENV_NAME" in
+  dev)     VMID=201; NAME=ai-dev-01;  IP=192.168.100.201; MEM=2560; CORES=2; DISK=30G; PROTECT=0 ;;
   staging) VMID=202; NAME=ai-stg-01;  IP=192.168.100.202; MEM=3072; CORES=2; DISK=40G; PROTECT=0 ;;
   prod)    VMID=203; NAME=ai-prod-01; IP=192.168.100.203; MEM=5120; CORES=2; DISK=60G; PROTECT=1 ;;
-  *) echo "Dùng: $0 staging|prod [--dry-run]" >&2; exit 1 ;;
+  *) echo "Dùng: $0 dev|staging|prod [--dry-run]" >&2; exit 1 ;;
 esac
 
 echo "Kế hoạch: $ENV_NAME → VM $VMID '$NAME' $IP, ${MEM}MB RAM, $CORES vCPU, disk $DISK, protection=$PROTECT"

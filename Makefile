@@ -159,11 +159,11 @@ pve-check: ## Đọc thông tin Proxmox bằng token chỉ đọc (infra/proxmox
 	@bash infra/proxmox/scripts/pve-check.sh
 
 .PHONY: pve-vm
-pve-vm: ## Dựng VM môi trường trên Proxmox: make pve-vm ENV=staging|prod [DRY=1]
+pve-vm: ## Dựng VM môi trường trên Proxmox: make pve-vm ENV=dev|staging|prod [DRY=1]
 	@bash infra/proxmox/scripts/pve-vm.sh $(ENV) $(if $(DRY),--dry-run,)
 
 .PHONY: pve-config
-pve-config: ## Cấu hình VM bằng Ansible: make pve-config ENV=staging|prod [CHECK=1 chỉ xem thay đổi]
+pve-config: ## Cấu hình VM bằng Ansible: make pve-config ENV=dev|staging|prod [CHECK=1 chỉ xem thay đổi]
 	@cd infra/proxmox/ansible && ANSIBLE_COLLECTIONS_PATH=collections ../.venv/bin/ansible-playbook site.yml -e target=$(ENV) $(if $(CHECK),--check --diff,)
 
 .PHONY: lint

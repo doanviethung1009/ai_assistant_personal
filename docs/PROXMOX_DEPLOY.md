@@ -10,7 +10,7 @@ Cập nhật: 2026-10-09. Thiết kế và lý do nằm ở [spec](specs/proxmox
 |---|---|
 | Kiểm tra Proxmox bằng token chỉ đọc (`pve-check.sh`) | **Đã có**, chạy được |
 | Template Ubuntu cloud-init | **Đã có** trên node: id 9000 `ubuntu-2404-tmpl` (dùng lại, bỏ qua mục 3) |
-| Dựng VM staging / prod | **Đã có** `make pve-vm ENV=staging\|prod` (mục 13). **VM staging `ai-stg-01` (192.168.100.202) đã dựng và SSH được (2026-10-09)**; prod chưa dựng |
+| Dựng VM staging / prod | **Đã có** `make pve-vm ENV=dev\|staging\|prod` (mục 13). **VM staging `ai-stg-01` (192.168.100.202) đã dựng và SSH được (2026-10-09)**; prod chưa dựng |
 | Cấu hình VM bằng Ansible | **Đã có** `make pve-config ENV=...`, đã áp lên staging, chạy lần 2 `changed=0` (mục 5) |
 | Thử build + chạy stack trên staging | **Đã thử** (2026-10-09): build, up, migrate, health OK; `make smoke` 93/98 (5 lỗi là race của backend, xem PROXMOX_OPERATIONS.md mục 11) |
 | CI build image + deploy tự động | Mô tả (mục 7), chưa viết workflow |
@@ -29,12 +29,12 @@ Việc hằng ngày sau khi dựng xong (kiểm tra, backup, cập nhật, sự 
     └─ push prod ──► [người duyệt] ► runner ──ssh──► VM prod .203 : snapshot → backup → pull → up → health/smoke
 
  Proxmox node "isec" (192.168.100.252:8006, PVE 9.1) chứa: template 9000, VM staging, VM prod, LXC runner
- dev: chạy trên máy cá nhân bằng `make dev`
+ dev: VM ai-dev-01 (.201) chạy `make up` (hot reload từ nhánh main); vẫn có thể chạy `make dev` trên máy cá nhân
 ```
 
 | Môi trường | Nhánh git | `ENVIRONMENT` | Chạy ở | IP | RAM |
 |---|---|---|---|---|---|
-| dev | `main` | `development` | máy cá nhân | (.201 để dành) | — |
+| dev | `main` | `development` | VM `ai-dev-01` (id 201) | 192.168.100.201 | 2.5 GB |
 | staging | `uat` | `staging` | VM `ai-stg-01` | 192.168.100.202 | 4 GB |
 | prod | `prod` | `production` | VM `ai-prod-01` | 192.168.100.203 | 6 GB |
 | runner CI | — | — | LXC `ai-ci-01` | 192.168.100.204 | 1 GB |
@@ -542,6 +542,8 @@ Snapshot nằm cùng storage với VM nên **không thay thế backup**.
 
 Mã thoát: `pve-check` 0 = ổn, 2 = fingerprint TLS lệch, 3 = token chưa có quyền. `pve-vm` 0 = xong (hoặc VM đã có, không làm gì),
 1 = Proxmox từ chối (đọc dòng `LỖI ... HTTP ...`), 2 = fingerprint lệch, 3 = VM lên nhưng SSH chưa mở.
+
+Môi trường hỗ trợ: `dev` (id 201, 2.5 GB, 30 GB), `staging` (202, 3 GB, 40 GB), `prod` (203, 5 GB, 60 GB, tự bật `protection`).
 
 Quy ước thiết kế của `pve-vm`: **idempotent** (VM id đã có thì dừng, không bao giờ ghi đè), id VM = octet cuối IP,
 tag `env-<tên>`, prod tự bật `protection`. Thêm cờ `DRY=1` để chỉ in kế hoạch: `make pve-vm ENV=staging DRY=1`.
