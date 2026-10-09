@@ -15,6 +15,10 @@
 
 services:
   api:
+    # Tên image + tag. IMAGE_TAG mặc định "local": `make prod-build` build tại chỗ và gắn tag này,
+    # nên cách cũ vẫn chạy y nguyên. CI/deploy đặt IMAGE_TAG=sha-<7 ký tự> để KÉO đúng image đã
+    # build và test từ GHCR (docker compose pull), prod chạy đúng thứ đã qua staging, không build lại.
+    image: ghcr.io/doanviethung1009/ai-assistant-api:${IMAGE_TAG:-local}
     build:
       context: ./apps/core
       target: prod
@@ -32,6 +36,7 @@ services:
           memory: 768M
 
   web:
+    image: ghcr.io/doanviethung1009/ai-assistant-web:${IMAGE_TAG:-local}
     build:
       context: ./apps/web
       target: prod
