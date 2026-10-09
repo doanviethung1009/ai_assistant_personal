@@ -17,7 +17,9 @@ set_var() {
   # Nếu .env.example chưa có dòng KEY= (biến mới thêm sau) thì nối vào cuối,
   # nếu không sed sẽ im lặng không làm gì và biến không bao giờ được đặt.
   if grep -q "^${key}=" .env; then
-    sed -i '' "s|^${key}=.*|${key}=${value}|" .env
+    # -i.bak chạy được trên cả macOS (BSD sed) lẫn Linux (GNU sed); `sed -i ''` chỉ chạy trên macOS
+    # và làm `make env` fail trên Ubuntu (GNU sed hiểu '' là file script).
+    sed -i.bak "s|^${key}=.*|${key}=${value}|" .env && rm -f .env.bak
   else
     # Nếu dòng cuối của .env không kết thúc bằng newline thì `echo >>` sẽ dính biến
     # mới vào biến cuối (KEY=abcNEW=...), nên thêm newline trước.

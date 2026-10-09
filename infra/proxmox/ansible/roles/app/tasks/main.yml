@@ -33,6 +33,6 @@
     line: "{{ item.key }}={{ item.value }}"
   loop:
     - {key: COMPOSE_PROJECT_NAME, value: "builder-{{ env_name }}"}
-    - {key: ENVIRONMENT, value: "{{ 'production' if env_name == 'prod' else 'staging' }}"}
+    - {key: ENVIRONMENT, value: "{{ {'prod': 'production', 'staging': 'staging', 'dev': 'development'}[env_name] }}"}
     - {key: CORS_ORIGINS, value: "http://{{ ansible_host }}:{{ web_port }}"}
   become: false

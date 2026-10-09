@@ -16,8 +16,9 @@ VM, snapshot/backup, cập nhật, xoay token, xử lý sự cố. Cách dựng 
 | VM / ID | Vai trò | IP | RAM | Trạng thái |
 |---|---|---|---|---|
 | 100 `isec-vpn-gateway` | VPN gateway (**không thuộc dự án, không động vào**) | — | 2 GB | chạy, `onboot=1` |
+| 201 `ai-dev-01` | dev (nhánh `main`, hot reload) | 192.168.100.201 | 2.5 GB | chạy, Docker cài; stack dựng bằng `make up` |
 | 202 `ai-stg-01` | staging | 192.168.100.202 | 3 GB | chạy, Docker + stack đã deploy thử |
-| 203 `ai-prod-01` | prod | 192.168.100.203 | 5 GB | **chưa dựng** |
+| 203 `ai-prod-01` | prod | 192.168.100.203 | 5 GB | chạy, đã cấu hình Ansible, `protection=1`; chưa deploy stack |
 | 9000 `ubuntu-2404-tmpl` | template Ubuntu 24.04 cloud-init | — | — | template, không bật |
 | 140, 150 | VM cũ (`agent-hub`, `jump-host-hub`) | — | — | **tắt**, chờ xóa hoặc giữ |
 
@@ -32,20 +33,25 @@ Danh tính và thông tin truy cập:
 
 ## 1b. Truy cập SSH vào node và các VM (đọc trước khi làm việc trên server)
 
+> Hướng dẫn đầy đủ (tạo và thêm khóa SSH, SSH tunnel, khi SSH hỏng, gỡ khóa): [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md).
+
 | Đích | Lệnh | Xác thực | Ghi chú |
 |---|---|---|---|
 | Node Proxmox `isec` | `ssh root@192.168.100.252` | tài khoản `root` của **chủ hạ tầng** | Mật khẩu/khóa root **không** lưu trong repo, agent AI không có. Việc gì cần `qm`/`pveum` trên node thì người dùng tự chạy, hoặc dùng giao diện web (node → Shell) |
+| VM dev `ai-dev-01` | `ssh -i ~/.ssh/ai_assistant_deploy deploy@192.168.100.201` | như trên | Mã nguồn tại `/srv/builder-ai/dev` (nhánh `main`) |
 | VM staging `ai-stg-01` | `ssh -i ~/.ssh/ai_assistant_deploy deploy@192.168.100.202` | khóa `ai_assistant_deploy`, user `deploy`, sudo không mật khẩu | Mã nguồn tại `/srv/builder-ai/staging` |
 | VM prod `ai-prod-01` | `ssh -i ~/.ssh/ai_assistant_deploy deploy@192.168.100.203` | như trên | Mã nguồn tại `/srv/builder-ai/prod`; có `protection=1` |
 
-Gợi ý thêm vào `~/.ssh/config` để gõ ngắn (`ssh ai-stg`, `ssh ai-prod`):
+Gợi ý thêm vào `~/.ssh/config` để gõ ngắn (`ssh ai-dev`, `ssh ai-stg`, `ssh ai-prod`):
 
 ```
+Host ai-dev
+  HostName 192.168.100.201
 Host ai-stg
   HostName 192.168.100.202
 Host ai-prod
   HostName 192.168.100.203
-Host ai-stg ai-prod
+Host ai-dev ai-stg ai-prod
   User deploy
   IdentityFile ~/.ssh/ai_assistant_deploy
   IdentitiesOnly yes
@@ -107,8 +113,9 @@ qm resize 202 scsi0 +10G         # nới disk (CHỈ nới, không thu nhỏ đ�
 Sau khi nới disk, cloud-init thường tự nới phân vùng gốc ở lần boot; nếu chưa, trong VM:
 `sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1`.
 
-**Ngân sách RAM.** Tổng RAM đã cấp cho VM đang chạy + khoảng 2 GB cho host phải nhỏ hơn 15.5 GB. Hiện: 2 (vpn) + 3
-(staging) + 5 (prod, khi dựng) = 10 GB. Còn dư cho runner CI (1 GB) và dự phòng. Dựng thêm VM phải cộng vào bảng này
+**Ngân sách RAM.** Tổng RAM đã cấp cho VM đang chạy + khoảng 2 GB cho host phải nhỏ hơn 15.5 GB. Hiện: 2 (vpn) + 2.5
+(dev) + 3 (staging) + 5 (prod) = 12.5 GB đã cấp, **sát giới hạn** (đo thực tế thấp hơn nhiều vì VM ít việc, swap 8 GB đỡ phần còn lại).
+Chưa còn chỗ cho runner CI (1 GB): muốn thêm thì tắt dev khi không dùng (`qm shutdown 201`) hoặc hạ cấu hình. Dựng thêm VM phải cộng vào bảng này
 trước. Không overcommit RAM cho prod.
 
 **Thứ tự khởi động sau khi node reboot.** VM có `onboot=1` tự bật; đặt thứ tự để phụ thuộc lên trước:

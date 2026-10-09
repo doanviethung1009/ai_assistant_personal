@@ -166,7 +166,7 @@ Bảng cấp IP hiện tại:
 
 | IP | Dùng cho | Trạng thái |
 |---|---|---|
-| .201 | dev (dự trữ) | trống |
+| .201 | dev `ai-dev-01` | **đã dựng** |
 | .202 | staging `ai-stg-01` | **đã dựng** |
 | .203 | prod `ai-prod-01` | kế hoạch |
 | .204 | runner CI `ai-ci-01` (LXC) | kế hoạch |
