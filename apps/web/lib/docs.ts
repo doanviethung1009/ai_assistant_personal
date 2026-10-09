@@ -374,6 +374,38 @@ export const DOCS: DocEntry[] = [
     category: "7. DevOps & Triển khai",
     file: path.join("docs", "CI_AND_TESTING.md"),
   },
+  {
+    slug: "proxmox-operations",
+    title: "Vận hành server Proxmox",
+    description:
+      "Hiện trạng node isec, lịch kiểm tra, quản lý VM, snapshot/backup/restore, dung lượng, cập nhật, xoay token, sự cố và khôi phục.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "PROXMOX_OPERATIONS.md"),
+  },
+  {
+    slug: "proxmox-templates",
+    title: "Template Proxmox và tạo instance",
+    description:
+      "Template là gì, template 9000 chứa gì, cloud-init, full/linked clone, làm mới template, và đề xuất quy ước + mức tự động hóa tạo instance.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "PROXMOX_TEMPLATES.md"),
+  },
+  {
+    slug: "proxmox-deploy",
+    title: "Proxmox: dựng VM và deploy",
+    description:
+      "Hướng dẫn từng bước: token API, template Ubuntu, các cách tạo VM, Ansible, CI build image, deploy có duyệt, rollback, sự cố.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "PROXMOX_DEPLOY.md"),
+  },
+  {
+    slug: "spec-proxmox-deploy",
+    title: "Spec (DRAFT): Dựng VM Proxmox và deploy",
+    description:
+      "Thiết kế và quyết định: 3 môi trường, runner CI, phương án image, tab Hạ tầng trên web, câu hỏi chờ chốt.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "specs", "proxmox-deploy.md"),
+  },
 ];
 
 /** Thư mục gốc chứa tài liệu. Mặc định là gốc repo, tính từ apps/web. */

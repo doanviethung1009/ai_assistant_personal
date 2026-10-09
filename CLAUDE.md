@@ -15,6 +15,7 @@
 - Bức tranh tổng: `docs/project-review.md`.
 - Thiết kế DB / RAG / Vault: `docs/TARGET_ARCHITECTURE.md`.
 - Hạ tầng, Docker: `docs/DOCKER_ARCHITECTURE.md`.
+- Proxmox, VM staging/prod, **cách SSH vào server**: `docs/PROXMOX_OPERATIONS.md` (mục 1b), dựng VM/deploy: `docs/PROXMOX_DEPLOY.md`.
 
 ## Mô hình multi-agent (Claude Code)
 Session chính là **orchestrator**: hiểu yêu cầu, chia việc, gọi subagent, tổng hợp,
