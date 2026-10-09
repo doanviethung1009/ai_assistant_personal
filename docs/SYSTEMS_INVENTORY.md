@@ -103,7 +103,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 |---|---|---|---|
 | 22/tcp | node, mỗi VM | LAN `192.168.100.0/24`, bằng khóa | VM: ufw; node: theo cấu hình sshd |
 | 8006/tcp | node | LAN | Web/API Proxmox, HTTPS tự ký |
-| 3000/tcp | mỗi VM | ufw cho LAN, **nhưng container chỉ nghe 127.0.0.1** | Cần SSH tunnel hoặc `make lan-up`; app chưa có đăng nhập |
+| 3000/tcp | mỗi VM | **LAN, sau khi bật** (dev: `make lan-up`; staging/prod: `EXPOSE_LAN=true`) | Mặc định container chỉ nghe 127.0.0.1; khi mở thì nghe 0.0.0.0. Docker bỏ qua ufw nên giới hạn thực tế là mạng LAN. App chưa có đăng nhập. Xem PROXMOX_ACCESS.md mục 4.3b |
 | 8000/tcp | mỗi VM | chỉ `127.0.0.1` | API + `/docs`; qua tunnel |
 | 5432, 6379 | mỗi VM | dev: chỉ `127.0.0.1`; staging/prod: không | Không bao giờ mở ra ngoài |
 

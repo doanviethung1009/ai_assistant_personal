@@ -23,6 +23,9 @@ SKIP_SMOKE=0; [ "${2:-}" = "--skip-smoke" ] && SKIP_SMOKE=1
 cd "$(dirname "$0")/.."
 [ -f .env ] || { echo "Thiếu .env (chạy: make env)" >&2; exit 1; }
 PC="docker compose -f docker-compose.yml -f docker-compose.prod.yml"
+# EXPOSE_LAN=true trong .env: mở web ra LAN (docker-compose.lan.yml) để dùng từ máy khác. Cẩn thận: app CHƯA có
+# đăng nhập, ai trong LAN cũng vào được. Ansible đặt biến này theo group_vars (expose_lan).
+if grep -q '^EXPOSE_LAN=true' .env; then PC="$PC -f docker-compose.lan.yml"; fi
 ENVNAME="$(grep -E '^ENVIRONMENT=' .env | cut -d= -f2-)"
 say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 

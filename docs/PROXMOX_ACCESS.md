@@ -164,10 +164,56 @@ ssh -L 3000:localhost:3000 -L 8000:localhost:8000 ai-stg
 #   http://localhost:8000/docs    tài liệu API
 ```
 
-Cách thứ hai: `make lan-up` trên VM để mở web ra LAN (firewall đã mở sẵn 3000 cho `192.168.100.0/24`). Cẩn thận: **app chưa có
-đăng nhập** (Phase 1), ai trong LAN mở được là dùng được; chỉ nên cho dev/staging, không cho prod.
+Cách thứ hai: **mở web ra LAN** để vào thẳng `http://<IP-VM>:3000` từ máy nào trong nhà, không cần tunnel (mục 4.3b). Server là của
+bạn nên đây là lựa chọn hợp lý, miễn là chấp nhận rủi ro không có đăng nhập.
 
 Không bao giờ mở Postgres/Redis ra ngoài VM; truy cập DB chỉ qua `make psql` trên VM.
+
+### 4.3b `make lan-up`: chạy gì bên trong, và mở web ra LAN theo từng môi trường
+
+**Lệnh `make lan-up` (định nghĩa trong `Makefile`):**
+
+```make
+lan-up:
+	docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d     # (1) chạy compose với thêm file override LAN
+	@echo "Web mở ra LAN..."                                                 # (2) chỉ in hướng dẫn và cảnh báo
+
+lan-down:
+	docker compose up -d web                                                  # chỉ file gốc: web trở lại 127.0.0.1
+```
+
+**Điều duy nhất nó thay đổi** nằm trong `docker-compose.lan.yml`: ánh xạ cổng của container `web`.
+
+| | Mặc định (`docker-compose.yml`) | Sau `make lan-up` |
+|---|---|---|
+| Cổng web | `"127.0.0.1:3000:3000"` (chỉ nghe trong chính VM) | `"3000:3000"` (nghe mọi giao diện, `0.0.0.0`) |
+| API 8000, Postgres 5432, Redis 6379 | `127.0.0.1` | **không đổi** (web gọi API qua mạng nội bộ Docker `http://api:8000`) |
+| Container bị tạo lại | — | chỉ `web`; `api`, `postgres`, `redis` không động tới (dữ liệu an toàn) |
+
+Chi tiết cần biết:
+- File override dùng thẻ `!override` để **thay** thay vì **nối thêm** danh sách `ports`; nếu không, hai ánh xạ cùng bind cổng 3000 và Docker báo
+  `address already in use`. Vì vậy cần Docker Compose ≥ 2.24 (VM đã có 5.6.0).
+- Bật rồi tắt: `make lan-down` (web về `127.0.0.1`). Kiểm tra trạng thái: `docker ps --format '{{.Names}} {{.Ports}}' | grep web`:
+  thấy `0.0.0.0:3000->3000/tcp` là đang mở, thấy `127.0.0.1:3000->3000/tcp` là đang đóng.
+- **Dễ bị đóng lại ngoài ý muốn:** chạy lại `make up` (hoặc `docker compose up -d` với file gốc) sẽ đưa web về `127.0.0.1`. Với dev, mở lại bằng `make lan-up`.
+- **Chỉ dùng `make lan-up` cho dev.** Nó chỉ nạp `docker-compose.yml` (chế độ dev: bind mount, hot reload). Chạy trên staging/prod sẽ làm container
+  `web` tạo lại theo cấu hình dev và phá cấu hình production.
+- **Cảnh báo bảo mật:** web chưa có đăng nhập, ai tới được cổng này đều xem/sửa/xóa mọi task và sổ tay như chủ app.
+  Ngoài ra Docker tự thêm luật iptables cho cổng nó publish và **bỏ qua `ufw`**, nên luật "chỉ cho `192.168.100.0/24`" trong `ufw` **không**
+  chặn được cổng 3000 đã publish; giới hạn thực sự do cấu trúc mạng (router không chuyển tiếp cổng ra Internet). Đừng port-forward cổng 3000 từ router.
+
+**Mở web ra LAN cho staging và prod (không dùng `make lan-up`):** dùng cờ `EXPOSE_LAN=true` trong `.env` của VM. Ansible đặt nó theo
+`expose_lan` trong `group_vars/all.yml` (mặc định `true`). Khi cờ bật:
+- `make prod-up` chạy: `docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.lan.yml up -d`
+- `scripts/deploy.sh` cũng thêm `-f docker-compose.lan.yml` vào mọi lệnh compose.
+
+Muốn tắt cho một môi trường: đặt `expose_lan: false` (hoặc sửa `EXPOSE_LAN=false` trong `.env` trên VM), rồi `make pve-config ENV=<env>` + `make prod-up`.
+
+| Môi trường | Cách mở web ra LAN | Cách đóng lại |
+|---|---|---|
+| dev | `make lan-up` | `make lan-down` |
+| staging | `EXPOSE_LAN=true` + `make prod-up` (hoặc `scripts/deploy.sh`) | `EXPOSE_LAN=false` + `make prod-up` |
+| prod | như staging (khi đã deploy stack) | như staging |
 
 ### 4.4 Quản lý hàng loạt bằng Ansible
 
@@ -282,8 +328,8 @@ CI dùng bản sao trong GitHub Secrets (`DEPLOY_SSH_KEY`, `PVE_*`), chưa tạo
 
 | Môi trường | Web | API docs | Cách mở |
 |---|---|---|---|
-| dev | `http://192.168.100.201:3000` | `:8000/docs` | `make lan-up` trên VM, hoặc SSH tunnel (mục 4.3) |
-| staging | `http://192.168.100.202:3000` | `:8000/docs` | như trên |
-| prod | `http://192.168.100.203:3000` | `:8000/docs` | SSH tunnel; app chưa có đăng nhập nên **không** mở ra LAN |
+| dev | `http://192.168.100.201:3000` | `:8000/docs` (qua tunnel) | `make lan-up` trên VM (mục 4.3b), hoặc SSH tunnel |
+| staging | `http://192.168.100.202:3000` | `:8000/docs` (qua tunnel) | `EXPOSE_LAN=true` + `make prod-up` (mục 4.3b), hoặc tunnel |
+| prod | `http://192.168.100.203:3000` | `:8000/docs` (qua tunnel) | như staging khi đã deploy stack; hiện **chưa có container nào chạy** trên prod |
 
-Mặc định web/API bind `127.0.0.1` trong VM; xem mục 4.3.
+Mặc định web/API bind `127.0.0.1` trong VM; xem mục 4.3 và 4.3b. API (8000) luôn chỉ truy cập qua tunnel.
