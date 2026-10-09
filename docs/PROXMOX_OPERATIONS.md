@@ -33,6 +33,8 @@ Danh tính và thông tin truy cập:
 
 ## 1b. Truy cập SSH vào node và các VM (đọc trước khi làm việc trên server)
 
+> Hướng dẫn đầy đủ (tạo và thêm khóa SSH, SSH tunnel, khi SSH hỏng, gỡ khóa): [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md).
+
 | Đích | Lệnh | Xác thực | Ghi chú |
 |---|---|---|---|
 | Node Proxmox `isec` | `ssh root@192.168.100.252` | tài khoản `root` của **chủ hạ tầng** | Mật khẩu/khóa root **không** lưu trong repo, agent AI không có. Việc gì cần `qm`/`pveum` trên node thì người dùng tự chạy, hoặc dùng giao diện web (node → Shell) |

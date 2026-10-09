@@ -383,6 +383,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "PROXMOX_OPERATIONS.md"),
   },
   {
+    slug: "proxmox-access",
+    title: "Truy cập server: khóa SSH và quản lý",
+    description:
+      "Tạo và thêm khóa SSH vào node Proxmox và VM, vào quản lý dev/staging/prod, SSH tunnel, khi SSH hỏng, gỡ khóa, giải thích Ansible.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "PROXMOX_ACCESS.md"),
+  },
+  {
     slug: "proxmox-templates",
     title: "Template Proxmox và tạo instance",
     description:

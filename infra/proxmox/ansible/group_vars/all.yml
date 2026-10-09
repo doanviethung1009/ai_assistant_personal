@@ -6,3 +6,11 @@ admin_cidr: 192.168.100.0/24
 web_port: 3000
 repo_url: https://github.com/doanviethung1009/ai_assistant_personal.git
 app_root: /srv/builder-ai
+
+# Khoá SSH CÔNG KHAI bổ sung cho user deploy (người/máy khác cần vào quản lý VM). Mỗi phần tử là một dòng
+# trong file .pub, nên có comment <chủ sở hữu>@<máy>-<năm>. Thêm bằng cách này thay vì sửa tay trên VM,
+# để VM dựng lại vẫn có đủ khoá. Chỉ THÊM, không gỡ khoá: gỡ khoá xem docs/PROXMOX_ACCESS.md mục 5.
+# Ví dụ:
+#   extra_ssh_keys:
+#     - "ssh-ed25519 AAAAC3...xyz hung@macbook-2026"
+extra_ssh_keys: []

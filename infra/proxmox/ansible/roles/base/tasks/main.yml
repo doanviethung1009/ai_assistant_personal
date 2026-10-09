@@ -46,6 +46,15 @@
     validate: /usr/sbin/sshd -t -f %s
   notify: reload ssh
 
+# Khoá bổ sung: lineinfile khớp nguyên dòng nên chạy lại không nhân đôi (idempotent). create: false vì
+# file do cloud-init tạo sẵn, đúng chủ sở hữu và quyền; lineinfile không đổi chủ/quyền file đã có.
+- name: Thêm khoá SSH bổ sung cho {{ ansible_user }}
+  ansible.builtin.lineinfile:
+    path: "/home/{{ ansible_user }}/.ssh/authorized_keys"
+    line: "{{ item }}"
+    create: false
+  loop: "{{ extra_ssh_keys }}"
+
 # ── Firewall ────────────────────────────────────────────────────────────
 # LƯU Ý: Docker tự chèn luật iptables riêng và BỎ QUA ufw cho cổng nó publish. Vì vậy
 # bảo vệ thật sự của DB/Redis là compose không publish cổng ra host (docker-compose.prod.yml
