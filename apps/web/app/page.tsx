@@ -3,7 +3,7 @@ import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { StatsStrip } from "@/components/stats-strip";
 import { TaskSection } from "@/components/task-section";
-import { getAgenda, getStats, listProjects, IS_LOCAL } from "@/lib/api";
+import { getAgenda, getDisplayTimezoneApi, getStats, listProjects, IS_LOCAL } from "@/lib/api";
 import { formatFullPlainDate } from "@/lib/format";
 import type { Agenda, Project, Stats } from "@/lib/types";
 import { CalendarDays } from "lucide-react";
@@ -14,6 +14,8 @@ export default async function TodayPage() {
   let agenda: Agenda;
   let stats: Stats;
   let projects: Project[];
+  // Không ném lỗi (có dự phòng), nên đặt ngoài try của dữ liệu.
+  const { timezone: tz } = await getDisplayTimezoneApi();
 
   try {
     [agenda, stats, projects] = await Promise.all([
@@ -46,7 +48,7 @@ export default async function TodayPage() {
             Hôm nay
           </h1>
           <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium tracking-wide">
-            {formatFullPlainDate(agenda.reference_date)}
+            {formatFullPlainDate(agenda.reference_date, tz)}
           </p>
         </div>
         <div className="relative z-10">

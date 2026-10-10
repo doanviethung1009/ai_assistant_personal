@@ -71,6 +71,7 @@ def test_mapping_in_progress_issue() -> None:
     assert item.priority is TaskPriority.HIGH
     assert item.assignee == "Hùng Đoàn"
     assert item.due_at == datetime(2026, 3, 5, tzinfo=UTC)  # 00:00 UTC như bản TS
+    assert item.due_all_day is True  # duedate Jira là ngày thuần
     assert item.created_at == datetime(2026, 1, 10, 2, 30, tzinfo=UTC)
     assert item.external_url == f"{BASE}/browse/DBA-12"
     assert item.project_key == "DBA"
@@ -701,9 +702,24 @@ def test_tag_overflow_keeps_identity_tags_and_reports() -> None:
     assert any("tag" in n for n in notes)
 
 
-def test_due_at_absent_when_jira_has_no_due_date() -> None:
+def test_due_is_explicit_null_when_jira_has_no_due_date() -> None:
+    # Gửi null tường minh để task_sync_service xoá hạn khi Jira bỏ hạn (nếu User chưa sửa tay).
     item = _map(_issue(duedate=None))
-    assert "due_at" not in item.model_fields_set
+    assert "due_at" in item.model_fields_set
+    assert item.due_at is None and item.due_all_day is False
+
+
+def test_previous_due_reads_last_sync_payload() -> None:
+    from app.services.jira_mapping import previous_due
+
+    assert previous_due(None) is None
+    assert previous_due({"key": "X-1"}) is None
+    assert previous_due({"fields": {"duedate": "2026-03-05"}}) == (
+        datetime(2026, 3, 5, tzinfo=UTC),
+        True,
+    )
+    # Khoá duedate vắng = Jira không có hạn lần trước.
+    assert previous_due({"fields": {"summary": "x"}}) == (None, False)
 
 
 def test_issue_with_missing_optional_fields_maps_without_crashing() -> None:

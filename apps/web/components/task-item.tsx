@@ -12,11 +12,12 @@ import { PriorityBadge, ProjectBadge, SourceBadge, StatusBadge, TagBadge } from 
 import { ScopeBadge } from "@/components/scope-badge";
 import { isSyncManaged, scopeOf } from "@/lib/task-scope";
 import {
-  formatDateTime,
+  formatDue,
   formatMinutes,
   formatPlainDate,
   todayInDisplayTz,
 } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import { STATUS_LABELS, type Task, type TaskStatus } from "@/lib/types";
 
 const ALL_STATUSES: TaskStatus[] = [
@@ -32,6 +33,7 @@ const ICON_BUTTON =
   "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] transition-all hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)] hover:border-[var(--color-border-hover)] disabled:opacity-40 shadow-sm";
 
 export function TaskItem({ task }: { task: Task }) {
+  const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -152,7 +154,7 @@ export function TaskItem({ task }: { task: Task }) {
                       task.is_overdue ? "text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-md" : ""
                     }`}
                   >
-                    {formatDateTime(task.due_at)}
+                    {formatDue(task, tz)}
                     {task.is_overdue ? " (quá hạn)" : ""}
                   </dd>
                 </div>
@@ -161,7 +163,7 @@ export function TaskItem({ task }: { task: Task }) {
               {task.scheduled_for ? (
                 <div className="flex items-center gap-1.5">
                   <dt className="font-medium opacity-70">Dự định:</dt>
-                  <dd className="font-semibold text-[var(--color-ink)]">{formatPlainDate(task.scheduled_for)}</dd>
+                  <dd className="font-semibold text-[var(--color-ink)]">{formatPlainDate(task.scheduled_for, tz)}</dd>
                 </div>
               ) : null}
 
@@ -235,12 +237,12 @@ export function TaskItem({ task }: { task: Task }) {
             >
               {scope === "work" ? "Chuyển thành cá nhân" : "Chuyển thành công việc"}
             </button>
-            {!isClosed && task.scheduled_for !== todayInDisplayTz() ? (
+            {!isClosed && task.scheduled_for !== todayInDisplayTz(tz) ? (
               <button
                 type="button"
                 disabled={pending}
                 onClick={() =>
-                  run(() => setScheduleAction(task.id, todayInDisplayTz()))
+                  run(() => setScheduleAction(task.id, todayInDisplayTz(tz)))
                 }
                 className={ICON_BUTTON}
                 title="Xếp vào hôm nay"

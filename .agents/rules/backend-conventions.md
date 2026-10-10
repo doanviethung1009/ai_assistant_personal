@@ -21,8 +21,14 @@ thêm model mới, đừng tự suy luận lại từ đầu.
   `_jsonable()` trong `task_service.py`. UUID, datetime, date, Enum đều
   không tự serialize được.
 - **Khái niệm "hôm nay" luôn quy đổi qua `services/clock.py`.** DB lưu UTC.
-  Query nào group theo ngày phải bọc `func.timezone(settings.display_timezone, ...)`
-  trước khi lấy `date()`, nếu không sẽ lệch với `reference_date`.
+  Múi giờ do người dùng chọn (lưu `app_settings`, env chỉ là mặc định), nên KHÔNG
+  đọc `settings.display_timezone` trực tiếp: dùng `clock.display_tz()`. Query nào
+  group theo ngày phải bọc `func.timezone(clock.display_tz().key, ...)` trước khi
+  lấy `date()`, nếu không sẽ lệch với `reference_date`.
+- **Quá hạn tính theo ngày địa phương với hạn cả ngày.** Task có `due_all_day`
+  (Jira `duedate` chỉ có ngày) quá hạn khi ngày hạn < hôm nay theo múi giờ người
+  dùng, không phải `due_at < now`. Dùng `_overdue_clause`/`_due_soon_clause` trong
+  `task_service.py`, đừng tự viết lại điều kiện.
 - **Không `create_all`.** Schema chỉ đổi qua Alembic.
 - **Ràng buộc unique phải là partial index.** `UNIQUE (source, external_id)` có
   điều kiện `WHERE deleted_at IS NULL`. Áp dụng cho cả `tasks` và `notes`. Bản

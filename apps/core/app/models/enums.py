@@ -190,6 +190,8 @@ class SettingKey(StrEnum):
 
     CURRENT_USERS = "current_users"
     SYNC_URLS = "sync_urls"
+    # Giá trị là CHUỖI JSON (tên IANA), khác hai khoá trên có value là list.
+    DISPLAY_TIMEZONE = "display_timezone"
 
 
 class IntegrationKind(StrEnum):

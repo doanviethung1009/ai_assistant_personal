@@ -349,9 +349,14 @@ Không phục hồi được. Nếu bạn có bản JSON sao lưu thì nhập l�
 vào, nhưng nhớ là task trong thùng rác của file nguồn sẽ bị bỏ qua.
 
 **Số "xong hôm nay" trông sai.**
-Kiểm tra múi giờ hiển thị. Mặc định là `Asia/Ho_Chi_Minh`, đổi bằng
-`NEXT_PUBLIC_DISPLAY_TZ`. Biến này được nhúng lúc build nên đổi rồi phải khởi
-động lại.
+Kiểm tra múi giờ hiển thị. Mặc định là `Asia/Ho_Chi_Minh`. Tự chọn múi giờ của
+bạn ở trang **Dữ liệu** (tab Đồng bộ), có hiệu lực ngay, không cần khởi động lại.
+`NEXT_PUBLIC_DISPLAY_TZ` chỉ còn là múi giờ dự phòng khi web không gọi được API.
+
+**Task Jira báo quá hạn sớm hơn Jira.**
+Hạn Jira chỉ có ngày, không có giờ. Task có hạn hôm nay chỉ bị tính quá hạn khi
+sang ngày hôm sau theo múi giờ bạn chọn (trước đây là từ 00:00 UTC). Hạn đổi trên
+Jira sẽ được cập nhật ở lần sync sau, trừ khi bạn đã sửa hạn tay ở đây.
 
 **Nhập CSV báo bỏ qua nhiều dòng.**
 Thông báo có ghi số dòng và lý do. Hay gặp nhất là thiếu tiêu đề, hoặc mã dự án

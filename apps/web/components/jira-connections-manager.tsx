@@ -13,6 +13,7 @@ import {
 } from "@/app/jira-actions";
 import { STORAGE_KEY } from "@/lib/jira-storage";
 import { formatDateTime } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import { JIRA_URL_HINT } from "@/lib/jira-url-policy";
 import type { IntegrationConnection, IntegrationSyncResult } from "@/lib/types";
 
@@ -205,6 +206,7 @@ function readLeftovers(): LocalLeftover[] {
  * thành công thì từng mục mới bị xoá khỏi trình duyệt; mục lỗi được giữ lại để sửa tay.
  */
 export function JiraConnectionsManager({ connections }: { connections: IntegrationConnection[] }) {
+  const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
   const [editing, setEditing] = useState<IntegrationConnection | null>(null);
   const [name, setName] = useState("");
@@ -424,7 +426,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
                     {c.has_secret ? `Token: ****${c.secret_last4 ?? ""}` : "Chưa có token"}
                     <span className="mx-1 opacity-40">•</span>
                     <Clock className="size-3" />
-                    {c.last_sync_at ? `Đồng bộ lần cuối: ${formatDateTime(c.last_sync_at)}` : "Chưa đồng bộ"}
+                    {c.last_sync_at ? `Đồng bộ lần cuối: ${formatDateTime(c.last_sync_at, tz)}` : "Chưa đồng bộ"}
                   </p>
                 </div>
                 <div className="flex flex-wrap items-start gap-2">

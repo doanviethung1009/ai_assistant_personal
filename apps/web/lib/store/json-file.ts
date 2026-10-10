@@ -136,6 +136,32 @@ export function migrate(data: DataFile): DataFile {
     ? data.sync_urls.filter((u): u is string => typeof u === "string")
     : [];
 
+  // v6 → v7: bổ sung `due_all_day`. Cùng heuristic với backfill của migration backend:
+  // task Jira có `due_at` đúng 00:00:00 UTC là hạn cả ngày (cả hai đường sync Jira chỉ sinh
+  // giá trị đó từ `duedate`). Thiếu bước này, mọi hạn Jira cũ vẫn bị báo quá hạn từ 07:00 sáng.
+  // Chỉ đặt cho task CHƯA có giá trị boolean nên chạy lại không đảo dữ liệu.
+  if (data.schema_version < 7) {
+    let flagged = 0;
+    for (const task of data.tasks) {
+      if (typeof task.due_all_day !== "boolean") {
+        task.due_all_day =
+          task.source === "jira" &&
+          typeof task.due_at === "string" &&
+          /T00:00:00(\.0+)?Z$/.test(task.due_at);
+        if (task.due_all_day) flagged += 1;
+      }
+    }
+    if (flagged > 0) {
+      console.info(`[store] migrate v6→v7: đánh dấu hạn cả ngày cho ${flagged} task Jira`);
+    }
+    data.schema_version = 7;
+  }
+  // Lớp bảo vệ như scope bên dưới: file tự khai v7 nhưng thiếu/rác field vẫn không làm
+  // engine hiểu sai (`undefined` là falsy nên an toàn, nhưng ghi ra file thì phải là boolean).
+  for (const task of data.tasks) {
+    if (typeof task.due_all_day !== "boolean") task.due_all_day = false;
+  }
+
   // Chuẩn hoá scope LUÔN chạy, kể cả file tự khai schema_version 5: file đến từ
   // bên ngoài (restore JSON) có thể mang scope rác ('admin', '', object, vắng).
   // Giá trị hợp lệ được giữ nguyên nên không đảo lựa chọn của User.

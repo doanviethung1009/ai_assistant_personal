@@ -616,6 +616,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/display-timezone": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Múi giờ hiển thị hiệu lực */
+        get: operations["get_display_timezone_api_v1_settings_display_timezone_get"];
+        /**
+         * Đặt múi giờ hiển thị
+         * @description Tên IANA (vd Asia/Ho_Chi_Minh). `timezone = null` xoá cài đặt, quay về mặc định env. 409 khi đang có lần nhập dữ liệu giữ khoá ghi. Worker khác có thể thấy giá trị mới chậm tối đa 10 giây (cache).
+         */
+        put: operations["put_display_timezone_api_v1_settings_display_timezone_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/settings/timezones": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Danh mục múi giờ IANA
+         * @description Không phân trang: đây là danh mục tĩnh khoảng 600 tên (dưới 25 KB), không phải dữ liệu người dùng tăng dần nên không thuộc quy tắc 50 dòng/trang.
+         */
+        get: operations["list_timezones_api_v1_settings_timezones_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/integrations": {
         parameters: {
             query?: never;
@@ -724,6 +765,32 @@ export interface components {
         CurrentUsersBody: {
             /** Names */
             names: string[];
+        };
+        /**
+         * DisplayTimezoneBody
+         * @description Đặt múi giờ hiển thị. `timezone = null` xoá dòng setting, quay về mặc định env.
+         */
+        DisplayTimezoneBody: {
+            /** Timezone */
+            timezone?: string | null;
+        };
+        /** DisplayTimezoneRead */
+        DisplayTimezoneRead: {
+            /**
+             * Timezone
+             * @description Giá trị hiệu lực
+             */
+            timezone: string;
+            /**
+             * Default
+             * @description Mặc định từ env DISPLAY_TIMEZONE
+             */
+            default: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "setting" | "default";
         };
         /** EntityCounts */
         EntityCounts: {
@@ -1404,8 +1471,16 @@ export interface components {
             version: string;
             /** Environment */
             environment: string;
-            /** Display Timezone */
+            /**
+             * Display Timezone
+             * @description Giá trị hiệu lực (cài đặt, hoặc mặc định)
+             */
             display_timezone: string;
+            /**
+             * Display Timezone Default
+             * @description Mặc định từ env DISPLAY_TIMEZONE
+             */
+            display_timezone_default: string;
             /** Trash Retention Days */
             trash_retention_days: number;
             /** Rate Limit Enabled */
@@ -1478,6 +1553,8 @@ export interface components {
             project?: components["schemas"]["ProjectSummary"] | null;
             /** Due At */
             due_at: string | null;
+            /** Due All Day */
+            due_all_day: boolean;
             /** Scheduled For */
             scheduled_for: string | null;
             /** Estimate Minutes */
@@ -1569,6 +1646,8 @@ export interface components {
             project?: components["schemas"]["ProjectSummary"] | null;
             /** Due At */
             due_at: string | null;
+            /** Due All Day */
+            due_all_day: boolean;
             /** Scheduled For */
             scheduled_for: string | null;
             /** Estimate Minutes */
@@ -1728,6 +1807,8 @@ export interface components {
             priority: components["schemas"]["TaskPriority"];
             /** Due At */
             due_at?: string | null;
+            /** Due All Day */
+            due_all_day?: boolean | null;
             /** Scheduled For */
             scheduled_for?: string | null;
             /** Estimate Minutes */
@@ -1772,6 +1853,12 @@ export interface components {
             /** Errors */
             errors?: components["schemas"]["UpsertItemError"][];
             /**
+             * Kept Manual Due
+             * @description Số task giữ nguyên hạn vì User đã sửa tay (chỉ khi sync_if_unchanged)
+             * @default 0
+             */
+            kept_manual_due: number;
+            /**
              * Warnings
              * @description Item đã upsert nhưng bị bỏ raw_payload (quá lớn, quá sâu, hết ngân sách lô)
              */
@@ -1795,6 +1882,26 @@ export interface components {
             minutes: number;
             /** Note */
             note?: string | null;
+        };
+        /** TimezoneList */
+        TimezoneList: {
+            /** Items */
+            items: components["schemas"]["TimezoneOption"][];
+            /** Total */
+            total: number;
+        };
+        /** TimezoneOption */
+        TimezoneOption: {
+            /**
+             * Name
+             * @description Tên IANA, ví dụ Asia/Ho_Chi_Minh
+             */
+            name: string;
+            /**
+             * Utc Offset Minutes
+             * @description Offset TẠI THỜI ĐIỂM gọi (DST làm thay đổi), chỉ để hiển thị
+             */
+            utc_offset_minutes: number;
         };
         /**
          * TrashResponse
@@ -3063,6 +3170,8 @@ export interface operations {
                     } | null;
                     /** Sync Urls */
                     sync_urls?: unknown;
+                    /** Display Timezone */
+                    display_timezone?: unknown;
                 } & {
                     [key: string]: unknown;
                 };
@@ -3191,6 +3300,79 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_display_timezone_api_v1_settings_display_timezone_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisplayTimezoneRead"];
+                };
+            };
+        };
+    };
+    put_display_timezone_api_v1_settings_display_timezone_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisplayTimezoneBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DisplayTimezoneRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_timezones_api_v1_settings_timezones_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TimezoneList"];
                 };
             };
         };

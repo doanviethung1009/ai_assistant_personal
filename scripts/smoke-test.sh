@@ -38,6 +38,9 @@ TASK_ID=""
 DUP_ID=""
 NOTE_ID=""
 NOTE_DUP_ID=""
+TZ_SOURCE=""   # "setting" | "default" lúc bắt đầu; rỗng = chưa đọc nên không cần khôi phục
+TZ_ORIG=""
+TZ_UPSERT_ID=""
 
 # ── Tiện ích ───────────────────────────────────────────────────────────
 
@@ -92,6 +95,13 @@ cleanup() {
   [[ -n "$DUP_ID" ]] && req DELETE "/api/v1/tasks/$DUP_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$NOTE_ID" ]] && req DELETE "/api/v1/notes/$NOTE_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$NOTE_DUP_ID" ]] && req DELETE "/api/v1/notes/$NOTE_DUP_ID?permanent=true" >/dev/null 2>&1
+  [[ -n "$TZ_UPSERT_ID" ]] && req DELETE "/api/v1/tasks/$TZ_UPSERT_ID?permanent=true" >/dev/null 2>&1
+  # Khôi phục múi giờ hiển thị về đúng trạng thái ban đầu, kể cả khi test dừng giữa chừng.
+  if [[ "$TZ_SOURCE" == "setting" ]]; then
+    req PUT /api/v1/settings/display-timezone "{\"timezone\": \"$TZ_ORIG\"}" >/dev/null 2>&1
+  elif [[ "$TZ_SOURCE" == "default" ]]; then
+    req PUT /api/v1/settings/display-timezone '{"timezone": null}' >/dev/null 2>&1
+  fi
   # Project xoá sau cùng: task và note tham chiếu tới nó qua FK
   [[ -n "$PROJECT_ID" ]] && req DELETE "/api/v1/projects/$PROJECT_ID" >/dev/null 2>&1
   return 0
@@ -513,6 +523,74 @@ if [[ -n "$NOTE_ID" ]]; then
 
   req POST /api/v1/notes/trash/purge
   expect "dọn quá hạn note trả 200" "200" "$STATUS"
+fi
+
+# ── Nhóm: múi giờ hiển thị và hạn cả ngày ─────────────────────────────
+
+echo ""
+echo "${DIM}múi giờ hiển thị và hạn cả ngày${RESET}"
+
+req GET /api/v1/settings/display-timezone
+expect "đọc múi giờ hiển thị trả 200" "200" "$STATUS"
+TZ_ORIG="$(jget "$BODY" timezone)"
+TZ_DEFAULT="$(jget "$BODY" default)"
+TZ_SOURCE="$(jget "$BODY" source)"   # từ đây trap khôi phục về trạng thái này
+
+req GET /api/v1/settings/timezones
+expect "danh mục múi giờ trả 200" "200" "$STATUS"
+if grep -q '"Asia/Ho_Chi_Minh"' <<<"$BODY"; then
+  expect "danh mục múi giờ có Asia/Ho_Chi_Minh" "yes" "yes"
+else
+  expect "danh mục múi giờ có Asia/Ho_Chi_Minh" "yes" "no"
+fi
+
+req PUT /api/v1/settings/display-timezone '{"timezone": "Mars/Base"}'
+expect "múi giờ rác bị từ chối 422" "422" "$STATUS"
+req PUT /api/v1/settings/display-timezone '{"timezone": "Factory"}'
+expect "múi giờ Factory bị từ chối 422" "422" "$STATUS"
+
+# Hai múi giờ lệch nhau 26 giờ nên reference_date luôn khác nhau.
+req PUT /api/v1/settings/display-timezone '{"timezone": "Pacific/Kiritimati"}'
+expect "đặt Pacific/Kiritimati trả 200" "200" "$STATUS"
+req GET /api/v1/tasks/agenda
+REF_PLUS14="$(jget "$BODY" reference_date)"
+req PUT /api/v1/settings/display-timezone '{"timezone": "Etc/GMT+12"}'
+expect "đặt Etc/GMT+12 trả 200" "200" "$STATUS"
+req GET /api/v1/tasks/agenda
+REF_MINUS12="$(jget "$BODY" reference_date)"
+if [[ -n "$REF_PLUS14" && "$REF_PLUS14" != "<missing>" && "$REF_PLUS14" != "$REF_MINUS12" ]]; then
+  expect "reference_date đổi theo múi giờ" "yes" "yes"
+else
+  expect "reference_date đổi theo múi giờ" "yes" "no ($REF_PLUS14 vs $REF_MINUS12)"
+fi
+req GET /api/v1/system/info
+expect "system/info báo múi giờ hiệu lực" "Etc/GMT+12" "$(jget "$BODY" display_timezone)"
+expect "system/info báo múi giờ mặc định" "$TZ_DEFAULT" "$(jget "$BODY" display_timezone_default)"
+
+# upsert-batch cần mật khẩu nhập; bỏ qua phần này nếu .env chưa cấu hình.
+if [[ -n "${IMPORT_COMMIT_SECRET:-}" ]]; then
+  TZ_EXT="smoke-tz-$STAMP"
+  upsert() {
+    curl -sS -X POST -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
+      -H "X-Import-Secret: $IMPORT_COMMIT_SECRET" -w $'\n%{http_code}' \
+      -d "$1" "$BASE/api/v1/tasks/upsert-batch" 2>/dev/null
+  }
+  # 10:00Z không phải nửa đêm UTC nên due_all_day=true phải bị từ chối.
+  raw="$(upsert "{\"source\":\"jira\",\"items\":[{\"external_id\":\"$TZ_EXT\",\"title\":\"$TZ_EXT\",\"due_at\":\"2026-01-01T10:00:00Z\",\"due_all_day\":true}]}")"
+  STATUS="$(tail -n1 <<<"$raw")"; BODY="$(sed '$d' <<<"$raw")"
+  expect "due_all_day với due_at 10:00Z bị từ chối 422" "422" "$STATUS"
+
+  # Hạn cả ngày = hôm nay theo múi giờ hiện hành (Etc/GMT+12) thì chưa quá hạn.
+  LOCAL_TODAY="$(python3 -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Etc/GMT+12')).date())")"
+  raw="$(upsert "{\"source\":\"jira\",\"items\":[{\"external_id\":\"$TZ_EXT\",\"title\":\"$TZ_EXT\",\"due_at\":\"${LOCAL_TODAY}T00:00:00Z\",\"due_all_day\":true}]}")"
+  STATUS="$(tail -n1 <<<"$raw")"; BODY="$(sed '$d' <<<"$raw")"
+  expect "upsert hạn cả ngày hôm nay trả 200" "200" "$STATUS"
+  req GET "/api/v1/tasks?q=$TZ_EXT"
+  TZ_UPSERT_ID="$(jget "$BODY" items 0 id)"
+  expect "task hạn cả ngày có due_all_day=True" "True" "$(jget "$BODY" items 0 due_all_day)"
+  expect "hạn cả ngày hôm nay chưa quá hạn" "False" "$(jget "$BODY" items 0 is_overdue)"
+else
+  echo "  (bỏ qua upsert due_all_day: IMPORT_COMMIT_SECRET chưa đặt trong .env)"
 fi
 
 # ── Tổng kết ───────────────────────────────────────────────────────────

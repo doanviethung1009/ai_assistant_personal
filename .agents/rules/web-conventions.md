@@ -50,7 +50,7 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
 - **Đổi cấu trúc file JSON thì phải tăng `SCHEMA_VERSION` và viết bước
   migrate.** Xem `store/json-file.ts`. Thêm field mà không backfill thì dữ
   liệu cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai.
-  Hiện tại đang ở **v6** (v4 từng tách mảng log ra file riêng, nay đã gỡ; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
+  Hiện tại đang ở **v7** (v7 thêm `due_all_day` cho task và `meta.display_timezone`; v4 từng tách mảng log ra file riêng, nay đã gỡ; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
   phải backfill thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
 - **Quy tắc Lưu trữ JSON (Local Storage Split vs Group):** Khi phát sinh tính năng/dữ liệu mới, BẮT BUỘC ĐÁNH GIÁ ĐẶC TÍNH DỮ LIỆU trước khi thêm vào JSON.
   - **Để chung (`builder-data.json`):** Dành cho dữ liệu cốt lõi, có tính ràng buộc (relational), số lượng bản ghi được kiểm soát, thường xuyên cập nhật/xoá (Ví dụ: `tasks`, `projects`, `notes`).
@@ -83,3 +83,8 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   rồi mới render. Thông tin "nội bộ nhưng không mật" (URL nội bộ, tên biến
   đang dùng) bọc trong `<SensitiveToggle>` để không hiện ngay khi mở trang,
   nhưng đừng dùng nó để biện minh cho việc hiện secret thật sau một cú click.
+- **Múi giờ hiển thị lấy từ server, không còn hằng `DISPLAY_TZ`.** Mọi hàm trong
+  `lib/format.ts` nhận `tz` tường minh; component client dùng `useDisplayTz()`
+  (`lib/timezone-context.tsx`). `NEXT_PUBLIC_DISPLAY_TZ` chỉ là dự phòng khi API
+  không trả lời (`FALLBACK_TZ` trong `lib/api.ts`). Đừng quy đổi giờ bằng múi giờ
+  của browser: server render và client hydrate sẽ lệch.

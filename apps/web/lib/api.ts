@@ -1,11 +1,15 @@
 import "server-only";
 
+import { cache } from "react";
+
+import { isValidTimezone, tzOffsetMinutes } from "./format";
 import * as engine from "./store/engine";
 import { ensureLoaded } from "./store/json-file";
 import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
+  DisplayTimezoneRead,
   HealthResponse,
   ImportReport,
   IntegrationConnection,
@@ -28,6 +32,7 @@ import type {
   TaskUpsertItem,
   TaskUpsertResult,
   TaskView,
+  TimezoneList,
   TrashResponse,
 } from "./types";
 
@@ -293,6 +298,73 @@ export async function setCurrentUsersApi(names: string[]): Promise<void> {
   });
 }
 
+// ── Múi giờ hiển thị ─────────────────────────────────────────────────────
+
+// Dự phòng khi API sập hoặc chưa có cài đặt. Đây là nơi DUY NHẤT còn đọc biến build-time
+// này; nguồn chính là backend (chế độ api) hoặc meta của file JSON (chế độ file).
+// Giá trị env sai (gõ nhầm tên múi giờ) phải rơi về mặc định, không để Intl ném RangeError lúc render.
+const FALLBACK_TZ =
+  process.env.NEXT_PUBLIC_DISPLAY_TZ && isValidTimezone(process.env.NEXT_PUBLIC_DISPLAY_TZ)
+    ? process.env.NEXT_PUBLIC_DISPLAY_TZ
+    : "Asia/Ho_Chi_Minh";
+engine.setDefaultTimezone(FALLBACK_TZ);
+
+/**
+ * Múi giờ hiển thị hiện hành, cho layout và các trang. Bọc `cache()` để một lần render
+ * chỉ gọi backend một lần dù nhiều Server Component cùng hỏi.
+ *
+ * KHÔNG BAO GIỜ ném lỗi: layout bọc cả app, nếu API sập mà layout vỡ thì không còn trang
+ * nào mở được (kể cả trang /system để chẩn đoán). Lỗi thì trả múi giờ dự phòng.
+ */
+export const getDisplayTimezoneApi = cache(async (): Promise<DisplayTimezoneRead> => {
+  if (IS_LOCAL) {
+    try {
+      return await local(() => engine.getDisplayTimezone());
+    } catch {
+      return { timezone: FALLBACK_TZ, default: FALLBACK_TZ, source: "default" };
+    }
+  }
+  try {
+    return await coreFetch<DisplayTimezoneRead>("/api/v1/settings/display-timezone");
+  } catch {
+    return { timezone: FALLBACK_TZ, default: FALLBACK_TZ, source: "default" };
+  }
+});
+
+/** Lưu múi giờ. `null` = xoá lựa chọn, về mặc định. Backend 409 nếu đang có lần nhập giữ khoá. */
+export async function setDisplayTimezoneApi(tz: string | null): Promise<DisplayTimezoneRead> {
+  if (IS_LOCAL) {
+    return local(() => {
+      engine.setDisplayTimezone(tz);
+      return engine.getDisplayTimezone();
+    });
+  }
+  return coreFetch<DisplayTimezoneRead>("/api/v1/settings/display-timezone", {
+    method: "PUT",
+    body: JSON.stringify({ timezone: tz }),
+  });
+}
+
+/**
+ * Danh mục tên IANA cho ô chọn. Chế độ file lấy từ Intl của Node. Cố ý không phân trang:
+ * danh mục tĩnh khoảng 600 tên, không phải dữ liệu người dùng tăng dần.
+ */
+export async function listTimezonesApi(): Promise<TimezoneList> {
+  if (IS_LOCAL) {
+    const now = new Date();
+    const names = Intl.supportedValuesOf("timeZone");
+    // Intl bỏ "UTC" khỏi danh sách trên một số bản Node.
+    if (!names.includes("UTC")) names.push("UTC");
+    names.sort();
+    const items = names.map((name) => ({
+      name,
+      utc_offset_minutes: tzOffsetMinutes(name, now),
+    }));
+    return { items, total: items.length };
+  }
+  return coreFetch<TimezoneList>("/api/v1/settings/timezones");
+}
+
 // ── Đọc ────────────────────────────────────────────────────────────────
 
 /**
@@ -336,6 +408,8 @@ export interface ListTasksOptions {
   projectId?: string;
   query?: string;
   includeClosed?: boolean;
+  /** ISO datetime: chỉ task tạo từ thời điểm này trở đi. */
+  createdAfter?: string;
   limit?: number;
   offset?: number;
   sortBy?: string;
@@ -358,6 +432,7 @@ export async function listTasks(options: ListTasksOptions = {}): Promise<Paged<T
   if (options.projectId) params.set("project_id", options.projectId);
   if (options.query) params.set("q", options.query);
   if (options.includeClosed) params.set("include_closed", "true");
+  if (options.createdAfter) params.set("created_after", options.createdAfter);
   params.set("limit", String(options.limit ?? 100));
   params.set("offset", String(options.offset ?? 0));
   if (options.sortBy) params.set("sort_by", options.sortBy);
@@ -971,6 +1046,7 @@ export async function upsertTasksBatch(
     updated: 0,
     unchanged: 0,
     skipped_personal: 0,
+    kept_manual_due: 0,
     errors: [],
     warnings: [],
   };
@@ -994,6 +1070,7 @@ export async function upsertTasksBatch(
     total.updated += res.updated;
     total.unchanged += res.unchanged;
     total.skipped_personal += res.skipped_personal;
+    total.kept_manual_due += res.kept_manual_due;
     for (const e of res.errors ?? []) total.errors?.push({ ...e, index: e.index + offset });
     for (const w of res.warnings ?? []) total.warnings?.push({ ...w, index: w.index + offset });
     offset += chunk.length;

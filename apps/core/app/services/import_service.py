@@ -34,7 +34,7 @@ import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from enum import Enum
 from typing import Any
 from urllib.parse import urlparse, urlsplit
@@ -52,6 +52,7 @@ from app.models.enums import (
     ImportKind,
     SettingKey,
     TaskEventType,
+    TaskSource,
     default_scope_for,
 )
 from app.models.import_audit import ImportAudit, ImportRun
@@ -72,8 +73,8 @@ from app.schemas.imports import (
     KeyChange,
     Replacement,
 )
-from app.schemas.settings import normalize_names, normalize_urls
-from app.services import settings_service
+from app.schemas.settings import normalize_names, normalize_timezone, normalize_urls
+from app.services import clock, settings_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.jsonable import jsonable
 
@@ -111,6 +112,7 @@ TASK_FIELDS = (
     "priority",
     "project_id",
     "due_at",
+    "due_all_day",
     "scheduled_for",
     "estimate_minutes",
     "spent_minutes",
@@ -625,6 +627,31 @@ def _parse_events(
     return out
 
 
+def _is_midnight_utc(value: datetime | None) -> bool:
+    return value is not None and value.astimezone(UTC).time() == time.min
+
+
+def _resolve_all_day(ctx: _Ctx, index: int, m: ImportTask, due: datetime | None) -> bool:
+    """`due_all_day` của một dòng task.
+
+    File < v7 không có cột: áp heuristic của migration (nguồn Jira và hạn đúng 00:00 UTC, vì
+    chỉ đồng bộ Jira mới sinh giá trị đó). Có giá trị tường minh mà không thoả CHECK của DB
+    (không có hạn, hoặc hạn không phải 00:00 UTC) thì hạ về false và cảnh báo, không từ chối task.
+    """
+    if m.due_all_day is None:
+        return m.source is TaskSource.JIRA and _is_midnight_utc(due)
+    if m.due_all_day and not _is_midnight_utc(due):
+        ctx.warn(
+            "task",
+            "due_all_day_dropped",
+            "due_all_day=true nhưng due_at không phải 00:00 UTC, coi là hạn có giờ.",
+            index=index,
+            id_=m.id,
+        )
+        return False
+    return m.due_all_day
+
+
 def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     m = _validate(ctx, "task", index, raw, ImportTask)
     if m is None:
@@ -647,6 +674,15 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     fallback = _absent(raw, TASK_FIELDS)
     due = _aware(m.due_at, flag)
     completed = _aware(m.completed_at, flag)
+    due_all_day = _resolve_all_day(ctx, index, m, due)
+    # due_at và due_all_day là MỘT CẶP do CHECK ck_tasks_due_all_day_midnight ràng buộc: nếu chỉ
+    # ghi một nửa, giá trị còn lại của DB có thể không còn khớp (vd cờ true của DB + due_at
+    # không phải 00:00 UTC từ file). Hạn là dự phòng thì cờ cũng dự phòng; hạn có trong file
+    # thì cờ (tường minh hoặc suy lại bằng heuristic) luôn được ghi cùng.
+    if "due_at" in fallback:
+        fallback.add("due_all_day")
+    else:
+        fallback.discard("due_all_day")
     estimate = m.estimate_minutes
     if estimate is not None and not (0 < estimate <= 43_200):
         fallback.add("estimate_minutes")
@@ -705,6 +741,7 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         "priority": m.priority,
         "project_id": m.project_id,
         "due_at": due,
+        "due_all_day": due_all_day,
         "scheduled_for": m.scheduled_for,
         "estimate_minutes": estimate,
         "spent_minutes": m.spent_minutes,
@@ -1164,12 +1201,19 @@ def _display_list(value: Any, *, redact_urls: bool = False) -> list[Any] | None:
     return [_redact_url(v) if redact_urls else _display(v) for v in value]
 
 
+def _display_setting(value: Any, *, redact_urls: bool = False) -> Any:
+    """Cài đặt cho báo cáo: danh sách thì từng phần tử, giá trị vô hướng (múi giờ) thì nguyên."""
+    if isinstance(value, str):
+        return _display(value)
+    return _display_list(value, redact_urls=redact_urls)
+
+
 def setting_entity_id(key: SettingKey) -> uuid.UUID:
     """UUID cố định đại diện một khoá cài đặt trong sổ audit/báo cáo."""
     return uuid.uuid5(SETTING_ENTITY_NS, f"app_settings:{key.value}")
 
 
-def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, list[str]]:
+def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, Any]:
     """Lấy cài đặt từ file: `meta.current_users` và `sync_urls` (cấp file, v6).
 
     Dùng ĐÚNG hàm chuẩn hoá của API PUT, nên giá trị API từ chối (URL ngoài allowlist,
@@ -1179,9 +1223,9 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, l
     `meta.minutes_logged_*` và khoá lạ không nhập (D-B2a: backend tự tính từ nhật ký
     time_logged); chỉ liệt kê tên trong ignored_fields["meta"].
     """
-    out: dict[SettingKey, list[str]] = {}
+    out: dict[SettingKey, Any] = {}
     meta = envelope.meta or {}
-    skipped = [name for name in meta if name != "current_users"]
+    skipped = [name for name in meta if name not in ("current_users", "display_timezone")]
     if skipped:
         ctx.note_ignored("meta", skipped)
     candidates = (
@@ -1208,12 +1252,27 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, l
             ctx.error(
                 "setting", "setting_invalid", f"{where} không hợp lệ: {exc}.{hint}", id_=key.value
             )
+    # Múi giờ: sai chỉ là CẢNH BÁO và bỏ qua khoá này (không làm hỏng cả lần nhập), khác hai
+    # khoá trên vì đây là tuỳ chọn hiển thị, không liên quan an toàn (SSRF) hay quyền sở hữu.
+    raw_tz = envelope.display_timezone
+    if raw_tz is None:
+        raw_tz = meta.get("display_timezone")
+    if raw_tz is not None:
+        try:
+            out[SettingKey.DISPLAY_TIMEZONE] = normalize_timezone(raw_tz)
+        except ValueError as exc:
+            ctx.warn(
+                "setting",
+                "setting_invalid",
+                f"display_timezone không hợp lệ, bỏ qua: {exc}.",
+                id_=SettingKey.DISPLAY_TIMEZONE.value,
+            )
     return out
 
 
 async def _plan_settings(
-    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, list[str]]
-) -> dict[SettingKey, list[str]]:
+    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, Any]
+) -> dict[SettingKey, Any]:
     """So cài đặt trong file với DB; trả về những khoá cần ghi (mới hoặc khác).
 
     Cài đặt không có `updated_at` trong file nên không có khái niệm "file cũ hơn DB"
@@ -1230,7 +1289,7 @@ async def _plan_settings(
     ).scalars()
     existing = {row.key: row for row in rows}
     counts = ctx.counts_of("setting")
-    to_write: dict[SettingKey, list[str]] = {}
+    to_write: dict[SettingKey, Any] = {}
     for key, new in wanted.items():
         counts.received += 1
         row = existing.get(key.value)
@@ -1267,8 +1326,8 @@ async def _plan_settings(
                     changes=[
                         FieldChange(
                             field="value",
-                            old=_display_list(row.value, redact_urls=redact),
-                            new=_display_list(new, redact_urls=redact),
+                            old=_display_setting(row.value, redact_urls=redact),
+                            new=_display_setting(new, redact_urls=redact),
                         )
                     ],
                 )
@@ -1711,7 +1770,7 @@ async def import_datafile(
     tasks = _parse_rows(ctx, "task", envelope.tasks, _parse_task)
     notes = _parse_rows(ctx, "note", envelope.notes, _parse_note)
     wanted_settings = _parse_settings(ctx, envelope)
-    settings_to_write: dict[SettingKey, list[str]] = {}
+    settings_to_write: dict[SettingKey, Any] = {}
 
     task_plan = note_plan = project_plan = _Plan()
     file_events: list[dict[str, Any]] = []
@@ -1738,9 +1797,9 @@ async def import_datafile(
         await _insert_rows(session, TaskEvent.__table__, generated)
         await _apply_plan(session, NOTE_SPEC.table, note_plan)
         for key, value in settings_to_write.items():
-            await settings_service.put_list(session, key, value)
+            await settings_service.put_value(session, key, value)
 
-    return await _finish(
+    result = await _finish(
         session,
         ctx,
         kind=ImportKind.DATAFILE,
@@ -1751,3 +1810,8 @@ async def import_datafile(
         actor=actor,
         write=write,
     )
+    if result.committed and SettingKey.DISPLAY_TIMEZONE in settings_to_write:
+        # Sau commit (_finish đã commit khi không dry-run): bỏ cache cũ để request kế tiếp đọc
+        # múi giờ mới thay vì đợi TTL 10 giây.
+        clock.invalidate_display_tz_cache()
+    return result

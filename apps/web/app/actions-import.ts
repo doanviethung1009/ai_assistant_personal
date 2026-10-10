@@ -148,6 +148,8 @@ export async function importBulkTasksAction(rows: any[]) {
       task.project_id = projectId;
       task.project = projectObj as any;
       task.due_at = dueAt;
+      // Excel không mang cờ cả ngày (ngoài phạm vi epic user-timezone, rủi ro R6): hạn có giờ.
+      task.due_all_day = false;
       task.completed_at = completedAt;
       task.tags = Array.from(new Set([...task.tags.map((t: string) => t.toLowerCase()), ...validTags]));
       task.assignee = assignee;
@@ -164,6 +166,7 @@ export async function importBulkTasksAction(rows: any[]) {
         project_id: projectId,
         project: projectObj as any,
         due_at: dueAt,
+        due_all_day: false,
         scheduled_for: null,
         estimate_minutes: null,
         spent_minutes: 0,

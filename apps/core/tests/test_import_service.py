@@ -339,6 +339,39 @@ async def test_replace_matches_by_natural_key(session: AsyncSession) -> None:
     )
 
 
+@pytest.mark.parametrize("explicit_flag", [False, True])
+async def test_replace_all_day_row_with_timed_due_does_not_break_check(
+    session: AsyncSession, explicit_flag: bool
+) -> None:
+    """File < v7 (hoặc cờ sai) ghi đè dòng due_all_day=true bằng hạn có giờ: cờ phải hạ về false
+    cùng lúc, nếu không CHECK ck_tasks_due_all_day_midnight làm hỏng cả lần nhập."""
+    await _import(session)
+    await session.execute(
+        text("UPDATE tasks SET due_at = :d, due_all_day = true WHERE id = :i"),
+        {"d": _utc(2026, 10, 8), "i": T1},
+    )
+    await session.commit()
+
+    data = _load()
+    for row in data["tasks"]:
+        if row["id"] == str(T1):
+            row["due_at"] = "2026-10-08T10:30:00.000Z"
+            if explicit_flag:
+                row["due_all_day"] = True
+            else:
+                row.pop("due_all_day", None)
+    dry = await _import(session, data, dry_run=True)
+    assert dry.errors == 0, dry.issues
+    report = await _import(session, data, expect=dry.counts["tasks"].replaced)
+    assert report.committed, report.issues
+    assert report.errors == 0
+    t1 = await _task(session, T1)
+    assert t1["due_at"] == _utc(2026, 10, 8, 10, 30)
+    assert t1["due_all_day"] is False
+    if explicit_flag:
+        assert any(i.code == "due_all_day_dropped" for i in report.issues)
+
+
 # ── Thùng rác, không xoá ────────────────────────────────────────────
 
 

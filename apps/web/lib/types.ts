@@ -112,6 +112,11 @@ export type ComponentHealth = Schemas["ComponentHealth"];
 export type HealthResponse = Schemas["HealthResponse"];
 export type SystemInfo = Schemas["SystemInfo"];
 
+/** Múi giờ hiển thị (GET/PUT /settings/display-timezone) và danh mục múi giờ IANA. */
+export type DisplayTimezoneRead = Schemas["DisplayTimezoneRead"];
+export type TimezoneOption = Schemas["TimezoneOption"];
+export type TimezoneList = Schemas["TimezoneList"];
+
 /**
  * Page[T] của core API là generic thật (`Page_TaskRead_`, `Page_NoteRead_`),
  * openapi-typescript sinh ra một interface riêng cho mỗi lần dùng, không

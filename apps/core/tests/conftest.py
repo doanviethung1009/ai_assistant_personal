@@ -14,7 +14,7 @@ database dùng riêng cho test, tuyệt đối không phải database thật.
 from __future__ import annotations
 
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 
 import pytest
@@ -75,6 +75,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
     for item in items:
         if "db" in item.keywords:
             item.add_marker(skip)
+
+
+@pytest.fixture(autouse=True)
+def _reset_display_tz_cache() -> Iterator[None]:
+    """Cache múi giờ là trạng thái cấp tiến trình (TTL 10s): reset để test không rò sang nhau."""
+    from app.services import clock
+
+    clock.invalidate_display_tz_cache()
+    yield
+    clock.invalidate_display_tz_cache()
 
 
 @pytest.fixture(scope="session")

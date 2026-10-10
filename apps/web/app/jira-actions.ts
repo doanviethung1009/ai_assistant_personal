@@ -19,6 +19,7 @@ import type {
 } from "@/lib/types";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
+import type { StoredTask } from "@/lib/store/types";
 import { scopeOf } from "@/lib/task-scope";
 
 // Tên custom field Jira được coi là thông tin phân nhóm dự án
@@ -37,6 +38,42 @@ function customValueToStrings(val: unknown): string[] {
     return typeof v === "string" ? [v] : [];
   }
   return [];
+}
+
+/** Jira `duedate` hợp lệ (YYYY-MM-DD) hoặc null. Jira Cloud không gửi giờ cho trường này. */
+function jiraDuedateRaw(raw: unknown): string | null {
+  return typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw))
+    ? raw
+    : null;
+}
+
+/** `duedate` -> 00:00:00 UTC của ngày lịch (cách lưu hạn cả ngày, không phụ thuộc múi giờ). */
+function jiraDueIso(raw: unknown): string | null {
+  const day = jiraDuedateRaw(raw);
+  return day ? `${day}T00:00:00.000Z` : null;
+}
+
+/**
+ * Cập nhật hạn từ Jira có điều kiện, khớp backend (task_sync_service, phương án C).
+ *
+ * Chỉ ghi đè khi User CHƯA sửa hạn tay: hạn hiện tại bằng đúng hạn Jira của lần sync trước
+ * (`jira_duedate`), hoặc task chưa có hạn. Task tạo bởi bản cũ chưa có baseline: coi hạn hiện
+ * có là do sync sinh ra (chưa sửa tay) nếu nó cả ngày hoặc đúng 00:00 UTC, nếu không thì giữ
+ * nguyên. Mọi trường hợp đều ghi baseline mới để lần sau so được (tránh kẹt hạn cũ mãi).
+ */
+function applyJiraDue(task: StoredTask, rawDuedate: unknown): void {
+  const prev = task.jira_duedate;
+  const hasBaseline = typeof prev === "string";
+  const untouched =
+    task.due_at === null ||
+    (hasBaseline
+      ? task.due_all_day && task.due_at === jiraDueIso(prev)
+      : task.due_all_day || /T00:00:00(\.000)?Z$/.test(task.due_at));
+  if (untouched) {
+    task.due_at = jiraDueIso(rawDuedate);
+    task.due_all_day = task.due_at !== null;
+  }
+  task.jira_duedate = jiraDuedateRaw(rawDuedate);
 }
 
 /** Trần thời gian và kích thước mỗi trang trả về từ Jira (chế độ file). */
@@ -318,6 +355,7 @@ export async function syncJiraAction(formData: FormData) {
         task.status = status as any;
         task.tags = Array.from(new Set([...task.tags, ...validTags]));
         task.updated_at = nowIso();
+        applyJiraDue(task, fields.duedate);
         let issueProjectRef = projectRef;
         const jKey = (extractedProjectKey || fields.project?.key || issueKey.split('-')[0]).toUpperCase();
         if (jKey) {
@@ -348,7 +386,10 @@ export async function syncJiraAction(formData: FormData) {
           priority: 'medium',
           project_id: null,
           project: null,
-          due_at: fields.duedate ? new Date(fields.duedate).toISOString() : null,
+          due_at: jiraDueIso(fields.duedate),
+          // Jira duedate là ngày thuần: hạn cả ngày, quá hạn tính theo ngày (xem engine.ts).
+          due_all_day: jiraDueIso(fields.duedate) !== null,
+          jira_duedate: jiraDuedateRaw(fields.duedate),
           scheduled_for: null,
           estimate_minutes: null,
           spent_minutes: 0,
