@@ -246,6 +246,72 @@ class AgendaResponse(BaseModel):
         }
 
 
+class ProjectProgress(BaseModel):
+    """Tiến độ một project: tỉ lệ task đã xong trên tổng task (không tính task đã huỷ).
+
+    Task không thuộc project nào gom vào một dòng với `project_id = null`. Task đã huỷ bị loại
+    khỏi mẫu số vì việc huỷ không phải "chưa xong", nếu không project dọn backlog sẽ trông kém.
+    """
+
+    project_id: uuid.UUID | None
+    key: str | None
+    name: str
+    color: str | None
+    total: int
+    done: int
+    open: int
+    percent_done: int = Field(ge=0, le=100, description="done / total, làm tròn, 0 nếu total = 0")
+
+
+class ParticipationMember(BaseModel):
+    """Phần việc của một người trong một project."""
+
+    assignee: str
+    count: int = Field(description="Số task (chưa huỷ) của người này trong project")
+    done: int = Field(description="Trong `count`: số task đã xong")
+    open: int = Field(description="Trong `count`: số task chưa xong (count - done)")
+    percent: int = Field(ge=0, le=100, description="count / tổng task của project, làm tròn")
+
+
+class ProjectParticipation(BaseModel):
+    """Một project và phần việc của từng người được chọn.
+
+    `total` là TỔNG task chưa huỷ của project trong khoảng thời gian đã chọn (kể cả task chưa
+    giao và của người không được chọn), nên % của một người không đổi khi bạn chọn thêm hay
+    bớt người khác.
+    """
+
+    project_id: uuid.UUID | None
+    key: str | None
+    name: str
+    color: str | None
+    total: int
+    members: list[ParticipationMember]
+
+
+class AssigneeOption(BaseModel):
+    name: str
+    total: int = Field(
+        description="Tổng task công việc chưa huỷ của người này, mọi thời gian (không theo khoảng)"
+    )
+
+
+class ParticipationResponse(BaseModel):
+    """Dashboard tham dự dự án của nhóm (task công việc, chưa huỷ)."""
+
+    assignees: list[AssigneeOption] = Field(
+        description="Mọi người có task, để dựng ô chọn; ít việc nhất xếp cuối"
+    )
+    selected: list[str] = Field(description="Những người được phân tích (rỗng đầu vào = tất cả)")
+    date_from: date | None = Field(
+        default=None, description="Đầu khoảng đã áp (ngày địa phương), null = không giới hạn"
+    )
+    date_to: date | None = Field(
+        default=None, description="Cuối khoảng đã áp (gồm cả ngày này), null = không giới hạn"
+    )
+    projects: list[ProjectParticipation]
+
+
 class TaskStatsResponse(BaseModel):
     reference_date: date
     by_status: dict[str, int]
@@ -257,6 +323,10 @@ class TaskStatsResponse(BaseModel):
     overdue_total: int
     minutes_logged_today: int
     trash_total: int = Field(default=0, description="Số task đang ở trong thùng rác")
+    by_project: list[ProjectProgress] = Field(
+        default_factory=list,
+        description="Tiến độ theo project, nhiều việc đang mở nhất lên trước (tối đa 50)",
+    )
 
 
 class TrashResponse(BaseModel):

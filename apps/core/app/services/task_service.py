@@ -642,6 +642,8 @@ async def get_stats(
         select(func.count()).select_from(Task).where(Task.deleted_at.is_not(None))
     )
 
+    by_project = await _project_progress(session, alive)
+
     minutes_today = await session.scalar(
         select(func.coalesce(func.sum(cast(TaskEvent.payload["minutes"].astext, Integer)), 0))
         .where(
@@ -660,6 +662,196 @@ async def get_stats(
         "overdue_total": int(overdue_total or 0),
         "minutes_logged_today": int(minutes_today or 0),
         "trash_total": int(trash_total or 0),
+        "by_project": by_project,
+    }
+
+
+# Trần số dòng project trong thống kê: đủ cho dashboard, không để dữ liệu nhập tràn response.
+MAX_PROJECT_ROWS = 50
+
+
+async def _project_progress(
+    session: AsyncSession, alive: ColumnElement[bool]
+) -> list[dict[str, Any]]:
+    """Tiến độ theo project trong phạm vi view. Việc đã huỷ không vào mẫu số.
+
+    Một truy vấn gom nhóm duy nhất (LEFT JOIN để giữ nhóm "không có project"), tránh N+1.
+    """
+    is_done = Task.status == TaskStatus.DONE
+    is_open = Task.status.notin_(CLOSED_STATUSES)
+    rows = await session.execute(
+        select(
+            Task.project_id,
+            Project.key,
+            Project.name,
+            Project.color,
+            func.count().label("total"),
+            func.count().filter(is_done).label("done"),
+            func.count().filter(is_open).label("open"),
+        )
+        .select_from(Task)
+        .outerjoin(Project, Project.id == Task.project_id)
+        .where(alive, Task.status != TaskStatus.CANCELLED)
+        .group_by(Task.project_id, Project.key, Project.name, Project.color)
+        .order_by(func.count().filter(is_open).desc(), func.count().desc(), Project.name)
+        .limit(MAX_PROJECT_ROWS)
+    )
+    return [
+        {
+            "project_id": r.project_id,
+            "key": r.key,
+            "name": r.name or "Không có project",
+            "color": r.color,
+            "total": r.total,
+            "done": r.done,
+            "open": r.open,
+            "percent_done": round(r.done * 100 / r.total) if r.total else 0,
+        }
+        for r in rows.all()
+    ]
+
+
+# Giới hạn để request không kéo dữ liệu vô hạn: số người được chọn, số project trả về.
+MAX_PEOPLE = 50
+MAX_PARTICIPATION_PROJECTS = 50
+
+
+def validate_people(people: list[str] | None) -> list[str]:
+    """Chuẩn hoá danh sách người cần phân tích: bỏ khoảng trắng thừa và trùng, giữ thứ tự."""
+    if not people:
+        return []
+    if len(people) > MAX_PEOPLE:
+        raise ValidationError(f"person tối đa {MAX_PEOPLE} tên")
+    cleaned = [name.strip() for name in people]
+    if any(not name or len(name) > MAX_OWNER_LEN for name in cleaned):
+        raise ValidationError(f"mỗi person phải dài 1-{MAX_OWNER_LEN} ký tự")
+    return list(dict.fromkeys(cleaned))
+
+
+def validate_period(date_from: date | None, date_to: date | None) -> None:
+    """Khoảng ngày phải hợp lý; đảo đầu/cuối là lỗi gọi API nên báo 422 thay vì trả rỗng."""
+    if date_from is not None and date_to is not None and date_from > date_to:
+        raise ValidationError("date_from không được sau date_to")
+
+
+async def get_participation(
+    session: AsyncSession,
+    people: Sequence[str] = (),
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> dict[str, Any]:
+    """Tỉ lệ tham dự dự án: với mỗi project, mỗi người gánh bao nhiêu % task của project.
+
+    Khoảng thời gian (ngày ĐỊA PHƯƠNG theo múi giờ hiển thị, gồm cả `date_to`) lọc theo ngày
+    hoạt động: `completed_at` với task đã xong, `updated_at` với task còn lại (cùng quy ước
+    với bộ lọc thời gian của danh sách Team). Bộ lọc áp cho cả tử số lẫn mẫu số, nên % là phần
+    việc của người đó trong các task có hoạt động ở khoảng đã chọn.
+
+    Chỉ task công việc (view=work) và chưa huỷ, gồm cả đang mở lẫn đã xong, cùng quy tắc với
+    tiến độ project. Mẫu số là tổng task của project NGAY CẢ khi người khác không được chọn,
+    nếu không % sẽ nhảy theo danh sách chọn và vô nghĩa khi so sánh giữa các lần xem.
+    Một truy vấn gom nhóm (project, assignee); phần còn lại tính ở Python trên tập đã gom.
+    """
+    stmt = (
+        select(
+            Task.project_id,
+            Project.key,
+            Project.name,
+            Project.color,
+            Task.assignee,
+            func.count().label("n"),
+            func.count().filter(Task.status == TaskStatus.DONE).label("done"),
+        )
+        .select_from(Task)
+        .outerjoin(Project, Project.id == Task.project_id)
+        .where(_alive_in_view(TaskView.WORK, ()), Task.status != TaskStatus.CANCELLED)
+        .group_by(Task.project_id, Project.key, Project.name, Project.color, Task.assignee)
+    )
+    if date_from is not None or date_to is not None:
+        # Task xong mà thiếu completed_at (dữ liệu nhập) rơi về updated_at thay vì biến mất.
+        activity = func.coalesce(
+            case((Task.status == TaskStatus.DONE, Task.completed_at), else_=Task.updated_at),
+            Task.updated_at,
+        )
+        if date_from is not None:
+            stmt = stmt.where(activity >= local_day_bounds_utc(date_from)[0])
+        if date_to is not None:
+            stmt = stmt.where(activity < local_day_bounds_utc(date_to)[1])
+    rows = (await session.execute(stmt)).all()
+
+    # Ô chọn người luôn lấy từ TOÀN BỘ thời gian: nếu thu hẹp theo khoảng, người ít hoạt động
+    # sẽ biến mất khỏi ô chọn và mất lựa chọn của User khi đổi khoảng.
+    everyone = (
+        await session.execute(
+            select(Task.assignee, func.count())
+            .where(
+                _alive_in_view(TaskView.WORK, ()),
+                Task.status != TaskStatus.CANCELLED,
+                Task.assignee.is_not(None),
+            )
+            .group_by(Task.assignee)
+        )
+    ).all()
+
+    per_person: dict[str, int] = {}  # chỉ trong khoảng đã chọn, dùng khi không chọn ai
+    projects: dict[uuid.UUID | None, dict[str, Any]] = {}
+    for r in rows:
+        if r.assignee:
+            per_person[r.assignee] = per_person.get(r.assignee, 0) + r.n
+        proj = projects.setdefault(
+            r.project_id,
+            {
+                "project_id": r.project_id,
+                "key": r.key,
+                "name": r.name or "Không có project",
+                "color": r.color,
+                "total": 0,
+                "counts": {},
+                "done": {},
+            },
+        )
+        proj["total"] += r.n
+        if r.assignee:
+            proj["counts"][r.assignee] = proj["counts"].get(r.assignee, 0) + r.n
+            proj["done"][r.assignee] = proj["done"].get(r.assignee, 0) + r.done
+
+    # Rỗng = phân tích tất cả mọi người. Tên không có task nào vẫn được giữ trong `selected`
+    # (người dùng chọn rồi) nhưng không sinh dòng nào, nên không báo lỗi.
+    chosen = list(people) if people else sorted(per_person)
+    out: list[dict[str, Any]] = []
+    for proj in projects.values():
+        members = [
+            {
+                "assignee": name,
+                "count": proj["counts"][name],
+                "done": proj["done"][name],
+                # Task huỷ đã bị loại ở truy vấn nên phần còn lại là chưa xong.
+                "open": proj["counts"][name] - proj["done"][name],
+                "percent": round(proj["counts"][name] * 100 / proj["total"]),
+            }
+            for name in chosen
+            if name in proj["counts"]
+        ]
+        if not members:
+            continue
+        members.sort(key=lambda m: (-m["count"], m["assignee"]))
+        out.append(
+            {
+                **{k: v for k, v in proj.items() if k not in ("counts", "done")},
+                "members": members,
+            }
+        )
+    # Project có nhiều việc nhất lên trước; ổn định theo tên để thứ tự không nhảy giữa các lần gọi.
+    out.sort(key=lambda p: (-sum(m["count"] for m in p["members"]), p["name"]))
+
+    return {
+        "assignees": [
+            {"name": n, "total": c} for n, c in sorted(everyone, key=lambda kv: (-kv[1], kv[0]))
+        ],
+        "selected": chosen,
+        "date_from": date_from,
+        "date_to": date_to,
+        "projects": out[:MAX_PARTICIPATION_PROJECTS],
     }
 
 

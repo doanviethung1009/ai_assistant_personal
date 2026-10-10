@@ -12,7 +12,8 @@ Các API này hỗ trợ việc quản lý công việc (Task), theo dõi tiến
 | Phương thức | Endpoint | Chức năng | Ghi chú |
 |-------------|----------|-----------|---------|
 | `GET` | `/agenda` | Lấy danh sách task cần làm hôm nay | Tự động tính toán deadline, ghim, v.v. |
-| `GET` | `/stats` | Thống kê nhanh | Trả về tổng số task, đã hoàn thành, quá hạn |
+| `GET` | `/stats` | Thống kê nhanh | Trả về tổng số task, đã hoàn thành, quá hạn, và `by_project`: tiến độ từng project (`total`, `done`, `open`, `percent_done` = done / task chưa huỷ; tối đa 50 dòng, nhiều việc đang mở nhất lên trước; task không có project gom vào một dòng `project_id = null`) |
+| `GET` | `/participation` | Tỉ lệ tham dự dự án của nhóm | Task công việc chưa huỷ (gồm cả đã xong). Tham số `person` lặp lại để chọn người (tối đa 50, mỗi tên 1 đến 200 ký tự; bỏ trống = tất cả). Trả `assignees` (để dựng ô chọn), `selected`, và `projects[]` với `members[]` = `{assignee, count, done, open, percent}` (`count` = `done` + `open`). `percent` = count / **tổng task của project** (kể cả người không được chọn và task chưa giao) nên không đổi theo danh sách chọn. Tên không có task nào không gây lỗi, chỉ không sinh dòng. Lọc thời gian bằng `date_from` / `date_to` (ngày địa phương theo múi giờ hiển thị, **gồm cả ngày cuối**, bỏ trống một đầu = không giới hạn; đảo đầu cuối trả `422`), theo **ngày hoạt động**: `completed_at` với task đã xong, `updated_at` với task còn lại. Bộ lọc áp cho cả tử lẫn mẫu số; danh sách `assignees` vẫn là mọi thời gian để ô chọn người không biến mất |
 | `GET` | `/trash` | Thùng rác | Các task đã xoá mềm (Soft delete) |
 | `POST` | `/sync` | Đồng bộ dữ liệu | Đồng bộ task từ nguồn ngoài (Jira, CSV...) |
 | `POST` | `/wipe` | Dọn dẹp dữ liệu | Xoá vĩnh viễn (Hard delete) dựa theo cờ |

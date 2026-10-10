@@ -2,6 +2,7 @@ import { listTasks, IS_LOCAL } from "@/lib/api";
 import { JiraQuickSync } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
+import { TeamTabs } from "@/components/team-tabs";
 import Link from "next/link";
 import { OPEN_STATUSES, type Task } from "@/lib/types";
 
@@ -209,6 +210,8 @@ export default async function TeamPage({
             {IS_LOCAL && <JiraQuickSync />}
           </div>
         </div>
+
+        <TeamTabs active="list" />
 
         <div className="flex flex-col gap-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-sm">
           
