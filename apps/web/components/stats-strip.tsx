@@ -35,7 +35,7 @@ export function StatCard({
           <Icon className="size-5" />
         </div>
         <div>
-          <dt className="text-[11px] uppercase tracking-wider font-semibold opacity-70 mb-0.5">{label}</dt>
+          <dt className="text-[0.8125rem] uppercase tracking-wider font-semibold opacity-70 mb-0.5">{label}</dt>
           <dd className="text-2xl font-bold tabular-nums tracking-tight">
             {value}
           </dd>
@@ -50,7 +50,7 @@ export function StatsStrip({ stats }: { stats: Stats }) {
     stats.completed_last_7_days[stats.reference_date] ?? 0;
 
   return (
-    <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-4 xl:grid-cols-4">
       <StatCard label="Việc đang mở" value={stats.open_total} tone="accent" icon={CircleDot} />
       <StatCard
         label="Quá hạn"

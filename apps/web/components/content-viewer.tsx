@@ -28,7 +28,7 @@ export function ContentViewer({ content, title = "Nội dung chi tiết", isMark
             className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={() => setIsOpen(false)}
           />
-          <div className="relative w-full max-w-5xl max-h-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-[1680px] max-h-full overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-[var(--color-border)] px-5 py-4 bg-[var(--color-surface-raised)]">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Eye className="size-4 text-[var(--color-accent)]" />

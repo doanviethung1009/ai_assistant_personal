@@ -66,7 +66,7 @@ function ProjectProgressList({ projects }: { projects: ProjectProgress[] }) {
   const hidden = projects.length - shown.length;
   return (
     <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4">
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
+      <h2 className="mb-3 text-[0.8125rem] font-semibold uppercase tracking-wider text-[var(--color-ink-muted)]">
         Tiến độ theo project
       </h2>
       <ul className="grid gap-x-8 gap-y-3 sm:grid-cols-2">

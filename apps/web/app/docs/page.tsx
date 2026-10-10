@@ -43,7 +43,7 @@ export default async function DocsPage({
                   ▸
                 </span>
                 {category}
-                <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-[10px] font-medium normal-case tracking-normal">
+                <span className="rounded-full bg-[var(--color-surface-raised)] px-2 py-0.5 text-xs font-medium normal-case tracking-normal">
                   {categoryDocs.length}
                 </span>
               </summary>
@@ -65,7 +65,7 @@ export default async function DocsPage({
                         <span className="mt-1 block text-xs leading-relaxed text-[var(--color-ink-muted)]">
                           {doc.description}
                         </span>
-                        <code className="mt-auto block truncate pt-3 text-[10px] text-[var(--color-ink-muted)] opacity-60">
+                        <code className="mt-auto block truncate pt-3 text-xs text-[var(--color-ink-muted)] opacity-60">
                           {doc.file.replace(/\\/g, "/")}
                         </code>
                       </Link>

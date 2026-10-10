@@ -43,7 +43,7 @@ export default async function TeamParticipationPage({
     data = await getParticipation(people, { from: period.from, to: period.to });
   } catch (error) {
     return (
-      <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
+      <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
         <TeamTabs active="participation" />
         <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />
       </div>
@@ -51,7 +51,7 @@ export default async function TeamParticipationPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
+    <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
       <div>
         <h1 className="text-3xl font-extrabold tracking-tight">Giao việc / Team</h1>
         <p className="mt-2 text-sm font-medium text-[var(--color-ink-muted)]">

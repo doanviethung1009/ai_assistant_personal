@@ -1,5 +1,5 @@
 import { listTasks, IS_LOCAL } from "@/lib/api";
-import { JiraQuickSync } from "@/components/jira-quick-sync";
+import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
 import { TeamTabs } from "@/components/team-tabs";
@@ -191,7 +191,7 @@ export default async function TeamPage({
     };
 
     return (
-      <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+      <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
         <div className="flex items-start justify-between relative">
           <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg blur opacity-10 pointer-events-none"></div>
           <div className="relative">
@@ -206,8 +206,8 @@ export default async function TeamPage({
             </p>
           </div>
           <div className="relative z-10">
-            {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
-            {IS_LOCAL && <JiraQuickSync />}
+            {/* Chế độ file: đồng bộ tại chỗ; chế độ api: liên kết sang trang Dữ liệu (nút Cào ngay). */}
+          {IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}
           </div>
         </div>
 

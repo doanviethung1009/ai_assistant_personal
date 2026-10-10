@@ -47,7 +47,7 @@ export function DataTabs({ active }: { active: DataTabId }) {
             <span className={`text-sm font-medium ${danger && isActive ? "text-[var(--color-danger)]" : ""}`}>
               {tab.label}
             </span>
-            <span className="text-[11px] text-[var(--color-ink-muted)]">{tab.hint}</span>
+            <span className="text-[0.8125rem] text-[var(--color-ink-muted)]">{tab.hint}</span>
           </Link>
         );
       })}

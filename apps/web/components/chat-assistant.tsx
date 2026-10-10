@@ -143,7 +143,7 @@ export function ChatAssistant() {
             </div>
             <div>
               <h2 className="text-sm font-semibold text-[var(--color-ink)]">Builder AI</h2>
-              <p className="flex items-center gap-1 text-[10px] text-[var(--color-ink-muted)]">
+              <p className="flex items-center gap-1 text-xs text-[var(--color-ink-muted)]">
                 <span className="relative flex h-2 w-2">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
@@ -176,7 +176,7 @@ export function ChatAssistant() {
               >
                 {msg.role === "assistant" ? renderContent(msg.content) : msg.content}
               </div>
-              <span className="mt-1 px-1 text-[10px] text-[var(--color-ink-muted)] opacity-70">
+              <span className="mt-1 px-1 text-xs text-[var(--color-ink-muted)] opacity-70">
                 {msg.role === "user" ? "Bạn" : "AI"}
               </span>
             </div>
@@ -206,7 +206,7 @@ export function ChatAssistant() {
             />
             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
               {input.length === 0 && !isTyping ? (
-                <div className="hidden items-center gap-1 rounded bg-[var(--color-surface-raised)] px-1.5 py-1 text-[10px] text-[var(--color-ink-muted)] sm:flex border border-[var(--color-border)]/50">
+                <div className="hidden items-center gap-1 rounded bg-[var(--color-surface-raised)] px-1.5 py-1 text-xs text-[var(--color-ink-muted)] sm:flex border border-[var(--color-border)]/50">
                   <Command className="h-3 w-3" /> K
                 </div>
               ) : null}

@@ -36,13 +36,13 @@ export default async function RootLayout({
         </a>
 
         {/* ── Sidebar Desktop ────────────────────────────────────────── */}
-        <aside className="hidden w-[260px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-raised)]/30 sm:flex">
+        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-raised)]/30 sm:flex">
           <div className="flex h-[68px] shrink-0 items-center border-b border-[var(--color-border)] px-5">
             <div>
-              <p className="text-sm font-semibold tracking-tight text-[var(--color-ink)]">
+              <p className="text-base font-semibold tracking-tight text-[var(--color-ink)]">
                 Builder AI Assistant
               </p>
-              <p className="text-[10px] text-[var(--color-ink-muted)]">
+              <p className="text-xs text-[var(--color-ink-muted)]">
                 Phase 1 — task store cá nhân
               </p>
             </div>
@@ -69,8 +69,8 @@ export default async function RootLayout({
             </button>
           </header>
 
-          <main id="main" className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8">
-            <div className="mx-auto max-w-5xl">
+          <main id="main" className="flex-1 overflow-y-auto px-4 py-6 sm:px-8 sm:py-8 xl:px-12 xl:py-10">
+            <div className="mx-auto max-w-[1680px]">
               {DATA_SOURCE === "memory" ? (
                 <p
                   role="status"

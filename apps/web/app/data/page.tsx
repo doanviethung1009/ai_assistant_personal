@@ -106,7 +106,7 @@ export default async function DataPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
+    <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
       <div className="relative">
         <div className="absolute -inset-1 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 opacity-10 blur"></div>
         <div className="relative">
