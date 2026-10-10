@@ -4,13 +4,15 @@ Cập nhật: 2026-10-09. Thiết kế và lý do nằm ở [spec](specs/proxmox
 **hướng dẫn thao tác từng bước**. Lệnh chạy trên server sau khi VM đã có nằm ở
 [deploy-runbook.md](deploy-runbook.md), không lặp lại ở đây.
 
+> Tìm tài liệu khác: xem **Bản đồ tài liệu** ở [SYSTEMS_INVENTORY.md](SYSTEMS_INVENTORY.md). SSH vào server và mở web các môi trường: [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md).
+
 ## 0. Trạng thái triển khai (đọc trước)
 
 | Hạng mục | Trạng thái |
 |---|---|
 | Kiểm tra Proxmox bằng token chỉ đọc (`pve-check.sh`) | **Đã có**, chạy được |
 | Template Ubuntu cloud-init | **Đã có** trên node: id 9000 `ubuntu-2404-tmpl` (dùng lại, bỏ qua mục 3) |
-| Dựng VM staging / prod | **Đã có** `make pve-vm ENV=dev\|staging\|prod` (mục 13). **VM staging `ai-stg-01` (192.168.100.202) đã dựng và SSH được (2026-10-09)**; prod chưa dựng |
+| Dựng VM staging / prod | **Đã có** `make pve-vm ENV=dev\|staging\|prod` (mục 13). cả 3 VM đã dựng và cấu hình Ansible (2026-10-09): dev `.201`, staging `.202`, prod `.203` (`protection=1`); stack mới chạy trên dev và staging, **prod chưa deploy** |
 | Cấu hình VM bằng Ansible | **Đã có** `make pve-config ENV=...`, đã áp lên staging, chạy lần 2 `changed=0` (mục 5) |
 | Thử build + chạy stack trên staging | **Đã thử** (2026-10-09): build, up, migrate, health OK; `make smoke` 93/98 (5 lỗi là race của backend, xem PROXMOX_OPERATIONS.md mục 11) |
 | CI build image + deploy tự động | Workflow đã viết và merge (`build-images.yml`, `deploy.yml`); `Build images` đã build+đẩy được image api, bước Trivy còn lỗi chưa rõ nguyên nhân; `Deploy` **chưa chạy được** (cần runner tự host, Environments, Secrets) |
@@ -28,20 +30,18 @@ Việc hằng ngày sau khi dựng xong (kiểm tra, backup, cập nhật, sự 
     ├─ push uat  ──► runner (LXC .204) ──ssh──► VM staging .202 : pull image sha → up → health/smoke
     └─ push prod ──► [người duyệt] ► runner ──ssh──► VM prod .203 : snapshot → backup → pull → up → health/smoke
 
- Proxmox node "isec" (192.168.100.252:8006, PVE 9.1) chứa: template 9000, VM staging, VM prod, LXC runner
+ Proxmox node "isec" (192.168.100.252:8006, PVE 9.1) chứa: template 9000, VM dev, VM staging, VM prod, (LXC runner: chưa dựng)
  dev: VM ai-dev-01 (.201) chạy `make up` (hot reload từ nhánh main); vẫn có thể chạy `make dev` trên máy cá nhân
 ```
 
 | Môi trường | Nhánh git | `ENVIRONMENT` | Chạy ở | IP | RAM |
 |---|---|---|---|---|---|
 | dev | `main` | `development` | VM `ai-dev-01` (id 201) | 192.168.100.201 | 2.5 GB |
-| staging | `uat` | `staging` | VM `ai-stg-01` | 192.168.100.202 | 4 GB |
-| prod | `prod` | `production` | VM `ai-prod-01` | 192.168.100.203 | 6 GB |
-| runner CI | — | — | LXC `ai-ci-01` | 192.168.100.204 | 1 GB |
+| staging | `uat` | `staging` | VM `ai-stg-01` | 192.168.100.202 | 3 GB |
+| prod | `prod` | `production` | VM `ai-prod-01` | 192.168.100.203 | 5 GB |
+| runner CI | — | — | LXC `ai-ci-01` | 192.168.100.204 | 1 GB (**chưa dựng**) |
 
-Gateway `192.168.100.1`. Node có 15.5 GB RAM nhưng **3 VM có sẵn** (`isec-vpn-gateway`, `agent-hub`,
-`jump-host-hub`) đã dùng ~10 GB, còn trống ~5.5 GB. Bảng RAM ở trên là mục tiêu ban đầu và **chưa vừa**; quyết định
-cuối cùng ở spec, Q7. Không dựng VM dev trên node.
+Gateway `192.168.100.1`. Node có 15.5 GB RAM. Ngân sách đã cấp: vpn 2 + dev 2.5 + staging 3 + prod 5 = **12.5 GB** (VM `agent-hub` và `jump-host-hub` đang tắt). Mức dùng thực tế thấp hơn, nhưng chưa còn chỗ cho runner CI 1 GB: muốn thêm thì tắt dev khi không dùng (`qm shutdown 201`).
 
 ## 2. Chuẩn bị: token API Proxmox
 

@@ -52,14 +52,14 @@ Không đổi API của sản phẩm. Phía Proxmox chỉ dùng API sẵn có (`
 | Môi trường | Nhánh git | `ENVIRONMENT` | VM | vCPU / RAM / disk (đề xuất) | Duyệt người |
 |---|---|---|---|---|---|
 | dev | `main` | `development` | VM `ai-dev-01` (.201, id 201), 2 / 2.5 GB / 30 GB; vẫn chạy được `make dev` trên máy cá nhân | — | không |
-| staging | `uat` | `staging` | `ai-stg-01` (.202) | 2 / 4 GB / 40 GB | không |
-| prod | `prod` | `production` | `ai-prod-01` (.203) | 2 / 6 GB / 60 GB + disk dữ liệu 40 GB | **bắt buộc** |
+| staging | `uat` | `staging` | `ai-stg-01` (.202) | 2 / 3 GB / 40 GB | không |
+| prod | `prod` | `production` | `ai-prod-01` (.203) | 2 / 5 GB / 60 GB (chưa tách disk dữ liệu) | **bắt buộc** |
 | runner CI | — | — | LXC `ai-ci-01` (.204) | 1 / 1 GB / 10 GB | — |
 
 "staging" = nhánh `uat` trong `docs/git-workflow.md` (giữ nguyên tên nhánh, không đổi mô hình git).
 Cấu hình mỗi VM lấy từ `.env` riêng, mỗi VM có khoá/secret khác nhau (đã nêu ở runbook Case 4).
 
-**RAM thực tế (đo 2026-10-09):** node 15.5 GB, đã dùng 10.0 GB bởi 3 VM có sẵn + host. Còn trống ~5.5 GB, an toàn chỉ ~3.5 GB nếu 3 VM cũ dùng hết RAM đã cấp. Kế hoạch staging 4 + prod 6 + runner 1 = 11 GB **không vừa**. Phải chọn một hướng ở Q7 trước khi dựng VM. Không overcommit RAM cho prod.
+**RAM (cập nhật 2026-10-09):** node 15.5 GB; tổng cấp cho VM đang chạy 12.5 GB (vpn 2 + dev 2.5 + staging 3 + prod 5), sát giới hạn nhưng thực dùng thấp hơn (swap 8 GB đỡ). Chưa còn chỗ cho runner 1 GB.
 
 ### 4.2 Quy trình dựng VM (làm một lần, rồi lặp lại cho mỗi VM)
 
@@ -156,10 +156,10 @@ Theo AGENTS.md mục 3.9: mọi file cấu hình phải có comment từng quy�
 ## 7. Rủi ro & câu hỏi cần User chốt
 
 - **Q1 (còn chặn):** thông tin node (RAM, disk, storage, bridge) cần token chỉ đọc. User tạo token `PVEAuditor` và lưu vào `infra/proxmox/.env.pve` (đã được `.gitignore` bao bởi `.env.*`), không dán vào chat.
-- **Q2 (chốt):** node có 16 GB RAM. `dev` chạy ở máy cá nhân, VM chỉ gồm staging và prod (+ LXC runner). Ngân sách: staging 4 GB, prod 6 GB, runner 1 GB, host Proxmox ~3 GB.
+- **Q2 (chốt, đã điều chỉnh 2026-10-09):** node 15.5 GB RAM. Ban đầu dev chạy ở máy cá nhân; sau đó User yêu cầu thêm VM dev. Thực tế: dev 2.5 GB, staging 3 GB, prod 5 GB (+ vpn 2 GB sẵn có) = 12.5 GB; runner 1 GB chưa dựng vì sát giới hạn.
 - **Q3 (chốt):** Ubuntu 24.04 LTS (hỗ trợ đến 2029, khớp README/runbook, cloud image chính thức cho cloud-init).
 - **Q4 (chốt):** phương án B, xem 4.6–4.7.
-- **Q5 (chốt):** dev `192.168.100.201` (dự trữ, dùng khi cần VM dev), staging `.202`, prod `.203`, runner `.204` (đề xuất), gateway `192.168.100.1`.
+- **Q5 (chốt):** dev `192.168.100.201` (**đã dựng**), staging `.202`, prod `.203`, runner `.204` (đề xuất), gateway `192.168.100.1`.
 - **Q7 (đã giải quyết: tắt VM 140, 150; dev 2.5 GB, staging 3 GB, prod 5 GB):** RAM không đủ cho kế hoạch ban đầu. Chọn một: (a) giảm `agent-hub` 6→4 GB (đang dùng ~3.5 GB), dành 2 GB; (b) staging chỉ bật khi cần (VM tắt không chiếm RAM); (c) hạ cấu hình: prod 3 GB, staging 2 GB, runner 512 MB; (d) kết hợp (b)+(c).
 - **Q6 (mới):** repo GitHub đang để private hay public? Quyết định cách VM kéo image GHCR (private cần token `read:packages`).
 - **Rủi ro:** môi trường test có thể bị xoá/cài lại, nên mọi thứ phải dựng lại được từ code. Chứng chỉ tự ký sẽ đổi nếu cài lại Proxmox, khi đó phải cập nhật fingerprint.

@@ -5,6 +5,17 @@ thuộc vào nó, cần gì khi vận hành.** Số liệu lấy từ đo thực
 lượng. Cách truy cập ở [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md); việc hằng ngày ở
 [PROXMOX_OPERATIONS.md](PROXMOX_OPERATIONS.md); dựng mới ở [PROXMOX_DEPLOY.md](PROXMOX_DEPLOY.md).
 
+## Bản đồ tài liệu: cần gì thì đọc file nào
+
+| Bạn muốn... | Đọc | Mục |
+|---|---|---|
+| Biết có những hệ thống nào, IP, cổng, cấu hình, việc còn thiếu | [SYSTEMS_INVENTORY.md](SYSTEMS_INVENTORY.md) | toàn bộ |
+| **SSH vào server**, thêm khóa, mở web dev/staging/prod, `make lan-up`, `.env` từng môi trường | [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md) | 2, 3, 4, 7 |
+| Việc hằng ngày: kiểm tra, snapshot, backup, cập nhật, xoay token, sự cố | [PROXMOX_OPERATIONS.md](PROXMOX_OPERATIONS.md) | 2-9 |
+| Dựng VM mới, Ansible, CI/CD, deploy bản mới, rollback | [PROXMOX_DEPLOY.md](PROXMOX_DEPLOY.md) | 4, 5, 7, 8 |
+| Template VM, cloud-init, tạo nhiều instance | [PROXMOX_TEMPLATES.md](PROXMOX_TEMPLATES.md) | toàn bộ |
+| Lý do thiết kế, các quyết định đã chốt | [spec](specs/proxmox-deploy.md) | 7 |
+
 > Cập nhật file này **mỗi khi** thêm/xóa VM, đổi IP, đổi cổng, đổi phiên bản lớn. Số liệu đo (RAM dùng, container) đổi theo
 > thời gian: chạy lại lệnh ở mục 9 để làm mới thay vì tin con số cũ.
 
@@ -145,7 +156,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 | 2 | **Prod chưa deploy stack**; nhánh `prod` trên VM đang là bản rất cũ | Cao | Thăng cấp `main → uat → prod` (cần bạn quyết, có `git push`), rồi `scripts/deploy.sh` |
 | 3 | **Staging/prod thiếu `IMPORT_COMMIT_SECRET`, `INTEGRATION_SECRET_KEY`** | Cao | `make env-fill` trên VM trước khi deploy |
 | 4 | Runner CI tự host và GitHub Environments/Secrets chưa tạo → workflow Deploy chưa chạy được | Trung bình | Dựng LXC `ai-ci-01`; RAM node sát giới hạn (tắt dev khi không dùng) |
-| 5 | Build images: web chưa có image; Trivy fail chưa rõ nguyên nhân | Trung bình | Chạy lại sau PR #29, đọc log chi tiết |
+| 5 | Build images: image api đã đẩy được; **web chưa có image** (job bị hủy khi Trivy của api fail); lỗi Trivy chưa rõ nguyên nhân | Trung bình | PR #29 đã thêm `fail-fast: false` + `continue-on-error`; chạy lại `Build images` và đọc log Trivy |
 | 6 | **Giám sát hạ tầng**: chưa có cảnh báo cho node/VM (RAM, thin pool, đĩa) | Trung bình | `prometheus-pve-exporter` + profile `monitoring`; tạm thời kiểm tay hằng tuần |
 | 7 | Tài liệu về **VM 100 (VPN gateway)** gần như trống (cấu hình, cách vào từ ngoài, ai chịu trách nhiệm) | Trung bình | Chủ hạ tầng bổ sung mục riêng; dự án phụ thuộc nó để truy cập từ xa |
 | 8 | Chưa kiểm chứng **SSH `root` vào node** và việc tắt mật khẩu SSH (PROXMOX_ACCESS.md mục 2) | Trung bình | Bạn thử và báo lại |
