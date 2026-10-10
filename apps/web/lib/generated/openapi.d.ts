@@ -2425,6 +2425,8 @@ export interface operations {
                 q?: string | null;
                 scheduled_on?: string | null;
                 due_before?: string | null;
+                /** @description Chỉ task tạo từ thời điểm này trở đi */
+                created_after?: string | null;
                 assignee?: string | null;
                 /** @description Gồm cả done và cancelled */
                 include_closed?: boolean;
@@ -3688,6 +3690,8 @@ export interface operations {
             query?: {
                 /** @description ISO 8601, vd. 2024-05-01 hoặc 2024-05-01T10:00:00Z */
                 since?: string | null;
+                /** @description Chỉ kéo task giao cho những người này (lặp tham số) */
+                assignee?: string[] | null;
             };
             header?: {
                 /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */

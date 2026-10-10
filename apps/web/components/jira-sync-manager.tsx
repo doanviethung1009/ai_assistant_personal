@@ -36,6 +36,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
   const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; skipped_personal?: number; error?: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<string>("30d");
+  const [syncAssignees, setSyncAssignees] = useState("");
   const [syncRange, setSyncRange] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -118,6 +119,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
     fd.append("jql", config.jql);
     fd.append("projectKey", config.projectKey || "");
     fd.append("projectName", config.projectName || "");
+    fd.append("assignees", syncAssignees);
     
     if (mode === "update" && config.lastSyncAt) {
       fd.append("since", config.lastSyncAt);
@@ -133,7 +135,8 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
 
     const response = await syncJiraAction(fd);
     setResult(response);
-    if (response.ok) {
+    // Lượt lọc theo người chỉ phủ một phần: không đặt mốc, nếu không "Cập nhật nhanh" sẽ bỏ sót người khác.
+    if (response.ok && syncAssignees.trim() === "") {
       // Ghi lại mốc đồng bộ
       saveToStorage(
         configs.map(c => (c.id === config.id ? { ...c, lastSyncAt: new Date().toISOString() } : c))
@@ -169,6 +172,21 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 
               Các kết nối đã lưu
             </h3>
+            <label className="mb-4 block text-xs font-bold text-[var(--color-ink)]">
+              Kéo theo người (tuỳ chọn)
+              <input
+                type="text"
+                maxLength={1000}
+                value={syncAssignees}
+                onChange={(e) => setSyncAssignees(e.target.value)}
+                disabled={pendingId !== null}
+                placeholder="Tên 1, Tên 2 (để trống = theo JQL của kết nối)"
+                className="mt-1.5 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <span className="mt-1 block text-[0.8125rem] font-normal text-[var(--color-ink-muted)]">
+                Tên hiển thị trên Jira, cách nhau bằng dấu phẩy. Áp dụng cho mọi nút Đồng bộ bên dưới; lọc theo người giúp lượt kéo nhỏ, tránh vượt trần dung lượng.
+              </span>
+            </label>
             <div className="grid gap-4">
               {configs.map(c => (
                 <div key={c.id} className="group flex flex-col md:flex-row md:items-center justify-between p-4 rounded-xl bg-[var(--color-surface-raised)] border border-[var(--color-border)] shadow-sm hover:border-blue-500/30 hover:shadow-md transition-all duration-300">
@@ -176,7 +194,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-bold text-[var(--color-ink)]">{c.name}</p>
                       {c.projectKey && (
-                        <span className="rounded-md bg-indigo-500/10 px-2 py-0.5 text-[10px] font-bold text-indigo-600 border border-indigo-500/20 shadow-sm flex items-center gap-1">
+                        <span className="rounded-md bg-indigo-500/10 px-2 py-0.5 text-xs font-bold text-indigo-600 border border-indigo-500/20 shadow-sm flex items-center gap-1">
                           <FolderKanban className="size-3" /> {c.projectKey}
                         </span>
                       )}
@@ -187,7 +205,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                       <span className="flex items-center gap-1"><LinkIcon className="size-3" /> {c.url.replace(/^https?:\/\//, '')}</span>
                     </p>
                     {c.lastSyncAt && (
-                      <p className="text-[10px] text-[var(--color-ink-muted)] mt-1.5 flex items-center gap-1 font-medium">
+                      <p className="text-xs text-[var(--color-ink-muted)] mt-1.5 flex items-center gap-1 font-medium">
                         <Clock className="size-3 text-emerald-500" /> Đồng bộ lần cuối: {new Date(c.lastSyncAt).toLocaleString("vi-VN")}
                       </p>
                     )}
@@ -309,7 +327,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
               <div>
                 <label className="mb-1.5 block text-xs font-bold text-[var(--color-ink)] flex items-center justify-between">
                   <span>Jira API Token</span>
-                  <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="text-[10px] text-blue-500 hover:underline font-medium">Lấy token ở đâu?</a>
+                  <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="text-xs text-blue-500 hover:underline font-medium">Lấy token ở đâu?</a>
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[var(--color-ink-muted)]">
@@ -370,7 +388,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                     />
                   </div>
                 )}
-                <p className="text-[10px] text-[var(--color-ink-muted)] mt-2 font-medium">
+                <p className="text-xs text-[var(--color-ink-muted)] mt-2 font-medium">
                   Mọi task kéo về từ cấu hình này sẽ tự động được link vào dự án bạn chọn.
                 </p>
               </div>

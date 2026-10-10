@@ -60,6 +60,7 @@ class TaskFilters:
     query: str | None = None
     scheduled_on: date | None = None
     due_before: datetime | None = None
+    created_after: datetime | None = None
     include_closed: bool = False
     view: TaskView = TaskView.ALL
     owners: list[str] = field(default_factory=list)
@@ -164,6 +165,8 @@ def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
         stmt = stmt.where(Task.scheduled_for == filters.scheduled_on)
     if filters.due_before is not None:
         stmt = stmt.where(Task.due_at.is_not(None), Task.due_at < filters.due_before)
+    if filters.created_after is not None:
+        stmt = stmt.where(Task.created_at >= filters.created_after)
     if filters.query:
         pattern = f"%{filters.query.strip()}%"
         stmt = stmt.where(

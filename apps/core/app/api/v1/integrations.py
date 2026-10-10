@@ -10,6 +10,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
+from pydantic import Field
 
 from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
 from app.schemas.common import Page
@@ -21,6 +22,9 @@ from app.schemas.integration import (
 )
 from app.services import integration_service as service
 from app.services import integration_sync_service
+
+# Tên người: không ký tự điều khiển (Jira sẽ trả 400 và log khó đọc).
+_NAME_PATTERN = r"^[^\x00-\x1f]+$"
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
@@ -104,8 +108,14 @@ async def sync_connection(
         str | None,
         Query(max_length=40, description="ISO 8601, vd. 2024-05-01 hoặc 2024-05-01T10:00:00Z"),
     ] = None,
+    assignee: Annotated[
+        list[Annotated[str, Field(min_length=1, max_length=100, pattern=_NAME_PATTERN)]] | None,
+        Query(max_length=20, description="Chỉ kéo task giao cho những người này (lặp tham số)"),
+    ] = None,
 ) -> SyncResult:
     # Cố ý KHÔNG nhận SessionDep: get_session giữ một transaction mở tới hết request, mà
     # sync gọi Jira hàng phút. Service tự mở các transaction ngắn.
     client_ip = request.client.host if request.client else None
-    return await integration_sync_service.run_sync(connection_id, since, client_ip=client_ip)
+    return await integration_sync_service.run_sync(
+        connection_id, since, client_ip=client_ip, assignees=assignee
+    )

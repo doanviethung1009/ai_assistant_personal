@@ -93,6 +93,35 @@ function runningSet(): Set<string> {
 
 class JiraTooLargeError extends Error {}
 
+/**
+ * Danh sách tên người (phân tách bằng dấu phẩy/xuống dòng), tối đa 20 tên x 100 ký tự.
+ * Trả null nếu có tên không hợp lệ: bỏ qua lặng lẽ sẽ biến lượt kéo "theo người" thành lượt
+ * kéo KHÔNG lọc, đúng thứ tính năng này sinh ra để tránh.
+ */
+function parseAssignees(raw: unknown): string[] | null {
+  if (typeof raw !== "string") return [];
+  const out: string[] = [];
+  for (const part of raw.split(/[,\n]/)) {
+    const name = part.trim();
+    if (!name) continue;
+    if (name.length > 100 || /[\u0000-\u001f]/.test(name)) return null;
+    if (!out.includes(name)) out.push(name);
+  }
+  return out.length > 20 ? null : out;
+}
+const ASSIGNEE_ERROR = "Danh sách người không hợp lệ (tối đa 20 tên, mỗi tên tối đa 100 ký tự, không ký tự điều khiển).";
+
+/**
+ * Field xin từ Jira, khớp BASE_FIELDS của backend (jira_client.py). WHY không dùng `*all`:
+ * mỗi issue kéo theo toàn bộ custom field, changelog-ish payload hàng trăm KB nên 100 issue/trang
+ * vượt trần dung lượng ("Dữ liệu Jira quá lớn") dù chỉ vài trăm task.
+ */
+const JIRA_BASE_FIELDS = [
+  "summary", "description", "status", "priority", "assignee", "project", "labels",
+  "components", "fixVersions", "issuetype", "parent", "duedate", "created", "updated", "resolutiondate",
+];
+const MAX_TAG_FIELDS = 20;
+
 /** Thông báo TỰ VIẾT theo mã trạng thái: không bao giờ chuyển tiếp body/statusText của Jira. */
 function jiraStatusMessage(status: number): string {
   if (status === 401 || status === 403) return "Xác thực thất bại (sai Email/Token hoặc thiếu quyền).";
@@ -173,6 +202,15 @@ export async function syncJiraAction(formData: FormData) {
     }
   }
   
+  // Kéo theo người: AND vào JQL hiện có (hoặc dùng riêng nếu không có JQL tuỳ chỉnh).
+  const picked = parseAssignees(formData.get("assignees"));
+  if (picked === null) return { ok: false, error: ASSIGNEE_ERROR };
+  if (picked.length > 0) {
+    const base = (customJql && customJql.trim() !== "" ? jql : "").replace(/\s+order\s+by[\s\S]*$/i, "").trim();
+    const cond = `assignee in (${picked.map((n) => jqlQuote(n)).join(", ")})`;
+    jql = `${base ? `(${base}) AND ` : ""}${cond} ORDER BY updated DESC`;
+  }
+
   // Chế độ cập nhật nhanh: chỉ lấy issue thay đổi từ lần đồng bộ trước (JQL tương đối, không lệch múi giờ)
   const since = formData.get("since") as string | null;
   if (since) {
@@ -199,6 +237,32 @@ export async function syncJiraAction(formData: FormData) {
     const authHeader = `Basic ${Buffer.from(`${email.trim()}:${token.trim()}`).toString('base64')}`;
     
     let allIssues: any[] = [];
+    // Custom field Company/Team/... (nhận diện theo tên) để vẫn gắn tag/dự án mà không cần `*all`.
+    const tagFieldIds: string[] = [];
+    // Lấy danh sách field lỗi => quay về `*all` cho lượt này, để không mất tag/dự án từ custom field
+    // (nhánh update sẽ gán lại project_id theo fields.project nếu không thấy custom field).
+    let fieldListOk = false;
+    try {
+      const fres = await fetch(`${baseUrl}/rest/api/3/field`, {
+        headers: { "Authorization": authHeader, "Accept": "application/json" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(JIRA_FETCH_TIMEOUT_MS),
+      });
+      if (fres.ok) {
+        const list = await readJsonCapped(fres, { used: 0 });
+        fieldListOk = true;
+        for (const f of Array.isArray(list) ? list : []) {
+          if (tagFieldIds.length >= MAX_TAG_FIELDS) break;
+          if (typeof f?.id === "string" && f.id.startsWith("customfield_") && typeof f?.name === "string" && CUSTOM_TAG_FIELD.test(f.name)) {
+            tagFieldIds.push(f.id);
+          }
+        }
+      } else {
+        void fres.body?.cancel().catch(() => undefined);
+      }
+    } catch {
+      // Không lấy được danh sách field thì chỉ mất tag từ custom field, vẫn đồng bộ tiếp.
+    }
     // Không prototype: khoá "__proto__" từ Jira không thể làm bẩn prototype.
     const fieldNames: Record<string, string> = Object.create(null);
     let nextPageToken: string | undefined = undefined;
@@ -212,8 +276,7 @@ export async function syncJiraAction(formData: FormData) {
       const body: any = {
         jql: jql,
         maxResults: 100, // Tối ưu: Lấy 100 kết quả mỗi trang thay vì 50
-        // *all + expand names: lấy cả custom field (Company/Group/Team...) và tên hiển thị của chúng để tự nhận diện
-        fields: ["*all"],
+        fields: fieldListOk ? [...JIRA_BASE_FIELDS, ...tagFieldIds] : ["*all"],
         expand: "names"
       };
       
@@ -716,7 +779,7 @@ function syncError(error: unknown): SyncActionResult {
  * (YYYY-MM-DD hoặc ISO) để thu hẹp khi JQL quá rộng (chạm trần 100 trang). Có thể kéo dài hàng
  * phút nên UI phải khoá nút khi đang chạy.
  */
-export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown): Promise<SyncActionResult> {
+export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown, assignees?: unknown): Promise<SyncActionResult> {
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
   if (typeof secret !== "string" || !SECRET_RE.test(secret)) {
@@ -730,7 +793,9 @@ export async function syncIntegrationAction(id: unknown, secret: unknown, since?
     sinceValue = since;
   }
   try {
-    const result = await syncIntegration(id, secret, sinceValue);
+    const picked = parseAssignees(assignees);
+    if (picked === null) return { ok: false, error: ASSIGNEE_ERROR };
+    const result = await syncIntegration(id, secret, sinceValue, picked);
     revalidatePath("/data");
     revalidatePath("/", "layout");
     return { ok: true, result };

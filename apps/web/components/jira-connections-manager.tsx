@@ -39,6 +39,7 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
   const [open, setOpen] = useState(false);
   const [secret, setSecret] = useState("");
   const [since, setSince] = useState("");
+  const [assignees, setAssignees] = useState("");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needToken, setNeedToken] = useState(false);
@@ -55,7 +56,7 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
     setNeedToken(false);
     setRunning(true);
     try {
-      const res = await syncIntegrationAction(connection.id, sent, since || undefined);
+      const res = await syncIntegrationAction(connection.id, sent, since || undefined, assignees);
       if (res.ok) {
         setResult(res.result);
         router.refresh(); // cập nhật last_sync_at hiển thị
@@ -83,10 +84,10 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
         {running ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
         {running ? "Đang cào..." : "Cào ngay"}
       </button>
-      {blocked && <p className="mt-1 text-[11px] text-amber-600">Chưa có token. Bấm biểu tượng Sửa và nhập token để cào.</p>}
+      {blocked && <p className="mt-1 text-[0.8125rem] text-amber-600">Chưa có token. Bấm biểu tượng Sửa và nhập token để cào.</p>}
       {open && !blocked && (
         <form onSubmit={run} className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-          <label className="text-[11px] font-bold">
+          <label className="text-[0.8125rem] font-bold">
             Mật khẩu nhập/đồng bộ
             <input
               className={`${INPUT} mt-1 w-56 font-normal`}
@@ -99,14 +100,26 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
               disabled={running}
             />
           </label>
-          <label className="text-[11px] font-bold">
+          <label className="text-[0.8125rem] font-bold">
             Từ ngày (tuỳ chọn)
             <input className={`${INPUT} mt-1 w-44 font-normal`} type="date" value={since} onChange={(e) => setSince(e.target.value)} disabled={running} />
+          </label>
+          <label className="text-[0.8125rem] font-bold">
+            Theo người (tuỳ chọn)
+            <input
+              className={`${INPUT} mt-1 w-64 font-normal`}
+              type="text"
+              maxLength={1000}
+              value={assignees}
+              onChange={(e) => setAssignees(e.target.value)}
+              placeholder="Tên 1, Tên 2 (để trống = tất cả)"
+              disabled={running}
+            />
           </label>
           <button type="submit" disabled={running || secret.length === 0} className="rounded-lg bg-[var(--color-ink)] px-4 py-2 text-xs font-bold text-[var(--color-surface)] hover:opacity-90 disabled:opacity-50">
             {running ? "Đang chạy..." : "Bắt đầu"}
           </button>
-          <p className="basis-full text-[11px] text-[var(--color-ink-muted)]">
+          <p className="basis-full text-[0.8125rem] text-[var(--color-ink-muted)]">
             Có thể mất vài phút với JQL rộng (tối đa 100 trang). Đừng đóng trang khi đang chạy.
           </p>
         </form>
@@ -390,7 +403,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
             {leftovers.map((l) => (
               <li key={l.id} className="flex items-center justify-between gap-2 py-0.5">
                 <span>{l.name} · {l.url.replace(/^https?:\/\//, "")} · {l.email}</span>
-                <button type="button" onClick={() => handleDiscard(l.id)} disabled={pending} className="shrink-0 rounded border border-[var(--color-border)] px-2 py-0.5 text-[11px] hover:bg-[var(--color-surface-hover)] disabled:opacity-50">
+                <button type="button" onClick={() => handleDiscard(l.id)} disabled={pending} className="shrink-0 rounded border border-[var(--color-border)] px-2 py-0.5 text-[0.8125rem] hover:bg-[var(--color-surface-hover)] disabled:opacity-50">
                   Bỏ khỏi trình duyệt
                 </button>
               </li>
@@ -404,7 +417,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
           >
             <UploadCloud className="size-4" /> Chuyển các kết nối này lên server
           </button>
-          <p className="mt-2 text-[11px] text-[var(--color-ink-muted)]">
+          <p className="mt-2 text-[0.8125rem] text-[var(--color-ink-muted)]">
             Gửi một lần; chỉ mục nào server tạo thành công mới bị xoá khỏi trình duyệt.
           </p>
         </div>
@@ -462,7 +475,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
             <label className="text-xs font-bold">
               URL Jira
               <input className={`${INPUT} mt-1.5 font-normal`} required type="url" maxLength={2048} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://yourdomain.atlassian.net" />
-              <span className="mt-1 block text-[11px] font-normal text-[var(--color-ink-muted)]">{JIRA_URL_HINT}</span>
+              <span className="mt-1 block text-[0.8125rem] font-normal text-[var(--color-ink-muted)]">{JIRA_URL_HINT}</span>
             </label>
             <label className="text-xs font-bold">
               Email đăng nhập
@@ -471,7 +484,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
             <label className="text-xs font-bold">
               <span className="flex items-center justify-between">
                 Jira API Token
-                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="text-[10px] font-medium text-blue-500 hover:underline">Lấy token ở đâu?</a>
+                <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" rel="noreferrer" className="text-xs font-medium text-blue-500 hover:underline">Lấy token ở đâu?</a>
               </span>
               <input
                 className={`${INPUT} mt-1.5 font-normal`}

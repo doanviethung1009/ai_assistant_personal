@@ -318,7 +318,11 @@ def _ordered(messages: list[SyncMessage], overflow: int, what: str) -> list[Sync
 
 
 async def run_sync(
-    connection_id: uuid.UUID, since: str | None = None, *, client_ip: str | None = None
+    connection_id: uuid.UUID,
+    since: str | None = None,
+    *,
+    client_ip: str | None = None,
+    assignees: list[str] | None = None,
 ) -> SyncResult:
     """Đồng bộ một kết nối Jira. Xem docstring module về giao dịch và khoá.
 
@@ -337,7 +341,7 @@ async def run_sync(
     since_minutes: int | None = None
     try:
         since_minutes = jira_client.parse_since(since)
-        return await _run(connection_id, since_minutes, client, started)
+        return await _run(connection_id, since_minutes, client, started, assignees)
     except asyncio.CancelledError:
         _audit(
             "cancelled",
@@ -361,7 +365,11 @@ async def run_sync(
 
 
 async def _run(
-    connection_id: uuid.UUID, since_minutes: int | None, client_ip: str, started: float
+    connection_id: uuid.UUID,
+    since_minutes: int | None,
+    client_ip: str,
+    started: float,
+    assignees: list[str] | None = None,
 ) -> SyncResult:
     snapshot, users = await _load(connection_id)
     if snapshot.ciphertext is None:
@@ -369,12 +377,18 @@ async def _run(
             "Kết nối chưa có API token. Mở kết nối, nhập token (PATCH /integrations/{id}) "
             "rồi đồng bộ lại."
         )
-    jql = jira_client.build_jql(snapshot.jql, users, since_minutes)
+    jql = jira_client.build_jql(snapshot.jql, users, since_minutes, assignees)
     host = snapshot.base_url.removeprefix("https://").rstrip("/")
     progress = _Progress()
 
     async with _exclusive(connection_id):
-        _audit("start", connection_id, client=client_ip, since_minutes=since_minutes)
+        _audit(
+            "start",
+            connection_id,
+            client=client_ip,
+            since_minutes=since_minutes,
+            assignee_count=len(assignees or []),
+        )
         # Giải mã ngay trước khi dùng; lỗi khoá thì 503 "nhập lại token", không crash.
         token = decrypt_token(
             snapshot.ciphertext, connection_id=snapshot.id, base_url=snapshot.base_url
@@ -459,6 +473,11 @@ async def _run(
                         "mốc last_sync_at KHÔNG được cập nhật."
                     )
                 )
+            )
+        elif assignees:
+            # Lượt lọc theo người chỉ phủ một phần: không được coi là mốc "đã đồng bộ hết".
+            progress.warn(
+                SyncMessage(reason="Lượt kéo theo người: last_sync_at KHÔNG được cập nhật.")
             )
         else:
             await _mark_synced(connection_id)

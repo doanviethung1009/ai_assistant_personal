@@ -1,5 +1,5 @@
 import { ApiErrorPanel } from "@/components/api-error";
-import { JiraQuickSync } from "@/components/jira-quick-sync";
+import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { StatsStrip } from "@/components/stats-strip";
 import { TaskSection } from "@/components/task-section";
@@ -37,7 +37,7 @@ export default async function TodayPage() {
     agenda.in_progress.length === 0;
 
   return (
-    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+    <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
       <div className="flex items-start justify-between relative">
         <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-emerald-500 rounded-lg blur opacity-10 pointer-events-none"></div>
         <div className="relative">
@@ -52,8 +52,8 @@ export default async function TodayPage() {
           </p>
         </div>
         <div className="relative z-10">
-          {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
-          {IS_LOCAL && <JiraQuickSync />}
+          {/* Chế độ file: đồng bộ tại chỗ; chế độ api: liên kết sang trang Dữ liệu (nút Cào ngay). */}
+          {IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}
         </div>
       </div>
 

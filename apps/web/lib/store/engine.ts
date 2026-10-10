@@ -871,6 +871,8 @@ export interface ListOptions {
   projectId?: string;
   query?: string;
   includeClosed?: boolean;
+  /** ISO datetime: chỉ task tạo từ thời điểm này trở đi. */
+  createdAfter?: string;
   limit?: number;
   offset?: number;
   assignee?: string | null;
@@ -901,6 +903,11 @@ export function listTasks(options: ListOptions = {}): Paged<Task> {
   }
   if (options.assignee) {
     result = result.filter((t) => t.assignee === options.assignee);
+  }
+
+  if (options.createdAfter) {
+    const since = Date.parse(options.createdAfter);
+    result = result.filter((t) => Date.parse(t.created_at) >= since);
   }
 
   if (options.query) {

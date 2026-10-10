@@ -980,9 +980,17 @@ export async function deleteIntegration(id: string): Promise<void> {
  * Không đặt timeout ngắn: core có trần 5 phút cho một lượt sync. Ở đây dùng 6 phút để
  * core là bên tự cắt trước và trả 504 có thông báo rõ.
  */
-export async function syncIntegration(id: string, secret: string, since?: string): Promise<IntegrationSyncResult> {
+export async function syncIntegration(
+  id: string,
+  secret: string,
+  since?: string,
+  assignees: string[] = [],
+): Promise<IntegrationSyncResult> {
   requireApiMode();
-  const query = since ? `?since=${encodeURIComponent(since)}` : "";
+  const params = new URLSearchParams();
+  if (since) params.set("since", since);
+  for (const name of assignees) params.append("assignee", name);
+  const query = params.size > 0 ? `?${params.toString()}` : "";
   return coreFetch<IntegrationSyncResult>(`/api/v1/integrations/${pathId(id)}/sync${query}`, {
     method: "POST",
     headers: { "X-Import-Secret": secret },

@@ -228,6 +228,9 @@ async def list_tasks(
     ] = None,
     scheduled_on: Annotated[date | None, Query()] = None,
     due_before: Annotated[datetime | None, Query()] = None,
+    created_after: Annotated[
+        datetime | None, Query(description="Chỉ task tạo từ thời điểm này trở đi")
+    ] = None,
     assignee: Annotated[str | None, Query()] = None,
     include_closed: Annotated[bool, Query(description="Gồm cả done và cancelled")] = False,
     view: ViewQuery = TaskView.ALL,
@@ -250,6 +253,7 @@ async def list_tasks(
         query=q,
         scheduled_on=scheduled_on,
         due_before=due_before,
+        created_after=created_after,
         include_closed=include_closed,
         limit=limit,
         offset=offset,

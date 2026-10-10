@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { JiraQuickSync } from "@/components/jira-quick-sync";
+import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
 
 import { ApiErrorPanel } from "@/components/api-error";
 import { QuickAddForm } from "@/components/quick-add-form";
@@ -26,6 +26,7 @@ interface SearchParams {
   q?: string;
   status?: string;
   closed?: string;
+  range?: string;
   page?: string;
   size?: string;
 }
@@ -40,6 +41,15 @@ function parseStatuses(raw: string | undefined): TaskStatus[] | undefined {
   return values.length > 0 ? values : undefined;
 }
 
+/** Khoảng thời gian tạo task: khoá URL → số ngày. 1 tháng = 30 ngày, 3 tháng = 90 ngày. */
+const RANGES: { value: string; label: string; days: number }[] = [
+  { value: "1d", label: "1 ngày", days: 1 },
+  { value: "3d", label: "3 ngày", days: 3 },
+  { value: "7d", label: "7 ngày", days: 7 },
+  { value: "1m", label: "1 tháng", days: 30 },
+  { value: "3m", label: "3 tháng", days: 90 },
+];
+
 export default async function TasksPage({
   searchParams,
 }: {
@@ -50,6 +60,10 @@ export default async function TasksPage({
   const view = parseView(params.view);
   const includeClosed = params.closed === "1";
   const statuses = parseStatuses(params.status);
+  const range = RANGES.find((r) => r.value === params.range);
+  const createdAfter = range
+    ? new Date(Date.now() - range.days * 86_400_000).toISOString()
+    : undefined;
   const page = Math.max(1, Number.parseInt(params.page ?? "1", 10) || 1);
   const PAGE_SIZE = Math.max(10, Math.min(1000, Number.parseInt(params.size ?? "50", 10) || 50));
 
@@ -65,6 +79,7 @@ export default async function TasksPage({
         view,
         status: statuses,
         includeClosed,
+        createdAfter,
         limit: PAGE_SIZE,
         offset: (page - 1) * PAGE_SIZE,
         sortBy: "created_at",
@@ -84,7 +99,7 @@ export default async function TasksPage({
   const totalPages = Math.max(1, Math.ceil(result.total / PAGE_SIZE));
 
   return (
-    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+    <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
       <div className="flex items-start justify-between relative">
         <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-indigo-500 rounded-lg blur opacity-10 pointer-events-none"></div>
         <div className="relative">
@@ -99,8 +114,8 @@ export default async function TasksPage({
           </p>
         </div>
         <div className="relative z-10">
-          {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
-          {IS_LOCAL && <JiraQuickSync />}
+          {/* Chế độ file: đồng bộ tại chỗ; chế độ api: liên kết sang trang Dữ liệu (nút Cào ngay). */}
+          {IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}
         </div>
       </div>
 
@@ -174,6 +189,28 @@ export default async function TasksPage({
             ).map((status) => (
               <option key={status} value={status}>
                 {STATUS_LABELS[status]}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor="filter-range"
+            className="mb-1 block text-xs font-medium text-[var(--color-ink-muted)]"
+          >
+            Tạo trong
+          </label>
+          <select
+            id="filter-range"
+            name="range"
+            defaultValue={range?.value ?? ""}
+            className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm"
+          >
+            <option value="">Tất cả thời gian</option>
+            {RANGES.map((r) => (
+              <option key={r.value} value={r.value}>
+                {r.label} gần đây
               </option>
             ))}
           </select>
@@ -264,6 +301,7 @@ function viewHref(view: TaskView, params: SearchParams): string {
   if (params.q) query.set("q", params.q);
   if (params.status) query.set("status", params.status);
   if (params.closed) query.set("closed", params.closed);
+  if (params.range) query.set("range", params.range);
   if (params.size) query.set("size", params.size);
   return `/tasks?${query.toString()}`;
 }
@@ -292,6 +330,7 @@ function PageLink({
   if (params.q) query.set("q", params.q);
   if (params.status) query.set("status", params.status);
   if (params.closed) query.set("closed", params.closed);
+  if (params.range) query.set("range", params.range);
   if (params.size) query.set("size", params.size);
   query.set("page", String(page));
 

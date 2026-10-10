@@ -406,3 +406,10 @@ Nằm ở tab **Vùng nguy hiểm** của trang **Dữ liệu** ("Danger Zone"),
 - Nếu bạn lỡ tay xóa nhầm, chỉ cần lấy file backup đó và tải lên ở khung **Khôi phục dữ liệu từ Backup (JSON)** (Màu cam) là mọi thứ sẽ phục hồi nguyên trạng 100%.
 
 > **Lưu ý khi dùng nguồn dữ liệu Core API (Postgres):** các phần Nhập file Excel, Khôi phục bản sao lưu và Jira chỉ chạy ở chế độ file/memory (Nhập JSON vào Postgres có panel riêng; Người dùng hiện tại và URL đồng bộ dùng được ở cả hai chế độ, URL chỉ nhận link Google/SharePoint/OneDrive). Ở chế độ Core API trang sẽ hiện thông báo thay vì cho bấm rồi từ chối.
+
+## Kéo dữ liệu Jira theo người (cập nhật 2026-10-09)
+
+- Trang **Dữ liệu**, mục Jira: ô **"Theo người"** (chế độ api: trong form "Cào ngay"; chế độ file: phía trên danh sách kết nối). Nhập tên hiển thị Jira, cách nhau dấu phẩy. Để trống = hành vi cũ (theo JQL/Tên người dùng).
+- Có JQL ở kết nối thì tên được **AND** vào JQL đó; không có JQL thì chỉ lọc theo các tên đã nhập.
+- **Sửa lỗi "Dữ liệu Jira quá lớn (vượt trần)" ở chế độ file:** trước đây xin `*all` (mọi custom field) nên vài trăm issue đã vượt trần; nay chỉ xin các field cần thiết như backend. Nếu vẫn chạm trần, lọc theo người hoặc dùng "Từ ngày".
+- File chính: `apps/web/app/jira-actions.ts`, `apps/core/app/services/jira_client.py` (`build_jql`).

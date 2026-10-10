@@ -726,3 +726,18 @@ def test_issue_with_missing_optional_fields_maps_without_crashing() -> None:
     item = map_issue({"key": "DBA-1", "fields": {}}, base_url=BASE, field_names={})
     assert item.title == "No Title" and item.tags == ["jira"]
     assert map_issue({"key": "DBA-2"}, base_url=BASE, field_names={}).external_id == "DBA-2"
+
+
+def test_build_jql_assignees_and_with_config_jql() -> None:
+    jql = build_jql("project = DBA ORDER BY created ASC", ["me"], None, ["An", 'B"x'])
+    assert jql == '(project = DBA) AND assignee in ("An", "B\\"x") ORDER BY updated DESC'
+
+
+def test_build_jql_assignees_alone_ignore_current_users() -> None:
+    assert build_jql(None, [], None, ["An"]) == 'assignee in ("An") ORDER BY updated DESC'
+    assert build_jql(None, ["me"], None, ["An"]) == 'assignee in ("An") ORDER BY updated DESC'
+
+
+def test_build_jql_assignees_with_since() -> None:
+    jql = build_jql(None, [], 10, ["An"])
+    assert jql.startswith('(assignee in ("An")) AND updated >= -10m')

@@ -106,7 +106,12 @@ def jql_string(value: str) -> str:
 _ORDER_BY_RE = re.compile(r"(?:^|\s+)order\s+by[\s\S]*$", re.IGNORECASE)
 
 
-def build_jql(config_jql: str | None, current_users: list[str], since_minutes: int | None) -> str:
+def build_jql(
+    config_jql: str | None,
+    current_users: list[str],
+    since_minutes: int | None,
+    assignees: list[str] | None = None,
+) -> str:
     """JQL cuối cùng cho lần sync.
 
     - `config_jql` có: dùng nguyên (do chủ kết nối tự viết); nếu chỉ là danh sách mã dự án
@@ -114,10 +119,14 @@ def build_jql(config_jql: str | None, current_users: list[str], since_minutes: i
       web.
     - Không có: `assignee in (...)` theo `current_users` (B2). Cả hai rỗng thì LỖI, không
       bao giờ chạy truy vấn toàn Jira.
+    - `assignees`: kéo theo người. Thêm `AND assignee in (...)` vào JQL của kết nối (hoặc dùng
+      riêng nó nếu kết nối không có JQL, khi đó bỏ qua `current_users`). WHY: một JQL rộng
+      trả hàng chục MB và chạm trần dung lượng; lọc theo người thu nhỏ lượt kéo.
     - `since_minutes`: thêm `updated >= -Nm`, N là SỐ NGUYÊN do server tính; không có chuỗi
       nào từ client được nối vào JQL.
     """
     jql = (config_jql or "").strip()
+    picked = [a.strip() for a in (assignees or []) if a and a.strip()]
     if jql:
         lowered = jql.lower()
         if "=" not in jql and " in " not in lowered and " is " not in lowered and "~" not in jql:
@@ -125,6 +134,8 @@ def build_jql(config_jql: str | None, current_users: list[str], since_minutes: i
             if not keys:
                 raise ValidationError("JQL của kết nối không hợp lệ")
             jql = f"project in ({', '.join(jql_string(k) for k in keys)}) ORDER BY updated DESC"
+    elif picked:
+        jql = ""
     elif current_users:
         names = ", ".join(jql_string(n) for n in current_users)
         jql = f"assignee in ({names}) ORDER BY updated DESC"
@@ -133,6 +144,12 @@ def build_jql(config_jql: str | None, current_users: list[str], since_minutes: i
             "Kết nối chưa có JQL và chưa đặt 'Tên người dùng' (current_users) trong cài đặt, "
             "nên không có điều kiện lọc. Nhập JQL cho kết nối hoặc đặt tên người dùng."
         )
+    if picked:
+        names = ", ".join(jql_string(n) for n in picked)
+        base = _ORDER_BY_RE.sub("", jql).strip()
+        cond = f"assignee in ({names})"
+        jql = f"({base}) AND {cond}" if base else cond
+        jql += " ORDER BY updated DESC"
     if since_minutes is not None:
         base = _ORDER_BY_RE.sub("", jql).strip()
         window = f"updated >= -{int(since_minutes)}m"
