@@ -415,6 +415,30 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "proxmox-deploy.md"),
   },
   {
+    slug: "google-oauth-setup",
+    title: "Cấu hình Google OAuth Client",
+    description:
+      "Tạo OAuth client trên Google Cloud, redirect URI cho local/staging/prod, biến môi trường Auth.js, lỗi thường gặp khi đăng nhập Google.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "GOOGLE_OAUTH_SETUP.md"),
+  },
+  {
+    slug: "staging-domain-https",
+    title: "Domain và HTTPS cho đăng nhập Google",
+    description:
+      "Vì sao Google từ chối IP/http, các phương án cá nhân (mua domain, Tailscale, SSH tunnel) và cách dùng domain công ty, chứng chỉ DNS-01, mẫu Caddy.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "STAGING_DOMAIN_HTTPS.md"),
+  },
+  {
+    slug: "spec-auth-multiuser",
+    title: "Spec (DRAFT): Đăng nhập Google và đa người dùng",
+    description:
+      "Google OIDC, bảng users, role admin/lead/member, dữ liệu task theo user đăng nhập, quản trị user, flow dev/staging, threat model và câu hỏi chờ chốt.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "auth-multiuser.md"),
+  },
+  {
     slug: "spec-user-timezone",
     title: "Spec: Múi giờ chọn được và sửa quá hạn Jira",
     description:
