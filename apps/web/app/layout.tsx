@@ -36,10 +36,10 @@ export default async function RootLayout({
         </a>
 
         {/* ── Sidebar Desktop ────────────────────────────────────────── */}
-        <aside className="hidden w-[300px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-raised)]/30 sm:flex">
+        <aside className="hidden w-[272px] shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-raised)]/30 sm:flex">
           <div className="flex h-[68px] shrink-0 items-center border-b border-[var(--color-border)] px-5">
             <div>
-              <p className="text-base font-semibold tracking-tight text-[var(--color-ink)]">
+              <p className="text-sm font-semibold tracking-tight text-[var(--color-ink)]">
                 Builder AI Assistant
               </p>
               <p className="text-xs text-[var(--color-ink-muted)]">

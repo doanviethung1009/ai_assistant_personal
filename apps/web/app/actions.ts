@@ -2,6 +2,7 @@
 
 import * as api from "@/lib/api";
 import { revalidatePath } from "next/cache";
+import { invalidateCoreCache } from "@/lib/core-cache";
 
 import {
   CoreApiError,
@@ -42,6 +43,7 @@ export interface ActionResult {
 }
 
 function revalidateAll(): void {
+  invalidateCoreCache();
   revalidatePath("/");
   revalidatePath("/tasks");
   revalidatePath("/team");

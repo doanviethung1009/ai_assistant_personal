@@ -56,49 +56,61 @@ export default async function DataPage({
   let projectCount: number;
   let noteCount: number;
   let projectList: Awaited<ReturnType<typeof listProjects>> = [];
-  let syncUrls: string[];
-  let currentUsers: string[];
-  let assignees: string[];
+  let syncUrls: string[] = [];
+  let currentUsers: string[] = [];
+  let assignees: string[] = [];
   let connections: IntegrationConnection[] = [];
   let connectionsTotal = 0;
   let connectionsError: string | null = null;
-
-  // Múi giờ chỉ cần ở tab đồng bộ. Danh mục lỗi không được làm sập trang: ô nhập vẫn gõ tay được.
-  const { timezone, default: tzDefault, source: tzSource } = await getDisplayTimezoneApi();
+  let timezone = "";
+  let tzDefault = "";
+  let tzSource: Awaited<ReturnType<typeof getDisplayTimezoneApi>>["source"] = "default";
   let timezoneOptions: TimezoneOption[] = [];
-  if (tab === "dong-bo") {
-    timezoneOptions = await listTimezonesApi()
-      .then((list) => list.items)
-      .catch(() => []);
-  }
 
+  // Mỗi tab là một lần render server, nên chỉ gọi API mà tab đó dùng: trước đây
+  // mỗi cú bấm tab bắn 8 request (kể cả khi chỉ ở tab Xuất), dễ chạm rate limit.
+  // Ba số đếm luôn cần vì DataSourceCard hiện ở mọi tab.
+  const needSync = tab === "dong-bo";
   try {
-    const [tasks, projects, notes, urls, users, assigneeList, integrationPage] = await Promise.all([
+    const [tasks, projects, notes] = await Promise.all([
       listTasks({ includeClosed: true, limit: 1 }),
       listProjects(true),
       listNotes({ limit: 1 }),
-      getSyncUrlsApi(),
-      getCurrentUsersApi(),
-      getAssigneesApi(),
-      // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
-      IS_LOCAL
-        ? Promise.resolve(null)
-        : listIntegrations().catch((error: unknown) => {
-            connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
-            return null;
-          }),
     ]);
-    if (integrationPage) {
-      connections = integrationPage.items;
-      connectionsTotal = integrationPage.total;
-    }
     taskCount = tasks.total;
     projectCount = projects.length;
     projectList = projects.filter((p) => !p.is_archived);
     noteCount = notes.total;
-    syncUrls = urls;
-    currentUsers = users;
-    assignees = assigneeList;
+
+    if (needSync || tab === "nguy-hiem") {
+      assignees = await getAssigneesApi();
+    }
+    if (needSync) {
+      // Danh mục múi giờ lỗi không được làm sập trang: ô nhập vẫn gõ tay được.
+      const [urls, users, tz, tzList, integrationPage] = await Promise.all([
+        getSyncUrlsApi(),
+        getCurrentUsersApi(),
+        getDisplayTimezoneApi(),
+        listTimezonesApi()
+          .then((list) => list.items)
+          .catch(() => [] as TimezoneOption[]),
+        // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
+        IS_LOCAL
+          ? Promise.resolve(null)
+          : listIntegrations().catch((error: unknown) => {
+              connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
+              return null;
+            }),
+      ]);
+      syncUrls = urls;
+      currentUsers = users;
+      ({ timezone, default: tzDefault, source: tzSource } = tz);
+      timezoneOptions = tzList;
+      if (integrationPage) {
+        connections = integrationPage.items;
+        connectionsTotal = integrationPage.total;
+      }
+    }
   } catch (error) {
     return (
       <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />

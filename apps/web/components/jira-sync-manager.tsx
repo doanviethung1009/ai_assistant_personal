@@ -33,10 +33,11 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
   const [projectKey, setProjectKey] = useState("");
   const [projectName, setProjectName] = useState("");
 
-  const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; skipped_personal?: number; error?: string } | null>(null);
+  const [result, setResult] = useState<{ ok: boolean; added?: number; updated?: number; skipped_personal?: number; project_fields?: string[]; project_from_field?: number; error?: string } | null>(null);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [pendingMode, setPendingMode] = useState<string>("30d");
   const [syncAssignees, setSyncAssignees] = useState("");
+  const [syncRole, setSyncRole] = useState<"both" | "assignee" | "reporter">("both");
   const [syncRange, setSyncRange] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -120,6 +121,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
     fd.append("projectKey", config.projectKey || "");
     fd.append("projectName", config.projectName || "");
     fd.append("assignees", syncAssignees);
+    fd.append("people_role", syncRole);
     
     if (mode === "update" && config.lastSyncAt) {
       fd.append("since", config.lastSyncAt);
@@ -184,8 +186,21 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                 className="mt-1.5 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               />
               <span className="mt-1 block text-[0.8125rem] font-normal text-[var(--color-ink-muted)]">
-                Tên hiển thị trên Jira, cách nhau bằng dấu phẩy. Áp dụng cho mọi nút Đồng bộ bên dưới; lọc theo người giúp lượt kéo nhỏ, tránh vượt trần dung lượng.
+                Tên hiển thị trên Jira, cách nhau bằng dấu phẩy. Lọc theo người KẾT HỢP (AND) với JQL của kết nối. Áp dụng cho mọi nút Đồng bộ bên dưới; lọc theo người giúp lượt kéo nhỏ, tránh vượt trần dung lượng.
               </span>
+            </label>
+            <label className="mb-4 block text-sm font-bold">
+              Vai trò
+              <select
+                value={syncRole}
+                onChange={(e) => setSyncRole(e.target.value as "both" | "assignee" | "reporter")}
+                disabled={pendingId !== null}
+                className="mt-1.5 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-normal focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              >
+                <option value="both">Được giao hoặc báo cáo</option>
+                <option value="assignee">Chỉ người được giao</option>
+                <option value="reporter">Chỉ người báo cáo</option>
+              </select>
             </label>
             <div className="grid gap-4">
               {configs.map(c => (
@@ -443,6 +458,14 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                   ? `Hệ thống đã kéo về và tự động tạo mới ${result.added} task, cập nhật lại ${result.updated} task.` +
                     (result.skipped_personal
                       ? ` Bỏ qua ${result.skipped_personal} task cá nhân (đã tách khỏi đồng bộ).`
+                      : "") +
+                    (result.project_from_field === 0
+                      ? " CẢNH BÁO: Jira không trả giá trị Company/Team nào nên task giữ project cũ (hoặc project của Jira nếu mới tạo)."
+                      : result.project_from_field
+                        ? ` Project theo custom field cho ${result.project_from_field} issue.`
+                        : "") +
+                    (result.project_fields?.length
+                      ? ` Field phân nhóm: ${result.project_fields.slice(0, 8).join(", ")}${result.project_fields.length > 8 ? "…" : ""}.`
                       : "")
                   : result.error}
               </p>

@@ -5,6 +5,7 @@ import { cache } from "react";
 import { isValidTimezone, tzOffsetMinutes } from "./format";
 import * as engine from "./store/engine";
 import { ensureLoaded } from "./store/json-file";
+import { cachedGet, invalidateCoreCache } from "./core-cache";
 import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
@@ -116,7 +117,54 @@ async function local<T>(run: () => T): Promise<T> {
 
 // ── Đường mạng: core API ───────────────────────────────────────────────
 
+// Đường không được cache: trạng thái đồng bộ phải luôn mới.
+const UNCACHED_PREFIXES = ["/api/v1/integrations"];
+
+// Múi giờ hiển thị được layout đọc ở MỌI trang (kể cả trang tĩnh như docs, kiến trúc) mà hiếm khi
+// đổi. Giữ lâu hơn TTL mặc định để các trang đó không gọi core mỗi 10 giây; đổi múi giờ qua web
+// vẫn có hiệu lực ngay vì mọi mutation xoá cache.
+const SLOW_TTL_PATHS = new Set(["/api/v1/settings/display-timezone"]);
+const SLOW_TTL_MS = 5 * 60_000;
+
+/**
+ * GET được cache ngắn hạn và gộp lời gọi đồng thời (lib/core-cache.ts); mọi lời gọi ghi xoá cache.
+ * Phần gọi mạng thật nằm ở coreFetchRaw.
+ */
 async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  if (method !== "GET") {
+    try {
+      return await coreFetchRaw<T>(path, init);
+    } finally {
+      invalidateCoreCache();
+    }
+  }
+  // Request gắn danh tính người dùng (Bearer) trả dữ liệu theo người: cấm cache dùng chung (core-cache.ts).
+  const perUser = new Headers(init?.headers).has("Authorization");
+  if (perUser || UNCACHED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
+    return coreFetchRaw<T>(path, init);
+  }
+  return cachedGet(path, () => coreFetchRaw<T>(path, init), SLOW_TTL_PATHS.has(path) ? SLOW_TTL_MS : undefined);
+}
+
+/** Chỉ thử lại khi core bảo chờ không quá ngần này: cửa sổ rate limit là 60s nên chờ lâu hơn là vô ích. */
+const RETRY_429_MAX_WAIT_MS = 3_000;
+
+/**
+ * Thử lại tối đa MỘT lần khi core trả 429 và cửa sổ sắp mở lại (Retry-After ngắn). Không thử lại
+ * POST: 429 hiện đến từ middleware trước handler nên an toàn, nhưng đừng giả định mãi như vậy.
+ */
+async function fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  const response = await fetch(url, init);
+  if (response.status !== 429 || (init.method ?? "GET").toUpperCase() === "POST") return response;
+  const waitMs = Number(response.headers.get("Retry-After")) * 1000;
+  if (!Number.isFinite(waitMs) || waitMs <= 0 || waitMs > RETRY_429_MAX_WAIT_MS) return response;
+  await response.body?.cancel();
+  await new Promise((resolve) => setTimeout(resolve, waitMs));
+  return fetch(url, init);
+}
+
+async function coreFetchRaw<T>(path: string, init?: RequestInit): Promise<T> {
   if (!API_KEY) {
     throw new CoreApiError(
       "Thiếu biến môi trường CORE_API_KEY. Đặt DATA_SOURCE=file nếu muốn " +
@@ -125,7 +173,7 @@ async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetchWithRetry(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       "X-API-Key": API_KEY,
@@ -279,11 +327,12 @@ export function importDataFile(text: string, options: ImportCallOptions): Promis
 
 // ── Settings ─────────────────────────────────────────────────────────────
 
-export async function getCurrentUsersApi(): Promise<string[]> {
+// Bọc cache(): getAgenda/getStats/listTasks (view=mine) đều hỏi tên "của tôi", một lần render chỉ cần gọi một lần.
+export const getCurrentUsersApi = cache(async (): Promise<string[]> => {
   if (IS_LOCAL) return local(() => engine.getCurrentUsers());
   const body = await coreFetch<{ names: string[] }>("/api/v1/settings/current-users");
   return body.names;
-}
+});
 
 /** Gợi ý tên cho ô "tôi là ai": chế độ api chỉ lấy assignee của task công việc còn sống. */
 export async function getAssigneesApi(): Promise<string[]> {
@@ -465,11 +514,12 @@ export function getTask(id: string): Promise<TaskDetail> {
   return coreFetch<TaskDetail>(`/api/v1/tasks/${pathId(id)}`);
 }
 
-export function listProjects(includeArchived = false): Promise<Project[]> {
+// Bọc cache(): layout/page/component trong cùng một lần render dùng chung một lời gọi.
+export const listProjects = cache(async (includeArchived: boolean = false): Promise<Project[]> => {
   if (IS_LOCAL) return local(() => engine.listProjects(includeArchived));
   const query = includeArchived ? "?include_archived=true" : "";
   return coreFetch<Project[]>(`/api/v1/projects${query}`);
-}
+});
 
 // ── Ghi ────────────────────────────────────────────────────────────────
 
@@ -984,12 +1034,13 @@ export async function syncIntegration(
   id: string,
   secret: string,
   since?: string,
-  assignees: string[] = [],
+  people: { assignees?: string[]; reporters?: string[] } = {},
 ): Promise<IntegrationSyncResult> {
   requireApiMode();
   const params = new URLSearchParams();
   if (since) params.set("since", since);
-  for (const name of assignees) params.append("assignee", name);
+  for (const name of people.assignees ?? []) params.append("assignee", name);
+  for (const name of people.reporters ?? []) params.append("reporter", name);
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return coreFetch<IntegrationSyncResult>(`/api/v1/integrations/${pathId(id)}/sync${query}`, {
     method: "POST",
