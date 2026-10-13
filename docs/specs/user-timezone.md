@@ -1,6 +1,6 @@
 # Spec: Người dùng tự chọn múi giờ hiển thị, và sửa lỗi quá hạn của hạn Jira
 
-- Trạng thái: DRAFT
+- Trạng thái: **CHỐT** (User chốt 2026-10-13, Q1-Q7 theo khuyến nghị của architect; code đã vào `main` ở các commit `34a5774`, `5a4724a`, `57589e2`, `87b6d7d`)
 - Tác giả: architect
 - Ngày: 2026-10-09
 - Nhánh lúc viết: `main` (sạch phần code liên quan; thay đổi chưa commit chỉ thuộc epic Proxmox)

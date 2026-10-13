@@ -109,4 +109,31 @@
 - **Đề xuất training:** `docs/LLM_TRAINING_DATA_PLAN.md` (chờ User chốt chính sách dữ liệu Jira).
 - **Chưa kiểm:** `make smoke`, `make gen-types` (không có Docker; `openapi.d.ts` sửa tay), migrate trên DB dev thật.
 
-*--- Bản cập nhật cuối cùng: [2026-10-08] ---*
+## 14. Giảm số request vào core / lỗi "Quá số lượng request" (nhánh `feat/auth-multiuser`, chưa commit)
+
+- **Nguyên nhân:** web chỉ gửi `X-API-Key` dùng chung (chưa gửi JWT từng user), nên `core/rate_limit.py` đếm mọi người và mọi trang vào MỘT bucket `key:<API_KEY>`. Ngưỡng cũ 120/phút cạn sau vài lần click filter.
+- **Đã sửa:** ngưỡng mặc định `RATE_LIMIT_REQUESTS_PER_MINUTE` 120 → 900 (`core/config.py`, `docker-compose.yml`). Biến này trong `.env` (nếu có) vẫn ghi đè.
+- **Cache `/team` riêng đã GỠ** (code-reviewer: dễ trả nhầm dữ liệu, mảng dùng chung bị sort tại chỗ); cache GET chung bên dưới đã đủ.
+- **Dedupe trong một lần render:** `getCurrentUsersApi` và `listProjects` bọc `React.cache` (`lib/api.ts`); `/` và `/tasks` giảm từ ~6 xuống ~4 lời gọi.
+- **Cache GET chung cho mọi lời gọi core (vòng 2):** `apps/web/lib/core-cache.ts`, dùng trong `coreFetch` (`lib/api.ts`). GET được cache 10 giây theo path+query và gộp lời gọi đồng thời; mọi lời gọi ghi và `revalidateAll()` xoá cache; `/api/v1/integrations*` không cache. `coreFetch` thử lại tối đa 1 lần khi core trả 429 với `Retry-After` ≤ 3 giây (không thử lại POST). State cache nằm trên `globalThis`; request có `Authorization` bỏ qua cache. **Việc còn lại:** khi web gửi JWT từng người, đưa user id vào khoá thay vì chỉ bỏ qua cache; chưa kiểm thật việc Server Action xoá được cache của trang (bấm hoàn thành task ở `/team?status=all` phải thấy cập nhật ngay).
+- **Lưu ý triển khai:** ngưỡng 900 chỉ có hiệu lực sau khi build lại và khởi động lại container `api` trên nơi đang chạy core (dev/staging VM). Nếu chưa deploy, core vẫn dùng 120.
+- **`/team` chế độ lai (vòng 3):** `status=open` (mặc định) và ≤ 1000 task đang mở → server tải một lần, giao xuống `components/team-open-list.tsx` (client) lọc tức thì (người làm, từ khoá, mốc thời gian, khoảng ngày, sắp xếp, phân trang, số theo người), 0 request mỗi click; URL đồng bộ bằng `history.replaceState`. Chọn "Đã hoàn thành"/"Tất cả" hoặc vượt ngưỡng → chế độ server cũ (tải hết rồi lọc, qua cache). Thêm `app/team/loading.tsx`, `app/tasks/loading.tsx` (skeleton). Chế độ client giới hạn 50/100/200 mỗi trang.
+- **Skill mới `nextjs-rendering`** (`.agents/skills/nextjs-rendering/SKILL.md`): quy tắc chọn server/client render, giảm request, làm filter mượt. Dùng khi làm trang có danh sách/filter.
+- **Việc còn lại:** lọc `/team` ở backend với phân trang server-side (S12); khi frontend đa người dùng gửi `Authorization: Bearer`, `_identity()` tự tách bucket theo user, lúc đó cân nhắc hạ ngưỡng.
+- **Chưa kiểm:** chưa restart stack và chưa đo số request thật; `make smoke` chưa chạy. `npm run lint` của web chưa có cấu hình ESLint (có sẵn từ trước), chỉ `tsc --noEmit` đã pass.
+
+## 15. Jira reporter và sửa project theo Company (nhánh `feat/auth-multiuser`, chưa commit)
+
+- **Spec CHỐT:** `docs/specs/jira-reporter.md` (User duyệt R1-R9). Code xong: migration `e8a3c6f2b1d7` (`tasks.reporter`, nối sau `b2f7a9c1d4e6` của epic auth nên commit SAU auth), `build_jql(..., reporters)` (`assignee OR reporter` bọc ngoặc, AND với JQL kết nối), query `reporter` của `POST /integrations/{id}/sync`, chế độ file `SCHEMA_VERSION` 8, `SUPPORTED_DATAFILE_VERSION` 8, Excel/CSV cột Reporter, badge trên task. Chỉ lưu `displayName`; audit chỉ ghi `reporter_count`.
+- **Sau deploy cần một lượt sync "Tất cả"** để task cũ có reporter (lượt đầu đánh mọi task là `updated`).
+- **Sửa project (chế độ file, `jira-actions.ts`):** project lấy từ custom field Company/Team trước. Trước đây trần 20 field theo thứ tự danh sách và nhánh cập nhật luôn ghi đè project theo Jira (nghi là nguyên nhân 4643 task về `DBA` sau lượt sync 09-10). Nay field Company xếp đầu, trần 60, cập nhật chỉ đổi project khi có giá trị Company; kết quả sync hiện `project_fields`/`project_from_field`. **Chưa kiểm với Jira thật. Bản Python (`jira_client.py`/`jira_mapping.py`) CHƯA sửa tương ứng.** Backup đúng project: `data/backups/builder-data-backup-2026-10-09T12-33-21-215Z.json` (958 task).
+- **Chưa làm / chưa kiểm:** test có DB của reporter chưa có kết quả (VM dev treo); `openapi.d.ts` chưa sinh lại (`lib/types.ts` đang khai bù `reporter`); `make smoke`. Lỗi có sẵn của epic auth: thiếu `pyjwt` trong `pyproject.toml`/`uv.lock`, 3 lỗi E501, `dev-vm-backend-test.sh` hỏng (`.dockerignore` loại `tests/`, `ENVIRONMENT=test` sai).
+
+## 16. Múi giờ chọn được và hạn cả ngày (đã merge vào `main`, spec CHỐT 2026-10-13)
+
+- **Spec CHỐT:** `docs/specs/user-timezone.md` (Q1-Q7 theo khuyến nghị). Setting `display_timezone` lưu ở `app_settings`, bộ chọn nằm ở `/data`; cột `tasks.due_all_day`; hạn cả ngày quá hạn khi ngày hạn < hôm nay theo múi giờ hiển thị (`services/clock.py`).
+- **Sync hạn có điều kiện (Q4 phương án C):** `due_at` chỉ bị Jira ghi đè khi User chưa sửa tay (so với baseline trong `raw_payload`), xem `task_sync_service.py`.
+- **Chế độ file:** `SCHEMA_VERSION` 7 (nay 8 do `reporter`). `NEXT_PUBLIC_DISPLAY_TZ` chỉ còn là giá trị dự phòng khi API không trả lời (`FALLBACK_TZ`, `lib/api.ts`); gỡ hẳn để epic sau. Đã thêm gói `tzdata`.
+- **Chưa kiểm:** UAT trên trình duyệt với nhiều múi giờ, `make smoke`.
+
+*--- Bản cập nhật cuối cùng: [2026-10-13] ---*
