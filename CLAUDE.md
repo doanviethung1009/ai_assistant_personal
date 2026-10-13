@@ -29,6 +29,7 @@ commit khi User cho phép. Subagent ở `.claude/agents/`:
 | Có migration / đổi model | `db-reviewer` | Chỉ đọc |
 | Trước commit/merge | `code-reviewer` | Chỉ đọc, context sạch - thay cho tự QC |
 | Chạm Vault/RBAC/auth/Server Action | `security-auditor` | Chỉ đọc, chạy thêm sau `code-reviewer` |
+| Hỏi tiến độ (đang làm/đã xong/treo) | `work-tracker` | Chỉ đọc, theo skill `work-tracking`, xem `docs/WORK_TRACKING.md` |
 | Tìm kiếm rộng trong repo | `Explore` (built-in) | Không đọc hết file vào session chính |
 
 Việc nhỏ (sửa 1-2 file, một tầng) → orchestrator tự làm, không spawn subagent.

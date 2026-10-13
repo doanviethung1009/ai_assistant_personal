@@ -48,7 +48,7 @@ Giao diện người dùng chính được xây dựng bằng Next.js App Router
 | `app/globals.css` | Chứa toàn bộ Design System, biến CSS (colors, spacing, animation). | Sửa theme ở đây. |
 | `app/[module]/page.tsx` | Các trang chức năng (tasks, notes, projects, v.v.). | Ví dụ: `app/tasks/page.tsx` |
 | `components/` | Các UI Components dùng chung (Button, Table, Markdown...). | Độc lập, tái sử dụng cao. |
-| `lib/` | Hàm tiện ích client/server, thao tác dữ liệu. | Chứa `api.ts`, `format.ts`. |
+| `lib/` | Hàm tiện ích client/server, thao tác dữ liệu. | Chứa `api.ts`, `format.ts`, `core-cache.ts` (cache GET 10s dùng chung, xoá khi có mutation; bỏ qua khi có Authorization). Trang `/team` dùng `components/team-open-list.tsx` (lọc tại chỗ), `app/{team,tasks}/loading.tsx` là skeleton. |
 | `actions*.ts` | Các Server Actions (Next.js) thực thi logic phía server. | Gọi thẳng từ component thay cho API REST. |
 | `next.config.mjs` | Cấu hình webpack, env, routing cho Next.js. | |
 
