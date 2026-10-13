@@ -154,6 +154,8 @@ export const TASK_COLUMNS = [
   // Khác rỗng nghĩa là task đang ở trong thùng rác. Giữ cột này để backup
   // và phục hồi không làm mất trạng thái đã xoá.
   "deleted_at",
+  // Tên hiển thị người báo cáo (Jira). Cột vắng hoặc rỗng khi nhập nghĩa là null.
+  "reporter",
 ] as const;
 
 export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
@@ -180,6 +182,7 @@ export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
     task.created_at,
     task.updated_at,
     task.deleted_at ?? "",
+    task.reporter ?? "",
   ]);
 
   return buildCsv(TASK_COLUMNS, rows);
@@ -301,6 +304,7 @@ export function csvToTasks(
         created_at: record.created_at || nowIso(),
         updated_at: record.updated_at || nowIso(),
         deleted_at: record.deleted_at || null,
+        reporter: (record.reporter ?? "").slice(0, 200) || null,
       }),
     );
   });

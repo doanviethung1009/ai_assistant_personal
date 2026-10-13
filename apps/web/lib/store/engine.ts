@@ -326,6 +326,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
     assignee: partial.assignee?.trim() || null,
+    reporter: partial.reporter?.trim() || null,
     scope: partial.scope ?? defaultScopeFor(partial.source ?? "manual"),
     events:
       partial.events ??

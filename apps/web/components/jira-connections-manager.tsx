@@ -40,6 +40,7 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
   const [secret, setSecret] = useState("");
   const [since, setSince] = useState("");
   const [assignees, setAssignees] = useState("");
+  const [peopleRole, setPeopleRole] = useState<"both" | "assignee" | "reporter">("both");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [needToken, setNeedToken] = useState(false);
@@ -56,7 +57,7 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
     setNeedToken(false);
     setRunning(true);
     try {
-      const res = await syncIntegrationAction(connection.id, sent, since || undefined, assignees);
+      const res = await syncIntegrationAction(connection.id, sent, since || undefined, assignees, peopleRole);
       if (res.ok) {
         setResult(res.result);
         router.refresh(); // cập nhật last_sync_at hiển thị
@@ -116,6 +117,22 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
               disabled={running}
             />
           </label>
+          <label className="text-[0.8125rem] font-bold">
+            Vai trò
+            <select
+              className={`${INPUT} mt-1 w-56 font-normal`}
+              value={peopleRole}
+              onChange={(e) => setPeopleRole(e.target.value as "both" | "assignee" | "reporter")}
+              disabled={running}
+            >
+              <option value="both">Được giao hoặc báo cáo</option>
+              <option value="assignee">Chỉ người được giao</option>
+              <option value="reporter">Chỉ người báo cáo</option>
+            </select>
+          </label>
+          <p className="basis-full text-[0.8125rem] text-[var(--color-ink-muted)]">
+            Tên hiển thị trên Jira, cách nhau bằng dấu phẩy. Lọc theo người KẾT HỢP (AND) với JQL của kết nối.
+          </p>
           <button type="submit" disabled={running || secret.length === 0} className="rounded-lg bg-[var(--color-ink)] px-4 py-2 text-xs font-bold text-[var(--color-surface)] hover:opacity-90 disabled:opacity-50">
             {running ? "Đang chạy..." : "Bắt đầu"}
           </button>

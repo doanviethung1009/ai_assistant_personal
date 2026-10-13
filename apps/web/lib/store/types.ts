@@ -112,5 +112,6 @@ export interface DataFile {
  *   5 → thêm scope cho task (work | personal)
  *   6 → lưu `sync_urls` (trước đó snapshot() bỏ sót, nên mất sau mỗi lần khởi động)
  *   7 → thêm `due_all_day` cho task (hạn cả ngày của Jira), `meta.display_timezone`
+ *   8 → thêm `reporter` cho task (tên hiển thị người tạo issue Jira, chỉ để xem)
  */
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 8;

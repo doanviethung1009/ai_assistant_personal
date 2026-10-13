@@ -162,6 +162,15 @@ export function migrate(data: DataFile): DataFile {
     if (typeof task.due_all_day !== "boolean") task.due_all_day = false;
   }
 
+  // v7 → v8: bổ sung `reporter` (null cho task cũ, điền lại ở lượt sync Jira đầy đủ kế tiếp).
+  // Chỉ đặt cho task CHƯA có chuỗi/null hợp lệ nên chạy lại không đổi dữ liệu.
+  if (data.schema_version < 8) {
+    data.schema_version = 8;
+  }
+  for (const task of data.tasks) {
+    if (typeof task.reporter !== "string" && task.reporter !== null) task.reporter = null;
+  }
+
   // Chuẩn hoá scope LUÔN chạy, kể cả file tự khai schema_version 5: file đến từ
   // bên ngoài (restore JSON) có thể mang scope rác ('admin', '', object, vắng).
   // Giá trị hợp lệ được giữ nguyên nên không đảo lựa chọn của User.

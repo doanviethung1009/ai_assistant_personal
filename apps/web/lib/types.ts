@@ -54,7 +54,13 @@ type WithRequiredDeletedAt<
   project?: ProjectSummary | null;
 };
 
-export type Task = WithRequiredDeletedAt<Schemas["TaskRead"]>;
+/**
+ * `reporter` (tên hiển thị người tạo issue ở Jira) khai bù ở đây cho tới khi `openapi.d.ts` được sinh
+ * lại từ backend. Omit + khai lại nên vẫn đúng sau khi sinh (không xung đột kiểu), và bỏ được khi tiện.
+ */
+export type Task = Omit<WithRequiredDeletedAt<Schemas["TaskRead"]>, "reporter"> & {
+  reporter: string | null;
+};
 export type TaskEvent = Schemas["TaskEventRead"];
 /** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
 export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
@@ -213,7 +219,9 @@ export type IntegrationSyncResult = Schemas["SyncResult"];
  * OpenAPI ghi `status`/`priority` là bắt buộc vì có default, nhưng core chỉ ghi các trường
  * client THỰC SỰ gửi (model_fields_set). Làm optional để mapper được phép bỏ `priority`.
  */
-export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority"> & {
+export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority" | "reporter"> & {
+  /** Vắng khoá = giữ giá trị đang có ở core; null tường minh = xoá. */
+  reporter?: string | null;
   status?: Schemas["TaskUpsert"]["status"];
   priority?: Schemas["TaskUpsert"]["priority"];
 };

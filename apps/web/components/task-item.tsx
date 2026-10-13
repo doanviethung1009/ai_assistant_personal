@@ -140,6 +140,14 @@ export function TaskItem({ task }: { task: Task }) {
                   @{task.assignee}
                 </span>
               ) : null}
+              {task.reporter && task.reporter !== task.assignee ? (
+                <span
+                  className="rounded-full bg-slate-500/10 px-2.5 py-0.5 text-[0.8125rem] font-bold tracking-wide text-slate-600 dark:text-slate-400 border border-slate-500/20 shadow-sm"
+                  title="Người báo cáo trên Jira"
+                >
+                  Báo cáo: {task.reporter}
+                </span>
+              ) : null}
               {task.tags.map((tag) => (
                 <TagBadge key={tag} tag={tag} />
               ))}
