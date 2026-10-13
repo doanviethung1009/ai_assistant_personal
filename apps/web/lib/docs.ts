@@ -314,6 +314,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "task-scope.md"),
   },
   {
+    slug: "spec-auth-web-p2",
+    title: "Spec: Đăng nhập ở web (P2)",
+    description: "Auth.js Google, web ký JWT từng người, rào cache theo user, guard Server Action, gỡ endpoint cũ, hạ rate limit (DRAFT, chờ User chốt Q1-Q9).",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "auth-web-p2.md"),
+  },
+  {
     slug: "spec-jira-reporter",
     title: "Spec: Kéo và hiển thị reporter của Jira",
     description: "Lọc sync theo assignee hoặc reporter (OR, bọc ngoặc, AND với JQL kết nối), thêm tasks.reporter, chế độ file v8 (CHỐT, User duyệt R1-R9).",
