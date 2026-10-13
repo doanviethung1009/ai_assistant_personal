@@ -1,8 +1,8 @@
-"""Xác thực bằng API key.
+"""Xác thực bằng API key (lớp "request đến từ web").
 
-Giai đoạn cá nhân dùng một khoá tĩnh. Khi mở cho team, thay lớp này bằng
-OIDC (Authentik/Keycloak) và giữ nguyên chữ ký của dependency để router
-không phải sửa.
+API key tĩnh chỉ chứng minh request đi qua web (key nằm trong server env của web, không xuống
+browser). NGƯỜI DÙNG nào đang gọi do `core/auth.py` quyết định bằng JWT 60 giây; mọi endpoint
+dưới /api/v1 đòi cả hai, riêng /api/v1/auth/login chỉ đòi API key.
 """
 
 from __future__ import annotations

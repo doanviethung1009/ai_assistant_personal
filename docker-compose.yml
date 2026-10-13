@@ -78,6 +78,12 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       API_KEY: ${API_KEY}
+      # Khoá ký JWT HS256 web->core (tối thiểu 32 ký tự, KHÁC API_KEY). Bắt buộc: thiếu thì core
+      # không khởi động (fail closed). Web và core phải dùng cùng giá trị. Xem core/auth.py.
+      CORE_JWT_SECRET: ${CORE_JWT_SECRET}
+      # Email admin ban đầu (phân cách dấu phẩy) và domain Google Workspace được phép đăng nhập.
+      ADMIN_EMAILS: ${ADMIN_EMAILS:-}
+      GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
       # Mật khẩu bắt buộc khi "Nhập thật" JSON vào Postgres (ghi đè dữ liệu). Rỗng thì core
       # từ chối nhập thật (chỉ cho Kiểm tra). Web không có đăng nhập nên đây là lớp chặn
       # duy nhất khi web mở ra LAN. Xem docs/specs/import-json-to-postgres.md (M2).
@@ -95,9 +101,10 @@ services:
       SYNC_URL_EXTRA_HOSTS: ${SYNC_URL_EXTRA_HOSTS:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
-      # Giới hạn request/phút theo X-API-Key, đếm ở Redis. Xem core/rate_limit.py.
+      # Giới hạn request/phút, đếm ở Redis theo user (JWT), rồi X-API-Key, rồi IP. Web hiện
+      # gửi một key dùng chung nên cả web chung một bucket; hạ lại khi web gửi JWT từng người. Xem core/rate_limit.py.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
-      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-120}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-900}
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
     volumes:

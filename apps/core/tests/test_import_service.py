@@ -25,8 +25,18 @@ from app.schemas.imports import DataFileEnvelope, ImportReport
 from app.services import import_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.import_service import normalize_project_key
+from tests.conftest import Persona
 
 pytestmark = pytest.mark.db
+
+# Người nhập mặc định của mọi test trong file (admin `default_user`); đặt bởi fixture autouse.
+_IMPORTER: dict[str, Persona] = {}
+
+
+@pytest.fixture(autouse=True)
+def _importer(default_user: Persona) -> None:
+    _IMPORTER["who"] = default_user
+
 
 FIXTURES = Path(__file__).parent / "fixtures"
 SHA = "0" * 64
@@ -70,13 +80,15 @@ async def _import(
         expect_replaced=None if dry_run else expect,
         expect_sha256=None if dry_run else SHA,
         file_sha256=SHA,
+        importer=_IMPORTER["who"].user,
     )
 
 
 async def _row_counts(session: AsyncSession) -> dict[str, int]:
     out: dict[str, int] = {}
     for table in TABLES:
-        out[table] = int(await session.scalar(text(f"SELECT count(*) FROM {table}")) or 0)  # noqa: S608
+        count = await session.scalar(text(f"SELECT count(*) FROM {table}"))  # noqa: S608
+        out[table] = int(count or 0)
     return out
 
 
@@ -378,8 +390,8 @@ async def test_replace_all_day_row_with_timed_due_does_not_break_check(
 async def test_trash_in_db_is_not_resurrected_or_overwritten(session: AsyncSession) -> None:
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, deleted_at) "
-            "VALUES (:i, 'Da xoa trong DB', 'manual', :d)"
+            "INSERT INTO tasks (id, title, source, deleted_at, owner_id) "
+            "VALUES (:i, 'Da xoa trong DB', 'manual', :d, (SELECT id FROM users LIMIT 1))"
         ),
         {"i": T1, "d": _utc(2026, 9, 30)},
     )
@@ -402,8 +414,8 @@ async def test_trash_in_db_is_not_resurrected_or_overwritten(session: AsyncSessi
 async def test_trashed_in_file_leaves_db_row_untouched(session: AsyncSession) -> None:
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, external_id) "
-            "VALUES (:i, 'Con song trong DB', 'jira', 'DEMO-TRASH')"
+            "INSERT INTO tasks (id, title, source, external_id, owner_id) "
+            "VALUES (:i, 'Con song trong DB', 'jira', 'DEMO-TRASH', (SELECT id FROM users LIMIT 1))"
         ),
         {"i": T_TRASH},
     )
@@ -424,7 +436,11 @@ async def test_import_never_deletes_db_only_rows(session: AsyncSession) -> None:
         {"i": extra_project},
     )
     await session.execute(
-        text("INSERT INTO tasks (id, title) VALUES (:i, 'Chi co trong DB')"), {"i": extra_task}
+        text(
+            "INSERT INTO tasks (id, title, owner_id) "
+            "VALUES (:i, 'Chi co trong DB', (SELECT id FROM users LIMIT 1))"
+        ),
+        {"i": extra_task},
     )
     await session.commit()
 
@@ -473,6 +489,7 @@ async def test_real_import_requires_expect_replaced(session: AsyncSession) -> No
             dry_run=False,
             expect_replaced=None,
             file_sha256=SHA,
+            importer=_IMPORTER["who"].user,
         )
 
 
@@ -515,8 +532,8 @@ async def test_replace_that_collides_with_another_live_row_is_error(
     )
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, external_id) "
-            "VALUES (:i, 'Trom khoa', 'jira', 'DEMO-2')"
+            "INSERT INTO tasks (id, title, source, external_id, owner_id) "
+            "VALUES (:i, 'Trom khoa', 'jira', 'DEMO-2', (SELECT id FROM users LIMIT 1))"
         ),
         {"i": thief},
     )
@@ -555,6 +572,7 @@ async def test_sha256_mismatch_blocks_commit(session: AsyncSession) -> None:
         expect_replaced=0,
         expect_sha256="f" * 64,
         file_sha256=SHA,
+        importer=_IMPORTER["who"].user,
     )
     assert not report.committed
     assert "file_changed_since_dry_run" in {i.code for i in report.issues}
@@ -570,6 +588,7 @@ async def test_real_import_requires_expect_sha256(session: AsyncSession) -> None
             expect_replaced=0,
             expect_sha256=None,
             file_sha256=SHA,
+            importer=_IMPORTER["who"].user,
         )
 
 
@@ -648,6 +667,34 @@ async def test_unsafe_external_url_is_dropped_and_not_overwriting(session: Async
     assert (await _task(session, T1))["external_url"] == "https://ok.example/x"
 
 
+async def test_reporter_absent_in_file_is_null_then_kept_on_overwrite(
+    session: AsyncSession,
+) -> None:
+    data = _load()
+    assert all("reporter" not in t for t in data["tasks"])
+    assert (await _import(session, data)).committed
+    assert (await _task(session, T1))["reporter"] is None
+
+    await session.execute(
+        text("UPDATE tasks SET reporter = 'Lan Pham', title = 'Sua' WHERE id = :i"), {"i": T1}
+    )
+    await session.commit()
+    assert (await _import(session, data, expect=1)).committed
+    row = await _task(session, T1)
+    assert row["reporter"] == "Lan Pham" and row["title"] != "Sua"
+
+
+async def test_reporter_in_file_is_written(session: AsyncSession) -> None:
+    data = _load()
+    data["schema_version"] = 8
+    data["tasks"][0]["reporter"] = "  Lan Pham "
+    assert (await _import(session, data)).committed
+    assert (await _task(session, T1))["reporter"] == "Lan Pham"
+    data["tasks"][0]["reporter"] = "Mai"
+    assert (await _import(session, data, expect=1)).committed
+    assert (await _task(session, T1))["reporter"] == "Mai"
+
+
 async def test_file_event_actor_is_prefixed(session: AsyncSession) -> None:
     await _import(session)
     actors = {
@@ -674,7 +721,11 @@ async def test_data_error_in_write_rolls_back_everything(
         if table.name == "tasks":
             # Vi phạm CHECK title_not_blank sau khi project/task đã được ghi.
             await sess.execute(
-                text("INSERT INTO tasks (id, title) VALUES (:i, '   ')"), {"i": uuid.uuid4()}
+                text(
+                    "INSERT INTO tasks (id, title, owner_id) "
+                    "VALUES (:i, '   ', (SELECT id FROM users LIMIT 1))"
+                ),
+                {"i": uuid.uuid4()},
             )
 
     monkeypatch.setattr(import_service, "_apply_plan", failing_apply)
@@ -844,8 +895,8 @@ async def test_source_and_external_id_are_treated_as_a_pair(session: AsyncSessio
     )
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, external_id) "
-            "VALUES (:i, 'Giu khoa', 'jira', 'DEMO-2')"
+            "INSERT INTO tasks (id, title, source, external_id, owner_id) "
+            "VALUES (:i, 'Giu khoa', 'jira', 'DEMO-2', (SELECT id FROM users LIMIT 1))"
         ),
         {"i": thief},
     )
@@ -895,8 +946,9 @@ async def _insert_personal_t1(session: AsyncSession, task_id: uuid.UUID = T1) ->
     """Task DB `personal` có khoá tự nhiên (jira, DEMO-1) giống T1 trong fixture."""
     await session.execute(
         text(
-            "INSERT INTO tasks (id, title, source, scope, external_id) "
-            "VALUES (:i, 'Cua rieng User', 'jira', 'personal', 'DEMO-1')"
+            "INSERT INTO tasks (id, title, source, scope, external_id, owner_id) "
+            "VALUES (:i, 'Cua rieng User', 'jira', 'personal', 'DEMO-1', "
+            "(SELECT id FROM users LIMIT 1))"
         ),
         {"i": task_id},
     )
@@ -967,7 +1019,11 @@ async def test_unknown_scope_value_in_file_is_reported(session: AsyncSession) ->
 async def test_personal_task_in_db_is_protected_from_old_file(session: AsyncSession) -> None:
     await _import(session)
     await session.execute(
-        text("UPDATE tasks SET scope = 'personal', title = 'Sua tay' WHERE id = :i"), {"i": T1}
+        text(
+            "UPDATE tasks SET scope = 'personal', title = 'Sua tay', "
+            "owner_id = (SELECT id FROM users LIMIT 1) WHERE id = :i"
+        ),
+        {"i": T1},
     )
     await session.commit()
     events_before = await session.scalar(
@@ -991,7 +1047,11 @@ async def test_personal_task_in_db_is_protected_from_old_file(session: AsyncSess
 async def test_include_personal_overwrites_but_keeps_scope(session: AsyncSession) -> None:
     await _import(session)
     await session.execute(
-        text("UPDATE tasks SET scope = 'personal', title = 'Sua tay' WHERE id = :i"), {"i": T1}
+        text(
+            "UPDATE tasks SET scope = 'personal', title = 'Sua tay', "
+            "owner_id = (SELECT id FROM users LIMIT 1) WHERE id = :i"
+        ),
+        {"i": T1},
     )
     await session.commit()
 
@@ -1095,6 +1155,7 @@ async def test_real_file_datafile(session: AsyncSession, client: Any) -> None:
             expect_replaced=None if dry_run else 0,
             expect_sha256=None if dry_run else sha_before,
             file_sha256=sha_before,
+            importer=_IMPORTER["who"].user,
         )
 
     # Kỳ vọng suy ra từ chính nội dung file (file thật được User sửa theo thời gian,

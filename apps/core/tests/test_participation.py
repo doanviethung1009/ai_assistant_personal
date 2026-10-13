@@ -85,9 +85,7 @@ async def test_selecting_people_keeps_percent_and_hides_others(client: httpx.Asy
     assert body["selected"] == ["Bình"]
     ops = next(p for p in body["projects"] if p["name"] == "Vận hành")
     # % vẫn trên tổng project (5), không phải trên tổng của người được chọn.
-    assert ops["members"] == [
-        {"assignee": "Bình", "count": 1, "done": 0, "open": 1, "percent": 20}
-    ]
+    assert ops["members"] == [{"assignee": "Bình", "count": 1, "done": 0, "open": 1, "percent": 20}]
     # Danh sách chọn người vẫn đủ để dựng lại ô chọn.
     assert {a["name"] for a in body["assignees"]} == {"An", "Bình"}
 

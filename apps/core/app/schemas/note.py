@@ -38,9 +38,7 @@ class NoteBase(BaseModel):
             "Server không bao giờ thực thi giá trị này."
         ),
     )
-    description: str | None = Field(
-        default=None, description="Vì sao cần và khi nào dùng"
-    )
+    description: str | None = Field(default=None, description="Vì sao cần và khi nào dùng")
     context: str | None = Field(
         default=None,
         max_length=200,
@@ -131,6 +129,8 @@ class NoteRead(BaseModel):
     last_used_at: datetime | None
     source: NoteSource
     external_id: str | None
+    # Chủ note (luôn là người gọi: note không chia sẻ).
+    owner_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = Field(
@@ -168,12 +168,8 @@ class NoteTrashResponse(BaseModel):
     total: int
     limit: int
     offset: int
-    retention_days: int = Field(
-        description="Số ngày giữ note đã xoá trước khi xoá vĩnh viễn"
-    )
-    purged_now: int = Field(
-        default=0, description="Số note quá hạn vừa bị dọn trong lần gọi này"
-    )
+    retention_days: int = Field(description="Số ngày giữ note đã xoá trước khi xoá vĩnh viễn")
+    purged_now: int = Field(default=0, description="Số note quá hạn vừa bị dọn trong lần gọi này")
 
 
 class NotePurgeResponse(BaseModel):

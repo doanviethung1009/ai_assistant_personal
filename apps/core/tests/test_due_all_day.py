@@ -13,18 +13,19 @@ import httpx
 import pytest
 
 from app.db.session import SessionFactory
-from app.models.enums import TaskStatus
+from app.models.enums import TaskScope, TaskStatus
 from app.models.task import Task
 
 pytestmark = pytest.mark.db
 
-TZ_URL = "/api/v1/settings/display-timezone"
+TZ_URL = "/api/v1/me/timezone"
 EXTREME_TZ = ["Pacific/Kiritimati", "Etc/GMT+12"]
 
 
 async def _add(title: str, **over: Any) -> str:
     async with SessionFactory() as s:
-        task = Task(title=title, **over)
+        # scope=work: task personal bắt buộc có owner (CHECK), mà test này không quan tâm chủ.
+        task = Task(title=title, scope=TaskScope.WORK, **over)
         s.add(task)
         await s.commit()
         return str(task.id)

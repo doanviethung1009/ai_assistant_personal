@@ -1,3 +1,11 @@
+"""Logic nghiệp vụ của task.
+
+══════════════════════════════════════════════════════════════════════
+ Mọi hàm nhận `user: CurrentUser` và mọi truy vấn qua `services/access.py`.
+ KHÔNG tự viết điều kiện owner/scope ở đây: quên một chỗ là IDOR.
+══════════════════════════════════════════════════════════════════════
+"""
+
 from __future__ import annotations
 
 import uuid
@@ -11,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.models.enums import (
     TaskEventType,
@@ -22,10 +31,10 @@ from app.models.enums import (
 )
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
-from app.schemas.task import MAX_OWNER_LEN, MAX_OWNERS, TaskCreate, TaskUpdate, TaskView
-from app.services import clock
+from app.schemas.task import MAX_OWNER_LEN, TaskCreate, TaskUpdate, TaskView
+from app.services import access, clock
 from app.services.clock import local_day_bounds_utc, local_today, now_utc, today_all_day_cutoff
-from app.services.errors import ConflictError, NotFoundError, ValidationError
+from app.services.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 from app.services.jsonable import jsonable
 
 # Tên cũ, giữ để quy ước "payload event qua _jsonable()" trong tài liệu vẫn đúng.
@@ -63,7 +72,6 @@ class TaskFilters:
     created_after: datetime | None = None
     include_closed: bool = False
     view: TaskView = TaskView.ALL
-    owners: list[str] = field(default_factory=list)
     limit: int = 50
     offset: int = 0
     sort_by: SortField = "created_at"
@@ -77,51 +85,6 @@ def _alive():
     lại xuất hiện trong agenda và thống kê.
     """
     return Task.deleted_at.is_(None)
-
-
-def validate_view_params(view: TaskView, owners: list[str] | None) -> list[str]:
-    """Chuẩn hoá và kiểm `owner` đi kèm `view`; trả danh sách tên đã strip.
-
-    `owner` chỉ có nghĩa với view=mine. Đi kèm view khác thì từ chối (422) thay vì
-    lặng lẽ bỏ qua, để lỗi gọi API lộ ra ngay. Tên chỉ dùng trong `IN (...)` có bind
-    param, không bao giờ nối vào chuỗi SQL.
-    """
-    if not owners:
-        return []
-    if view is not TaskView.MINE:
-        raise ValidationError("owner chỉ hợp lệ khi view=mine")
-    if len(owners) > MAX_OWNERS:
-        raise ValidationError(f"owner tối đa {MAX_OWNERS} tên")
-    cleaned = [name.strip() for name in owners]
-    if any(not name or len(name) > MAX_OWNER_LEN for name in cleaned):
-        raise ValidationError(f"mỗi owner phải dài 1-{MAX_OWNER_LEN} ký tự")
-    return cleaned
-
-
-def _view_clause(view: TaskView, owners: Sequence[str] = ()) -> ColumnElement[bool] | None:
-    """Điều kiện scope cho một view; None nghĩa là không lọc (view=all).
-
-    Nguồn DUY NHẤT của định nghĩa "việc của tôi" ở backend (list, agenda, stats cùng
-    dùng). Web có bản sao ở lib/task-scope.ts (`matchesView`), hai bản phải khớp.
-    Nhánh `assignee IS NULL AND external_id IS NULL` giữ task công việc User tự tạo
-    (không giao ai, không đến từ tích hợp) hiện ở "Hôm nay"; task Jira chưa ai nhận
-    thì không hiện. So khớp assignee CHÍNH XÁC (phân biệt hoa thường). Chuỗi rỗng và
-    khoảng trắng thừa đã được chuẩn hoá khi ghi (rỗng -> NULL, strip), nên ở đây chỉ
-    cần xét NULL; web chế độ file cũng nên coi '' như null.
-    """
-    if view is TaskView.ALL:
-        return None
-    if view is TaskView.PERSONAL:
-        return Task.scope == TaskScope.PERSONAL
-    if view is TaskView.WORK:
-        return Task.scope == TaskScope.WORK
-    work_mine = [Task.assignee.is_(None) & Task.external_id.is_(None)]
-    if owners:
-        work_mine.append(Task.assignee.in_(list(owners)))
-    return or_(
-        Task.scope == TaskScope.PERSONAL,
-        and_(Task.scope == TaskScope.WORK, or_(*work_mine)),
-    )
 
 
 def _priority_rank():
@@ -138,12 +101,8 @@ def _priority_rank():
     )
 
 
-def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
-    stmt = stmt.where(_alive())
-
-    view_clause = _view_clause(filters.view, filters.owners)
-    if view_clause is not None:
-        stmt = stmt.where(view_clause)
+def _apply_filters(stmt: Select[Any], user: CurrentUser, filters: TaskFilters) -> Select[Any]:
+    stmt = stmt.where(_alive(), access.task_query_clause(filters.view, user))
 
     if filters.status:
         stmt = stmt.where(Task.status.in_(filters.status))
@@ -169,9 +128,7 @@ def _apply_filters(stmt: Select[Any], filters: TaskFilters) -> Select[Any]:
         stmt = stmt.where(Task.created_at >= filters.created_after)
     if filters.query:
         pattern = f"%{filters.query.strip()}%"
-        stmt = stmt.where(
-            or_(Task.title.ilike(pattern), Task.description.ilike(pattern))
-        )
+        stmt = stmt.where(or_(Task.title.ilike(pattern), Task.description.ilike(pattern)))
     return stmt
 
 
@@ -199,14 +156,15 @@ def _record_event(
     session: AsyncSession,
     task: Task,
     event_type: TaskEventType,
-    actor: str,
+    user: CurrentUser,
     payload: dict[str, Any] | None = None,
 ) -> None:
     session.add(
         TaskEvent(
             task_id=task.id,
             event_type=event_type,
-            actor=actor,
+            actor=user.actor,
+            actor_user_id=user.id,
             payload=jsonable(payload) if payload is not None else None,
         )
     )
@@ -218,13 +176,11 @@ def _record_event(
 
 
 async def list_tasks(
-    session: AsyncSession, filters: TaskFilters
+    session: AsyncSession, user: CurrentUser, filters: TaskFilters
 ) -> tuple[list[Task], int]:
-    base = _apply_filters(select(Task), filters)
+    base = _apply_filters(select(Task), user, filters)
 
-    total = await session.scalar(
-        select(func.count()).select_from(base.subquery())
-    )
+    total = await session.scalar(select(func.count()).select_from(base.subquery()))
 
     stmt = _apply_sort(base, filters).limit(filters.limit).offset(filters.offset)
     result = await session.execute(stmt)
@@ -232,20 +188,27 @@ async def list_tasks(
 
 
 async def get_task(
-    session: AsyncSession, task_id: uuid.UUID, *, include_deleted: bool = False
+    session: AsyncSession, user: CurrentUser, task_id: uuid.UUID, *, include_deleted: bool = False
 ) -> Task:
-    task = await session.get(Task, task_id)
-    if task is None or (task.deleted_at is not None and not include_deleted):
+    """Task mà `user` được NHÌN THẤY, hoặc 404.
+
+    Cố ý trả 404 (không phải 403) cho task `personal` của người khác: không lộ sự tồn tại.
+    """
+    stmt = select(Task).where(Task.id == task_id, access.task_visible_clause(user))
+    if not include_deleted:
+        stmt = stmt.where(_alive())
+    task = (await session.execute(stmt)).scalars().unique().one_or_none()
+    if task is None:
         raise NotFoundError(f"Không tìm thấy task {task_id}")
     return task
 
 
 async def get_task_with_events(
-    session: AsyncSession, task_id: uuid.UUID, *, include_deleted: bool = False
+    session: AsyncSession, user: CurrentUser, task_id: uuid.UUID, *, include_deleted: bool = False
 ) -> Task:
     stmt = (
         select(Task)
-        .where(Task.id == task_id)
+        .where(Task.id == task_id, access.task_visible_clause(user))
         .options(selectinload(Task.events), selectinload(Task.project))
     )
     if not include_deleted:
@@ -257,19 +220,29 @@ async def get_task_with_events(
     return task
 
 
+def _require_edit(user: CurrentUser, task: Task) -> None:
+    if not access.task_permissions(user, task).can_edit:
+        raise ForbiddenError("Bạn không có quyền sửa task này")
+
+
+def _require_delete(user: CurrentUser, task: Task) -> None:
+    if not access.task_permissions(user, task).can_delete:
+        raise ForbiddenError("Bạn không có quyền xoá task này")
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Ghi
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def create_task(
-    session: AsyncSession, payload: TaskCreate, *, actor: str = "user"
-) -> Task:
+async def create_task(session: AsyncSession, user: CurrentUser, payload: TaskCreate) -> Task:
     await _ensure_project_exists(session, payload.project_id)
 
     data = payload.model_dump()
     # Phải tự quyết scope ở đây: model cố ý không có default Python (xem models/task.py).
     data["scope"] = payload.scope or default_scope_for(payload.source)
+    # Chủ luôn là người gọi; client không gửi được owner_id (schema không có field này).
+    data["owner_id"] = user.id
     task = Task(**data)
     if task.status is TaskStatus.DONE:
         task.completed_at = now_utc()
@@ -280,15 +253,14 @@ async def create_task(
     except IntegrityError as exc:
         await session.rollback()
         raise ConflictError(
-            f"Task từ nguồn {payload.source} với external_id "
-            f"'{payload.external_id}' đã tồn tại"
+            f"Task từ nguồn {payload.source} với external_id '{payload.external_id}' đã tồn tại"
         ) from exc
 
     _record_event(
         session,
         task,
         TaskEventType.CREATED,
-        actor,
+        user,
         {
             "title": task.title,
             "status": task.status.value,
@@ -297,17 +269,33 @@ async def create_task(
         },
     )
     await session.flush()
-    return await get_task_with_events(session, task.id)
+    return await get_task_with_events(session, user, task.id)
 
 
 async def update_task(
-    session: AsyncSession, task_id: uuid.UUID, payload: TaskUpdate, *, actor: str = "user"
+    session: AsyncSession, user: CurrentUser, task_id: uuid.UUID, payload: TaskUpdate
 ) -> Task:
-    task = await get_task(session, task_id)
+    task = await get_task(session, user, task_id)
+    _require_edit(user, task)
     changes = payload.model_dump(exclude_unset=True)
 
     if "project_id" in changes:
         await _ensure_project_exists(session, changes["project_id"])
+
+    new_scope = changes.get("scope")
+    if new_scope is TaskScope.PERSONAL and task.scope is TaskScope.WORK:
+        # Task có external_id là của cả team (Jira...): đổi thành cá nhân sẽ giấu nó khỏi
+        # mọi người. Task tự tạo thì được; người gọi trở thành chủ của nó.
+        if task.external_id is not None:
+            raise ConflictError(
+                "Task đồng bộ từ nguồn ngoài là việc chung, không chuyển thành cá nhân được",
+                code="shared_task_cannot_be_personal",
+            )
+        # Chỉ NGƯỜI TẠO được giấu task của mình. Người được giao (can_edit nhờ alias) mà đổi
+        # sang cá nhân sẽ cướp task khỏi người giao, cả team và admin đều mất nó.
+        if task.owner_id != user.id:
+            raise ForbiddenError("Chỉ người tạo task mới chuyển nó thành cá nhân được")
+        task.owner_id = user.id
 
     old_status = task.status
     diff: dict[str, dict[str, Any]] = {}
@@ -330,36 +318,44 @@ async def update_task(
         if new_status is TaskStatus.DONE:
             task.completed_at = now_utc()
             _record_event(
-                session, task, TaskEventType.COMPLETED, actor,
+                session,
+                task,
+                TaskEventType.COMPLETED,
+                user,
                 {"from": old_status.value},
             )
         elif old_status in CLOSED_STATUSES and new_status not in CLOSED_STATUSES:
             task.completed_at = None
             _record_event(
-                session, task, TaskEventType.REOPENED, actor,
+                session,
+                task,
+                TaskEventType.REOPENED,
+                user,
                 {"from": old_status.value, "to": new_status.value},
             )
         else:
             _record_event(
-                session, task, TaskEventType.STATUS_CHANGED, actor,
+                session,
+                task,
+                TaskEventType.STATUS_CHANGED,
+                user,
                 {"from": old_status.value, "to": new_status.value},
             )
 
     if diff:
-        _record_event(session, task, TaskEventType.UPDATED, actor, {"changes": diff})
+        _record_event(session, task, TaskEventType.UPDATED, user, {"changes": diff})
 
     await session.flush()
-    return await get_task_with_events(session, task.id)
+    return await get_task_with_events(session, user, task.id)
 
 
-async def delete_task(
-    session: AsyncSession, task_id: uuid.UUID, *, actor: str = "user"
-) -> Task:
+async def delete_task(session: AsyncSession, user: CurrentUser, task_id: uuid.UUID) -> Task:
     """Xoá mềm: đưa vào thùng rác, giữ lại theo settings.trash_retention_days.
 
     Nếu retention đặt 0 thì xoá thẳng, không qua thùng rác.
     """
-    task = await get_task(session, task_id)
+    task = await get_task(session, user, task_id)
+    _require_delete(user, task)
 
     if settings.trash_retention_days == 0:
         await session.delete(task)
@@ -371,18 +367,17 @@ async def delete_task(
         session,
         task,
         TaskEventType.DELETED,
-        actor,
+        user,
         {"retention_days": settings.trash_retention_days},
     )
     await session.flush()
     return task
 
 
-async def restore_task(
-    session: AsyncSession, task_id: uuid.UUID, *, actor: str = "user"
-) -> Task:
+async def restore_task(session: AsyncSession, user: CurrentUser, task_id: uuid.UUID) -> Task:
     """Lấy task ra khỏi thùng rác."""
-    task = await get_task(session, task_id, include_deleted=True)
+    task = await get_task(session, user, task_id, include_deleted=True)
+    _require_delete(user, task)
 
     if task.deleted_at is None:
         raise ValidationError(f"Task {task_id} không nằm trong thùng rác")
@@ -406,16 +401,15 @@ async def restore_task(
 
     deleted_at = task.deleted_at
     task.deleted_at = None
-    _record_event(
-        session, task, TaskEventType.RESTORED, actor, {"deleted_at": deleted_at}
-    )
+    _record_event(session, task, TaskEventType.RESTORED, user, {"deleted_at": deleted_at})
     await session.flush()
-    return await get_task_with_events(session, task.id)
+    return await get_task_with_events(session, user, task.id)
 
 
-async def purge_task(session: AsyncSession, task_id: uuid.UUID) -> None:
+async def purge_task(session: AsyncSession, user: CurrentUser, task_id: uuid.UUID) -> None:
     """Xoá vĩnh viễn. Chỉ áp dụng cho task đang nằm trong thùng rác."""
-    task = await get_task(session, task_id, include_deleted=True)
+    task = await get_task(session, user, task_id, include_deleted=True)
+    _require_delete(user, task)
 
     if task.deleted_at is None:
         raise ValidationError(
@@ -427,32 +421,33 @@ async def purge_task(session: AsyncSession, task_id: uuid.UUID) -> None:
     await session.flush()
 
 
-async def purge_task_now(session: AsyncSession, task_id: uuid.UUID) -> None:
+async def purge_task_now(session: AsyncSession, user: CurrentUser, task_id: uuid.UUID) -> None:
     """Xoá vĩnh viễn ngay, bỏ qua thùng rác."""
-    task = await get_task(session, task_id, include_deleted=True)
+    task = await get_task(session, user, task_id, include_deleted=True)
+    _require_delete(user, task)
     await session.delete(task)
     await session.flush()
 
 
 async def log_time(
     session: AsyncSession,
+    user: CurrentUser,
     task_id: uuid.UUID,
     minutes: int,
     note: str | None = None,
-    *,
-    actor: str = "user",
 ) -> Task:
-    task = await get_task(session, task_id)
+    task = await get_task(session, user, task_id)
+    _require_edit(user, task)
     task.spent_minutes += minutes
     _record_event(
         session,
         task,
         TaskEventType.TIME_LOGGED,
-        actor,
+        user,
         {"minutes": minutes, "note": note, "total": task.spent_minutes},
     )
     await session.flush()
-    return await get_task_with_events(session, task.id)
+    return await get_task_with_events(session, user, task.id)
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -465,10 +460,9 @@ async def _fetch(session: AsyncSession, stmt: Select[Any]) -> list[Task]:
     return list(result.scalars().unique().all())
 
 
-def _alive_in_view(view: TaskView, owners: Sequence[str]) -> ColumnElement[bool]:
-    """`_alive()` AND điều kiện view, để agenda/stats áp view ở một chỗ."""
-    clause = _view_clause(view, owners)
-    return _alive() if clause is None else and_(_alive(), clause)
+def _alive_in_view(view: TaskView, user: CurrentUser) -> ColumnElement[bool]:
+    """`_alive()` AND phạm vi nhìn thấy AND điều kiện view, để agenda/stats áp ở một chỗ."""
+    return and_(_alive(), access.task_query_clause(view, user))
 
 
 def _overdue_clause(now: datetime, cutoff: datetime) -> ColumnElement[bool]:
@@ -500,10 +494,10 @@ def _due_soon_clause(now: datetime, cutoff: datetime) -> ColumnElement[bool]:
 
 async def get_agenda(
     session: AsyncSession,
+    user: CurrentUser,
     reference: date | None = None,
     *,
     view: TaskView = TaskView.ALL,
-    owners: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Việc của hôm nay. View áp cho cả 5 nhóm TRƯỚC bước loại trùng in_progress."""
     today = reference or local_today()
@@ -512,7 +506,7 @@ async def get_agenda(
     cutoff = today_all_day_cutoff(local_today())
     day_start, day_end = local_day_bounds_utc(today)
     open_only = Task.status.notin_(CLOSED_STATUSES)
-    alive = _alive_in_view(view, owners)
+    alive = _alive_in_view(view, user)
 
     overdue = await _fetch(
         session,
@@ -577,15 +571,16 @@ async def get_agenda(
 
 async def get_stats(
     session: AsyncSession,
+    user: CurrentUser,
     reference: date | None = None,
     *,
     view: TaskView = TaskView.ALL,
-    owners: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Thống kê nhanh. `view` áp cho mọi số trừ `trash_total` và `minutes_logged_today`.
 
-    Hai số đó cố ý không lọc theo view: thùng rác thuộc trang riêng, còn chế độ file
-    chỉ có một bộ đếm phút chung; lọc ở đây sẽ làm hai chế độ cho kết quả khác nhau.
+    Hai số đó cố ý không lọc theo view (thùng rác thuộc trang riêng, chế độ file chỉ có một
+    bộ đếm phút chung) nhưng LUÔN lọc theo người dùng: `trash_total` chỉ đếm task đã xoá mà
+    user nhìn thấy được, `minutes_logged_today` chỉ cộng giờ do chính user ghi.
     """
     today = reference or local_today()
     now = now_utc()
@@ -593,7 +588,7 @@ async def get_stats(
     cutoff = today_all_day_cutoff(local_today())
     day_start, day_end = local_day_bounds_utc(today)
 
-    alive = _alive_in_view(view, owners)
+    alive = _alive_in_view(view, user)
 
     status_rows = await session.execute(
         select(Task.status, func.count()).where(alive).group_by(Task.status)
@@ -628,9 +623,7 @@ async def get_stats(
     completed_last_7_days = {str(row[0]): row[1] for row in completed_rows.all()}
 
     open_total = await session.scalar(
-        select(func.count())
-        .select_from(Task)
-        .where(alive, Task.status.notin_(CLOSED_STATUSES))
+        select(func.count()).select_from(Task).where(alive, Task.status.notin_(CLOSED_STATUSES))
     )
     overdue_total = await session.scalar(
         select(func.count())
@@ -642,15 +635,19 @@ async def get_stats(
         )
     )
     trash_total = await session.scalar(
-        select(func.count()).select_from(Task).where(Task.deleted_at.is_not(None))
+        select(func.count())
+        .select_from(Task)
+        .where(Task.deleted_at.is_not(None), access.task_visible_clause(user))
     )
 
     by_project = await _project_progress(session, alive)
 
     minutes_today = await session.scalar(
-        select(func.coalesce(func.sum(cast(TaskEvent.payload["minutes"].astext, Integer)), 0))
-        .where(
+        select(
+            func.coalesce(func.sum(cast(TaskEvent.payload["minutes"].astext, Integer)), 0)
+        ).where(
             TaskEvent.event_type == TaskEventType.TIME_LOGGED,
+            TaskEvent.actor_user_id == user.id,
             TaskEvent.created_at >= day_start,
             TaskEvent.created_at < day_end,
         )
@@ -739,6 +736,7 @@ def validate_period(date_from: date | None, date_to: date | None) -> None:
 
 async def get_participation(
     session: AsyncSession,
+    user: CurrentUser,
     people: Sequence[str] = (),
     date_from: date | None = None,
     date_to: date | None = None,
@@ -767,7 +765,7 @@ async def get_participation(
         )
         .select_from(Task)
         .outerjoin(Project, Project.id == Task.project_id)
-        .where(_alive_in_view(TaskView.WORK, ()), Task.status != TaskStatus.CANCELLED)
+        .where(_alive_in_view(TaskView.WORK, user), Task.status != TaskStatus.CANCELLED)
         .group_by(Task.project_id, Project.key, Project.name, Project.color, Task.assignee)
     )
     if date_from is not None or date_to is not None:
@@ -788,7 +786,7 @@ async def get_participation(
         await session.execute(
             select(Task.assignee, func.count())
             .where(
-                _alive_in_view(TaskView.WORK, ()),
+                _alive_in_view(TaskView.WORK, user),
                 Task.status != TaskStatus.CANCELLED,
                 Task.assignee.is_not(None),
             )
@@ -869,10 +867,10 @@ def _purge_cutoff() -> datetime:
 
 
 async def list_trash(
-    session: AsyncSession, *, limit: int = 100, offset: int = 0
+    session: AsyncSession, user: CurrentUser, *, limit: int = 100, offset: int = 0
 ) -> tuple[list[Task], int]:
-    """Task trong thùng rác, mới xoá lên trước."""
-    base = select(Task).where(Task.deleted_at.is_not(None))
+    """Task trong thùng rác mà user nhìn thấy được, mới xoá lên trước."""
+    base = select(Task).where(Task.deleted_at.is_not(None), access.task_visible_clause(user))
 
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
 
@@ -889,6 +887,8 @@ async def list_trash(
 async def purge_expired(session: AsyncSession) -> int:
     """Xoá vĩnh viễn task đã quá thời hạn giữ. Trả về số bản ghi đã xoá.
 
+    Dọn TOÀN HỆ THỐNG (chính sách lưu giữ, không phải quyền của ai) nên không lọc theo user.
+
     Hiện chưa có scheduler nên hàm này được gọi khi mở thùng rác và qua
     endpoint POST /tasks/trash/purge. Khi có scheduler ở Phase 2 thì cho nó
     gọi định kỳ mỗi ngày.
@@ -898,16 +898,24 @@ async def purge_expired(session: AsyncSession) -> int:
 
     cutoff = _purge_cutoff()
     result = await session.execute(
-        delete(Task).where(
-            Task.deleted_at.is_not(None), Task.deleted_at < cutoff
-        )
+        delete(Task).where(Task.deleted_at.is_not(None), Task.deleted_at < cutoff)
     )
     await session.flush()
     return int(result.rowcount or 0)
 
 
-async def empty_trash(session: AsyncSession) -> int:
-    """Xoá vĩnh viễn toàn bộ thùng rác, không chờ hết hạn."""
-    result = await session.execute(delete(Task).where(Task.deleted_at.is_not(None)))
+async def empty_trash(session: AsyncSession, user: CurrentUser) -> int:
+    """Xoá vĩnh viễn các task trong thùng rác mà user ĐƯỢC PHÉP xoá, không chờ hết hạn.
+
+    Không dùng một câu DELETE theo điều kiện SQL vì quyền xoá (`task_permissions`) có nhánh
+    phụ thuộc Python; đọc từng task rồi kiểm, đơn giản và không lệch với `_require_delete`.
+    """
+    rows = await session.scalars(
+        select(Task).where(Task.deleted_at.is_not(None), access.task_visible_clause(user))
+    )
+    deletable = [t.id for t in rows.unique() if access.task_permissions(user, t).can_delete]
+    if not deletable:
+        return 0
+    result = await session.execute(delete(Task).where(Task.id.in_(deletable)))
     await session.flush()
     return int(result.rowcount or 0)

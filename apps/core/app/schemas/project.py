@@ -62,6 +62,10 @@ class ProjectRead(ProjectBase):
     id: uuid.UUID
     key: str
     is_archived: bool
+    # Người tạo; null = project dùng chung từ Jira/nhập file.
+    owner_id: uuid.UUID | None = None
+    # Quyền sửa/xoá CỦA NGƯỜI GỌI (API tính, core vẫn kiểm lại khi ghi).
+    can_edit: bool = False
     created_at: datetime
     updated_at: datetime
 

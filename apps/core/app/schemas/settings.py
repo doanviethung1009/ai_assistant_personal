@@ -1,4 +1,4 @@
-"""Schema và chuẩn hoá cho cài đặt người dùng (current_users, sync_urls, display_timezone).
+"""Schema và chuẩn hoá cho cài đặt (sync_urls) và múi giờ của user (`DisplayTimezoneBody`).
 
 Hàm `normalize_names`, `normalize_urls` và `normalize_timezone` là NGUỒN DUY NHẤT của luật
 hợp lệ: API PUT và bước nhập file (import_service) cùng gọi, để một giá trị bị API từ chối
@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -88,20 +88,6 @@ def normalize_urls(raw: Any) -> list[str]:
     return out
 
 
-class CurrentUsersBody(BaseModel):
-    """Danh sách tên của chính User, dùng để lọc `view=mine`/`owner`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    # max_length chặn payload khổng lồ trước khi validator chạy; luật chi tiết ở normalize_names.
-    names: list[str] = Field(max_length=MAX_USER_NAMES)
-
-    @field_validator("names", mode="after")
-    @classmethod
-    def _names(cls, value: list[str]) -> list[str]:
-        return normalize_names(value)
-
-
 class SyncUrlsBody(BaseModel):
     """Danh sách URL file đồng bộ (Google Sheets, SharePoint...)."""
 
@@ -116,7 +102,7 @@ class SyncUrlsBody(BaseModel):
 
 
 class DisplayTimezoneBody(BaseModel):
-    """Đặt múi giờ hiển thị. `timezone = null` xoá dòng setting, quay về mặc định env."""
+    """Đặt múi giờ của chính user (`PUT /me/timezone`). `timezone = null` về mặc định env."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -126,12 +112,6 @@ class DisplayTimezoneBody(BaseModel):
     @classmethod
     def _timezone(cls, value: str | None) -> str | None:
         return None if value is None else normalize_timezone(value)
-
-
-class DisplayTimezoneRead(BaseModel):
-    timezone: str = Field(description="Giá trị hiệu lực")
-    default: str = Field(description="Mặc định từ env DISPLAY_TIMEZONE")
-    source: Literal["setting", "default"]
 
 
 class TimezoneOption(BaseModel):
@@ -147,9 +127,7 @@ class TimezoneList(BaseModel):
 
 
 __all__ = [
-    "CurrentUsersBody",
     "DisplayTimezoneBody",
-    "DisplayTimezoneRead",
     "SyncUrlsBody",
     "TimezoneList",
     "TimezoneOption",

@@ -208,7 +208,7 @@ def test_raw_payload_is_an_allowlist() -> None:
         comment={"comments": [{"body": "bí mật"}]},
         customfield_9={"value": "x"},
         attachment=[{"content": "https://x"}],
-        reporter={"emailAddress": "a@b.c"},
+        reporter={"displayName": "Lan Phạm", "emailAddress": "a@b.c"},
     )
     issue["renderedFields"] = {"description": "<p>html</p>"}
     payload = _map(issue).raw_payload
@@ -223,12 +223,14 @@ def test_raw_payload_is_an_allowlist() -> None:
         "resolutiondate",
         "duedate",
         "assignee",
+        "reporter",
         "labels",
         "project",
     }
     assert payload["fields"]["status"] == {"name": "In Progress"}
     assert payload["fields"]["project"] == {"key": "DBA"}
     assert payload["fields"]["assignee"] == {"displayName": "Hùng Đoàn"}
+    assert payload["fields"]["reporter"] == {"displayName": "Lan Phạm"}
     dumped = json.dumps(payload, ensure_ascii=False)
     for forbidden in ("mô tả riêng tư", "bí mật", "emailAddress", "attachment", "html"):
         assert forbidden not in dumped
@@ -411,6 +413,7 @@ async def test_pagination_follows_next_page_token_and_sends_expected_request() -
     assert body["jql"] == "project = DBA" and body["maxResults"] == 100
     assert body["expand"] == "names"
     assert "*all" not in body["fields"] and "summary" in body["fields"]
+    assert "reporter" in body["fields"]
     expected = "Basic " + base64.b64encode(f"{EMAIL}:{TOKEN}".encode()).decode()
     assert first.headers["Authorization"] == expected
     assert {r.url.host for r in seen} == {"acme.atlassian.net"}
@@ -741,3 +744,96 @@ def test_build_jql_assignees_alone_ignore_current_users() -> None:
 def test_build_jql_assignees_with_since() -> None:
     jql = build_jql(None, [], 10, ["An"])
     assert jql.startswith('(assignee in ("An")) AND updated >= -10m')
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Lọc theo reporter (OR với assignee) và ánh xạ reporter
+# ═══════════════════════════════════════════════════════════════════════
+
+_X = ["X"]
+
+
+def test_build_jql_reporter_expected_strings() -> None:
+    assert (
+        build_jql("DBA", [], None, _X, _X)
+        == '(project in ("DBA")) AND (assignee in ("X") OR reporter in ("X")) ORDER BY updated DESC'
+    )
+    assert (
+        build_jql(None, [], None, _X, _X)
+        == '(assignee in ("X") OR reporter in ("X")) ORDER BY updated DESC'
+    )
+    assert build_jql(None, ["me"], None, None, _X) == 'reporter in ("X") ORDER BY updated DESC'
+    assert (
+        build_jql("project = DBA ORDER BY created", [], None, None, ["Y"])
+        == '(project = DBA) AND reporter in ("Y") ORDER BY updated DESC'
+    )
+    assert (
+        build_jql(None, [], 10, _X, _X)
+        == '((assignee in ("X") OR reporter in ("X"))) AND updated >= -10m ORDER BY updated DESC'
+    )
+
+
+def test_build_jql_reporter_injection_is_escaped() -> None:
+    evil = 'x") OR project = SECRET OR reporter in ("y'
+    jql = build_jql(None, [], None, None, [evil])
+    assert jql.startswith("reporter in (") and jql.endswith(") ORDER BY updated DESC")
+    assert (
+        jql == r'reporter in ("x\") OR project = SECRET OR reporter in (\"y") ORDER BY updated DESC'
+    )
+
+
+def test_build_jql_reporter_without_config_needs_no_current_users() -> None:
+    assert build_jql(None, [], None, None, _X) == 'reporter in ("X") ORDER BY updated DESC'
+    with pytest.raises(ValidationError):
+        build_jql(None, [], None, [], [])
+
+
+def test_build_jql_reporter_is_grouped_so_and_binds_the_or() -> None:
+    jql = build_jql("DBA", [], None, _X, _X)
+    assert 'AND (assignee in ("X")' in jql and jql.count(" OR ") == 1
+    assert 'reporter in ("X"))' in jql
+
+
+def test_build_jql_too_long_with_assignees_and_reporters() -> None:
+    names = [f"{i:02d}" + "a" * 98 for i in range(20)]
+    with pytest.raises(ValidationError, match="JQL quá dài"):
+        build_jql(None, [], None, names, names)
+
+
+def test_reporter_is_in_base_fields() -> None:
+    assert "reporter" in jira_client.BASE_FIELDS
+
+
+def test_map_reporter_display_name_only() -> None:
+    item = _map(
+        _issue(
+            reporter={"displayName": "Hùng Đoàn", "emailAddress": "a@b.c", "accountId": "abc123"}
+        )
+    )
+    assert item.reporter == "Hùng Đoàn"
+    dumped = json.dumps(item.model_dump(mode="json"), ensure_ascii=False)
+    assert "a@b.c" not in dumped and "abc123" not in dumped
+
+
+@pytest.mark.parametrize("value", [None, {}, {"displayName": None}])
+def test_map_reporter_absent_is_none(value: Any) -> None:
+    assert _map(_issue(reporter=value)).reporter is None
+
+
+def test_map_reporter_absent_key_is_none() -> None:
+    assert _map(_issue()).reporter is None
+
+
+def test_map_reporter_is_sanitized() -> None:
+    item = _map(_issue(reporter={"displayName": "a\x00b\x1b[31m\u202egnp\rz"}))
+    assert item.reporter is not None
+    assert not any(ord(c) < 0x20 or c == "\u202e" for c in item.reporter)
+
+
+def test_overlong_reporter_is_truncated_with_note() -> None:
+    notes: list[str] = []
+    item = map_issue(
+        _issue(reporter={"displayName": "R" * 500}), base_url=BASE, field_names={}, notes=notes
+    )
+    assert item.reporter is not None and len(item.reporter) == 200
+    assert any("reporter" in n for n in notes)

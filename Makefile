@@ -32,7 +32,7 @@ env: ## Sinh file .env với khoá ngẫu nhiên (không ghi đè nếu đã có
 	@bash scripts/gen-env.sh
 
 .PHONY: env-fill
-env-fill: ## Bổ sung IMPORT_COMMIT_SECRET và INTEGRATION_SECRET_KEY vào .env cũ (không đổi biến đã có)
+env-fill: ## Bổ sung IMPORT_COMMIT_SECRET, INTEGRATION_SECRET_KEY và CORE_JWT_SECRET vào .env cũ (không đổi biến đã có)
 	@bash scripts/gen-env.sh --fill-missing
 
 # ── Vòng đời stack ─────────────────────────────────────────────────────
@@ -334,3 +334,38 @@ reset: ## XOÁ TOÀN BỘ DỮ LIỆU rồi dựng lại từ đầu
 	$(DC) --profile llm --profile monitoring down -v
 	$(MAKE) up
 	@echo "  Đã dựng lại. Migration chạy tự động khi api khởi động."
+
+# ── Đăng nhập đa người dùng (CLI trong container api, xem app/cli/auth.py) ──
+.PHONY: auth-token auth-invite auth-bootstrap
+auth-token: ## In JWT cho một user active: make auth-token EMAIL=a@b.com [TTL=60] (dev, smoke test)
+	@$(API) python -m app.cli.auth token --email "$(EMAIL)" --ttl $(or $(TTL),60)
+
+auth-invite: ## Mời email: make auth-invite EMAIL=a@b.com [ROLE=member|lead|admin]
+	$(API) python -m app.cli.auth invite --email "$(EMAIL)" --role $(or $(ROLE),member)
+
+auth-bootstrap: ## Gán chủ cho dữ liệu cũ SAU make migrate: make auth-bootstrap OWNER=admin@b.com [DRY=1]
+	$(API) python -m app.cli.auth bootstrap --owner "$(OWNER)" $(if $(DRY),--dry-run,)
+
+# ── Trỏ web local vào VM dev (Proxmox), TẠM THỜI ───────────────────────
+# API trên VM chỉ bind 127.0.0.1:8000 nên phải đi qua SSH tunnel (local :8001).
+# API key của VM đọc lúc chạy và chỉ nằm trong env của tiến trình, không ghi file.
+# Biến môi trường của shell thắng apps/web/.env.local nên không phải sửa file đó.
+# VM dev chạy nhánh main, chưa có endpoint auth của nhánh feat/auth-multiuser.
+DEVVM_HOST ?= deploy@192.168.100.201
+DEVVM_KEY  ?= $(HOME)/.ssh/ai_assistant_deploy
+DEVVM_PORT ?= 8001
+
+.PHONY: devvm-tunnel
+devvm-tunnel: ## Mở SSH tunnel localhost:8001 -> API VM dev
+	@pkill -f "ssh .*-L $(DEVVM_PORT):127.0.0.1:8000" 2>/dev/null || true
+	ssh -i $(DEVVM_KEY) -o BatchMode=yes -o ExitOnForwardFailure=yes -fN -L $(DEVVM_PORT):127.0.0.1:8000 $(DEVVM_HOST)
+
+.PHONY: devvm-web
+devvm-web: devvm-tunnel ## Chạy web trên host trỏ vào API VM dev (tắt next dev đang chạy ở :3000 trước)
+	cd apps/web && DATA_SOURCE=api CORE_API_URL=http://127.0.0.1:$(DEVVM_PORT) \
+	  CORE_API_KEY="$$(ssh -i $(DEVVM_KEY) -o BatchMode=yes $(DEVVM_HOST) 'grep ^API_KEY= /srv/builder-ai/dev/.env | cut -d= -f2-')" \
+	  npm run dev
+
+.PHONY: devvm-down
+devvm-down: ## Đóng tunnel
+	@pkill -f "ssh .*-L $(DEVVM_PORT):127.0.0.1:8000" 2>/dev/null || true

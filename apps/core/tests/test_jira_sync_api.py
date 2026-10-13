@@ -30,7 +30,7 @@ from app.models.integration import IntegrationConnection
 from app.models.task import Task, TaskEvent
 from app.services import integration_sync_service, jira_client
 from app.services.ssrf_guard import NETWORK_ERROR_MESSAGE, PinnedTransport, _FixedIPBackend
-from tests.conftest import IMPORT_SECRET
+from tests.conftest import add_aliases, create_persona
 
 pytestmark = pytest.mark.db
 
@@ -39,7 +39,6 @@ BASE = "https://acme.atlassian.net"
 NAME = "Jira công ty"
 SECRET_BODY = "JIRA-BODY-SECRET-DO-NOT-ECHO"  # noqa: S105
 AUTH_B64 = base64.b64encode(f"me@acme.com:{TOKEN}".encode()).decode()
-HEADERS = {"X-Import-Secret": IMPORT_SECRET}
 PUBLIC_IP = "104.192.140.1"
 
 Handler = Callable[[httpx.Request], Any]
@@ -127,16 +126,18 @@ async def _last_sync(cid: str) -> Any:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def test_import_secret_is_required(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+async def test_sync_requires_integration_sync_permission(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+    """Member không chạy được sync (không thay bằng mật khẩu nữa: dùng quyền)."""
+    from app.models.enums import UserRole
+
     seen = jira(lambda r: _page())
     cid = await _create(client)
-    missing = await client.post(_sync_url(cid))
-    wrong = await client.post(_sync_url(cid), headers={"X-Import-Secret": "WRONG-secret-value-000"})
-    assert missing.status_code == 403 and wrong.status_code == 403
-    assert "WRONG" not in wrong.text and IMPORT_SECRET not in wrong.text
-    assert seen == []  # không gọi Jira khi chưa qua cổng
+    member = await create_persona("member-sync@test.local", UserRole.MEMBER)
+    denied = await client.post(_sync_url(cid), headers=member.headers)
+    assert denied.status_code == 403 and denied.json()["code"] == "forbidden"
+    assert seen == []  # không gọi Jira khi chưa qua cổng quyền
     # 403 đến trước cả 422 của since.
-    bad = await client.post(_sync_url(cid, "garbage"))
+    bad = await client.post(_sync_url(cid, "garbage"), headers=member.headers)
     assert bad.status_code == 403
 
 
@@ -144,42 +145,41 @@ async def test_invalid_since_is_422_and_makes_no_jira_call(client: httpx.AsyncCl
     seen = jira(lambda r: _page())
     cid = await _create(client)
     for bad in ("yesterday", "2026-13-40", "x%22%20OR%201=1", "2000-01-01T00:00:00Zjunk"):
-        resp = await client.post(_sync_url(cid, bad), headers=HEADERS)
+        resp = await client.post(_sync_url(cid, bad))
         assert resp.status_code == 422, bad
     assert seen == []
 
 
 async def test_unknown_connection_is_404(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     jira(lambda r: _page())
-    resp = await client.post(_sync_url(str(uuid.uuid4())), headers=HEADERS)
+    resp = await client.post(_sync_url(str(uuid.uuid4())))
     assert resp.status_code == 404
 
 
 async def test_missing_token_is_409_with_guidance(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     seen = jira(lambda r: _page())
     cid = await _create(client, token=None)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 409
     assert "token" in resp.json()["detail"]
     assert seen == []
 
 
-async def test_no_jql_and_no_current_users_is_422(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+async def test_no_jql_and_no_alias_is_422(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     seen = jira(lambda r: _page())
     cid = await _create(client, config={})
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
-    assert resp.status_code == 422 and "current_users" in resp.json()["detail"]
+    resp = await client.post(_sync_url(cid))
+    assert resp.status_code == 422 and "alias" in resp.json()["detail"]
     assert seen == []
 
 
-async def test_default_jql_uses_current_users(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+async def test_default_jql_uses_caller_aliases(  # type: ignore[no-untyped-def]
+    client: httpx.AsyncClient, jira, default_user
+) -> None:
     seen = jira(lambda r: _page())
-    put = await client.put(
-        "/api/v1/settings/current-users", json={"names": ['Hùng "Đoàn"', "x\\y"]}
-    )
-    assert put.status_code == 200, put.text
+    await add_aliases(default_user, 'Hùng "Đoàn"', "x\\y")
     cid = await _create(client, config={})
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 200, resp.text
     import json
 
@@ -190,7 +190,7 @@ async def test_default_jql_uses_current_users(client: httpx.AsyncClient, jira) -
 async def test_since_becomes_relative_window_in_jql(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     seen = jira(lambda r: _page())
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid, "2026-01-01"), headers=HEADERS)
+    resp = await client.post(_sync_url(cid, "2026-01-01"))
     assert resp.status_code == 200
     import json
 
@@ -226,7 +226,7 @@ async def test_sync_creates_tasks_and_is_idempotent(
     jira(handler)
     cid = await _create(client)
     caplog.set_level(logging.DEBUG)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["fetched"] == 5 and data["pages"] == 2
@@ -244,7 +244,7 @@ async def test_sync_creates_tasks_and_is_idempotent(
     assert tasks[0].raw_payload is not None and "description" not in str(tasks[0].raw_payload)
     assert await _last_sync(cid) is not None
 
-    again = await client.post(_sync_url(cid), headers=HEADERS)
+    again = await client.post(_sync_url(cid))
     assert again.status_code == 200
     d2 = again.json()
     assert (d2["added"], d2["updated"], d2["unchanged"]) == (0, 0, 3)
@@ -257,24 +257,29 @@ async def test_sync_creates_tasks_and_is_idempotent(
 async def test_events_carry_connection_name_as_actor(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     jira(lambda r: _page(_issue("DBA-1")))
     cid = await _create(client)
-    await client.post(_sync_url(cid), headers=HEADERS)
+    await client.post(_sync_url(cid))
     jira(lambda r: _page(_issue("DBA-1", summary="Đã đổi tên")))
-    again = await client.post(_sync_url(cid), headers=HEADERS)
+    again = await client.post(_sync_url(cid))
     assert again.json()["updated"] == 1
     async with SessionFactory() as s:
         actors = {e.actor for e in (await s.execute(select(TaskEvent))).scalars()}
     assert actors == {f"integration:{NAME}"}
 
 
-async def test_personal_task_is_not_overwritten(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+async def test_personal_task_is_not_overwritten(  # type: ignore[no-untyped-def]
+    client: httpx.AsyncClient, jira, default_user
+) -> None:
     jira(lambda r: _page(_issue("DBA-1")))
     cid = await _create(client)
-    await client.post(_sync_url(cid), headers=HEADERS)
+    await client.post(_sync_url(cid))
     async with SessionFactory() as s:
-        await s.execute(text("UPDATE tasks SET scope='personal', title='Của riêng tôi'"))
+        await s.execute(
+            text("UPDATE tasks SET scope='personal', title='Của riêng tôi', owner_id = :owner"),
+            {"owner": default_user.id},
+        )
         await s.commit()
     jira(lambda r: _page(_issue("DBA-1", summary="Jira đổi tên")))
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.json()["skipped_personal"] == 1 and resp.json()["added"] == 0
     assert (await _tasks())[0].title == "Của riêng tôi"
 
@@ -283,14 +288,14 @@ async def test_batches_of_at_most_1000(client: httpx.AsyncClient, jira, monkeypa
     sizes: list[int] = []
     real = integration_sync_service._write_batch
 
-    async def spy(items, actor, owner_host):  # type: ignore[no-untyped-def]
+    async def spy(items, actor, owner_host, actor_user_id=None):  # type: ignore[no-untyped-def]
         sizes.append(len(items))
-        return await real(items, actor, owner_host)
+        return await real(items, actor, owner_host, actor_user_id)
 
     monkeypatch.setattr(integration_sync_service, "_write_batch", spy)
     jira(lambda r: _page(*[_issue(f"DBA-{i}") for i in range(1, 1202)]))
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 200 and resp.json()["added"] == 1201
     assert sizes == [1000, 201]
 
@@ -307,7 +312,7 @@ async def test_page_cap_truncates_and_keeps_last_sync_unset(
 
     jira(handler)
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     data = resp.json()
     assert resp.status_code == 200 and calls == 100
     assert data["pages"] == 100 and data["fetched"] == 100 and data["truncated"] is True
@@ -330,7 +335,7 @@ async def test_jira_errors_have_own_message_and_leave_last_sync_unset(
     jira(lambda r: httpx.Response(status, text=f"{SECRET_BODY} {TOKEN}"))
     cid = await _create(client)
     caplog.set_level(logging.DEBUG)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502
     detail = resp.json()["detail"]
     assert str(status) in detail
@@ -345,7 +350,7 @@ async def test_timeout_is_generic_network_error(client: httpx.AsyncClient, jira)
 
     jira(handler)
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502 and resp.json()["detail"] == NETWORK_ERROR_MESSAGE
 
 
@@ -354,7 +359,7 @@ async def test_redirect_is_an_error_and_never_leaves_the_host(
 ) -> None:  # type: ignore[no-untyped-def]
     seen = jira(lambda r: httpx.Response(302, headers={"Location": "https://evil.example.com/x"}))
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502 and "evil.example.com" not in resp.text
     assert [r.url.host for r in seen] == ["acme.atlassian.net"]
 
@@ -363,7 +368,7 @@ async def test_response_too_large(client: httpx.AsyncClient, jira, monkeypatch) 
     monkeypatch.setattr(jira_client, "MAX_RESPONSE_BYTES", 500)
     jira(lambda r: httpx.Response(200, content=b'{"issues":[],"x":"' + b"a" * 2000 + b'"}'))
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502 and "vượt" in resp.json()["detail"]
 
 
@@ -376,13 +381,13 @@ async def test_undecryptable_token_asks_to_re_enter(
         settings, "integration_secret_key", SecretStr(Fernet.generate_key().decode())
     )
     caplog.set_level(logging.DEBUG)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 503 and "nhập lại token" in resp.json()["detail"]
     assert seen == [] and TOKEN not in resp.text and TOKEN not in caplog.text
     # Khoá hỏng không làm kẹt khoá đồng thời: lần sau (đã sửa khoá) vẫn chạy được.
     monkeypatch.undo()
     jira(lambda r: _page())
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).status_code == 200
+    assert (await client.post(_sync_url(cid))).status_code == 200
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -401,24 +406,24 @@ async def test_concurrent_sync_of_same_connection_is_409(client: httpx.AsyncClie
 
     jira(handler)
     cid = await _create(client)
-    first = asyncio.create_task(client.post(_sync_url(cid), headers=HEADERS))
+    first = asyncio.create_task(client.post(_sync_url(cid)))
     await asyncio.wait_for(entered.wait(), 10)
-    second = await client.post(_sync_url(cid), headers=HEADERS)
+    second = await client.post(_sync_url(cid))
     assert second.status_code == 409
     release.set()
     done = await asyncio.wait_for(first, 20)
     assert done.status_code == 200 and done.json()["added"] == 1
     # Xong thì khoá được nhả.
-    third = await client.post(_sync_url(cid), headers=HEADERS)
+    third = await client.post(_sync_url(cid))
     assert third.status_code == 200
 
 
 async def test_lock_is_released_after_failure(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     jira(lambda r: httpx.Response(500))
     cid = await _create(client)
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).status_code == 502
+    assert (await client.post(_sync_url(cid))).status_code == 502
     jira(lambda r: _page(_issue("DBA-1")))
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).status_code == 200
+    assert (await client.post(_sync_url(cid))).status_code == 200
 
 
 async def test_no_db_transaction_is_open_while_calling_jira(
@@ -441,7 +446,7 @@ async def test_no_db_transaction_is_open_while_calling_jira(
 
     jira(handler)
     cid = await _create(client)
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).status_code == 200
+    assert (await client.post(_sync_url(cid))).status_code == 200
     assert states == [0]
 
 
@@ -458,7 +463,9 @@ class Recorder(httpcore.AsyncMockBackend):
         self._responses = list(responses)
         self.connects: list[str] = []
 
-    async def connect_tcp(self, host, port, timeout=None, local_address=None, socket_options=None):  # type: ignore[no-untyped-def]  # noqa: ASYNC109
+    async def connect_tcp(  # type: ignore[no-untyped-def]
+        self, host, port, timeout=None, local_address=None, socket_options=None  # noqa: ASYNC109
+    ):
         self.connects.append(host)
         return httpcore.AsyncMockStream([self._responses.pop(0)])
 
@@ -511,7 +518,7 @@ async def test_dns_to_internal_address_is_blocked(
     recorder, _ = _install_pinned(monkeypatch, [[ip]], [_http("200 OK", _OK_BODY)])
     cid = await _create(client)
     caplog.set_level(logging.DEBUG)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     # Cùng một thông báo mạng cố định cho mọi nguyên nhân; không lộ IP/lý do.
     assert resp.status_code == 502 and resp.json()["detail"] == NETWORK_ERROR_MESSAGE
     assert recorder.connects == []  # không mở TCP tới đâu cả
@@ -529,7 +536,7 @@ async def test_dns_rebinding_after_check_has_no_effect(
         [_http("200 OK", _OK_BODY)],
     )
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 200, resp.text
     assert recorder.connects == [PUBLIC_IP, PUBLIC_IP] and len(calls) == 2
 
@@ -543,7 +550,7 @@ async def test_rebinding_between_requests_is_blocked(
         monkeypatch, [[PUBLIC_IP], ["127.0.0.1"]], [_http("200 OK", _OK_BODY)]
     )
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502
     assert recorder.connects == [PUBLIC_IP]
 
@@ -557,7 +564,7 @@ async def test_pinned_redirect_302_is_error_and_no_second_connection(
         [_http("302 Found", headers="Location: https://evil.example.com/x\r\n")],
     )
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502 and "evil.example.com" not in resp.text
     assert recorder.connects == [PUBLIC_IP, PUBLIC_IP]
     assert calls == ["acme.atlassian.net", "acme.atlassian.net"]
@@ -572,7 +579,7 @@ async def test_pinned_end_to_end_sends_auth_only_to_saved_host(
     recorder, _ = _install_pinned(monkeypatch, [[PUBLIC_IP]], [_http("200 OK", body)])
     cid = await _create(client)
     caplog.set_level(logging.DEBUG)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 200 and resp.json()["added"] == 1
     assert recorder.connects == [PUBLIC_IP, PUBLIC_IP]
     assert TOKEN not in caplog.text and AUTH_B64 not in caplog.text
@@ -593,7 +600,7 @@ async def test_user_edits_survive_resync_but_status_and_title_still_apply(
 ) -> None:  # type: ignore[no-untyped-def]
     jira(lambda r: _page(_issue("DBA-1", priority={"name": "High"}, duedate="2026-03-05")))
     cid = await _create(client)
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).json()["added"] == 1
+    assert (await client.post(_sync_url(cid))).json()["added"] == 1
     task = (await _tasks())[0]
     assert task.priority.value == "high" and task.due_at is not None
     original_project = task.project_id
@@ -620,7 +627,7 @@ async def test_user_edits_survive_resync_but_status_and_title_still_apply(
             )
         )
     )
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     assert data["updated"] == 1
     after = (await _tasks())[0]
     # Còn nguyên giá trị User đã sửa; task cũ không bị chuyển project.
@@ -649,7 +656,7 @@ async def test_batches_are_written_while_fetching_and_partial_failure_is_reporte
 
     jira(handler)
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     # Lô 1000 đã ghi TRƯỚC khi lấy trang kế (không gom hết trang vào RAM).
     assert counts == [1000]
     assert resp.status_code == 502
@@ -666,7 +673,7 @@ async def test_new_project_cap(client: httpx.AsyncClient, jira, monkeypatch) -> 
         )
     )
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     data = resp.json()
     assert resp.status_code == 200 and data["added"] == 5
     assert len([w for w in data["warnings"] if "trần" in w["reason"]]) == 3
@@ -685,8 +692,8 @@ async def test_connection_cannot_overwrite_task_from_another_jira_host(
     jira(handler)
     a = await _create(client, name="A", base_url="https://acme.atlassian.net")
     b = await _create(client, name="B", base_url="https://other.atlassian.net")
-    assert (await client.post(_sync_url(a), headers=HEADERS)).json()["added"] == 1
-    resp = await client.post(_sync_url(b), headers=HEADERS)
+    assert (await client.post(_sync_url(a))).json()["added"] == 1
+    resp = await client.post(_sync_url(b))
     data = resp.json()
     assert data["updated"] == 0 and data["added"] == 0
     assert [e["external_id"] for e in data["errors"]] == ["DBA-1"]
@@ -708,7 +715,7 @@ async def test_cancelled_request_does_not_leak_the_advisory_lock(
 
     jira(handler)
     cid = await _create(client)
-    first = asyncio.create_task(client.post(_sync_url(cid), headers=HEADERS))
+    first = asyncio.create_task(client.post(_sync_url(cid)))
     await asyncio.wait_for(entered.wait(), 10)
     first.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -723,7 +730,7 @@ async def test_cancelled_request_does_not_leak_the_advisory_lock(
         )
     assert leaked == 0
     jira(lambda r: _page(_issue("DBA-1")))
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).status_code == 200
+    assert (await client.post(_sync_url(cid))).status_code == 200
 
 
 async def test_compressed_jira_response_is_rejected_end_to_end(
@@ -731,7 +738,7 @@ async def test_compressed_jira_response_is_rejected_end_to_end(
 ) -> None:  # type: ignore[no-untyped-def]
     jira(lambda r: httpx.Response(200, content=b"x", headers={"Content-Encoding": "gzip"}))
     cid = await _create(client)
-    resp = await client.post(_sync_url(cid), headers=HEADERS)
+    resp = await client.post(_sync_url(cid))
     assert resp.status_code == 502 and "nén" in resp.json()["detail"]
 
 
@@ -739,7 +746,7 @@ async def test_byte_cap_truncates_end_to_end(client: httpx.AsyncClient, jira, mo
     monkeypatch.setattr(jira_client, "MAX_TOTAL_BYTES", 50)
     jira(lambda r: _page(_issue("DBA-1"), next_token="t"))
     cid = await _create(client)
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     assert data["truncated"] is True and data["pages"] == 1
     assert any("MB" in w["reason"] for w in data["warnings"])
     assert await _last_sync(cid) is None
@@ -757,7 +764,7 @@ async def test_duplicate_issues_across_pages_become_a_warning(
 
     jira(handler)
     cid = await _create(client)
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     assert data["added"] == 2
     assert any("lặp" in w["reason"] for w in data["warnings"])
 
@@ -769,10 +776,10 @@ async def test_audit_lines_include_client_and_since_even_when_rejected(
     caplog.set_level(logging.INFO, logger="app.services.integration_sync_service")
     no_token = await _create(client, name="Không token", token=None)
     ok = await _create(client)
-    await client.post(_sync_url(str(uuid.uuid4())), headers=HEADERS)  # 404
-    await client.post(_sync_url(no_token), headers=HEADERS)  # 409
-    await client.post(_sync_url(ok, "garbage"), headers=HEADERS)  # 422
-    await client.post(_sync_url(ok, "2026-01-01"), headers=HEADERS)  # thành công
+    await client.post(_sync_url(str(uuid.uuid4())))  # 404
+    await client.post(_sync_url(no_token))  # 409
+    await client.post(_sync_url(ok, "garbage"))  # 422
+    await client.post(_sync_url(ok, "2026-01-01"))  # thành công
     records = [r for r in caplog.records if getattr(r, "audit", None) == "integration_sync"]
     failed = [r for r in records if r.audit_action == "failed"]  # type: ignore[attr-defined]
     assert sorted(r.status for r in failed) == [404, 409, 422]  # type: ignore[attr-defined]
@@ -796,7 +803,7 @@ async def _events_of(task_id: Any) -> list[TaskEvent]:
 async def _first_sync(client: httpx.AsyncClient, jira, duedate: str | None) -> tuple[str, Task]:  # type: ignore[no-untyped-def]
     jira(lambda r: _page(_issue("DBA-1", duedate=duedate)))
     cid = await _create(client)
-    assert (await client.post(_sync_url(cid), headers=HEADERS)).json()["added"] == 1
+    assert (await client.post(_sync_url(cid))).json()["added"] == 1
     return cid, (await _tasks())[0]
 
 
@@ -807,7 +814,7 @@ async def test_jira_due_change_applies_when_user_did_not_edit(
     assert task.due_all_day is True
 
     jira(lambda r: _page(_issue("DBA-1", duedate="2026-04-01")))
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     assert data["updated"] == 1
     after = (await _tasks())[0]
     assert after.due_at == datetime(2026, 4, 1, tzinfo=UTC) and after.due_all_day is True
@@ -815,14 +822,12 @@ async def test_jira_due_change_applies_when_user_did_not_edit(
     assert any("due_at" in c for c in changed)
 
 
-async def test_jira_due_change_is_ignored_after_user_edit(
-    client: httpx.AsyncClient, jira
-) -> None:  # type: ignore[no-untyped-def]
+async def test_jira_due_change_is_ignored_after_user_edit(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     cid, task = await _first_sync(client, jira, "2026-03-05")
     await _patch(client, str(task.id), due_at="2027-01-01T09:00:00Z")
 
     jira(lambda r: _page(_issue("DBA-1", duedate="2026-12-12")))
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     after = (await _tasks())[0]
     assert after.due_at == datetime(2027, 1, 1, 9, tzinfo=UTC) and after.due_all_day is False
     assert any("Giữ hạn đã sửa tay" in w["reason"] for w in data["warnings"])
@@ -833,21 +838,19 @@ async def test_jira_removing_due_clears_it_when_user_did_not_edit(
 ) -> None:  # type: ignore[no-untyped-def]
     cid, _ = await _first_sync(client, jira, "2026-03-05")
     jira(lambda r: _page(_issue("DBA-1")))  # không còn duedate
-    data = (await client.post(_sync_url(cid), headers=HEADERS)).json()
+    data = (await client.post(_sync_url(cid))).json()
     assert data["updated"] == 1
     after = (await _tasks())[0]
     assert after.due_at is None and after.due_all_day is False
 
 
-async def test_jira_due_kept_when_previous_payload_unknown(
-    client: httpx.AsyncClient, jira
-) -> None:  # type: ignore[no-untyped-def]
+async def test_jira_due_kept_when_previous_payload_unknown(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
     cid, task = await _first_sync(client, jira, "2026-03-05")
     async with SessionFactory() as s:
         await s.execute(text("UPDATE tasks SET raw_payload = NULL WHERE id = :i"), {"i": task.id})
         await s.commit()
     jira(lambda r: _page(_issue("DBA-1", duedate="2026-04-01")))
-    await client.post(_sync_url(cid), headers=HEADERS)
+    await client.post(_sync_url(cid))
     after = (await _tasks())[0]
     assert after.due_at == datetime(2026, 3, 5, tzinfo=UTC)  # an toàn: không đoán
 
@@ -856,6 +859,128 @@ async def test_jira_sets_due_on_task_without_one(client: httpx.AsyncClient, jira
     cid, task = await _first_sync(client, jira, None)
     assert task.due_at is None and task.due_all_day is False
     jira(lambda r: _page(_issue("DBA-1", duedate="2026-05-06")))
-    await client.post(_sync_url(cid), headers=HEADERS)
+    await client.post(_sync_url(cid))
     after = (await _tasks())[0]
     assert after.due_at == datetime(2026, 5, 6, tzinfo=UTC) and after.due_all_day is True
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Lọc theo reporter và lưu reporter
+# ═══════════════════════════════════════════════════════════════════════
+
+
+def _reporter(name: str | None) -> dict[str, Any]:
+    return {"reporter": {"displayName": name, "emailAddress": "x@acme.com"} if name else None}
+
+
+async def test_sync_reporter_and_assignee_build_or_jql(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+    import json
+
+    seen = jira(lambda r: _page())
+    cid = await _create(client)
+    resp = await client.post(f"{_sync_url(cid)}?assignee=A&reporter=A")
+    assert resp.status_code == 200, resp.text
+    jql = json.loads(seen[0].content)["jql"]
+    assert (
+        jql == '(project = DBA) AND (assignee in ("A") OR reporter in ("A")) ORDER BY updated DESC'
+    )
+    assert "reporter" in json.loads(seen[0].content)["fields"]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "&".join(f"reporter=n{i}" for i in range(21)),
+        "reporter=",
+        "reporter=a%01b",
+        "reporter=" + "x" * 101,
+    ],
+)
+async def test_sync_reporter_param_validation(client: httpx.AsyncClient, jira, query: str) -> None:  # type: ignore[no-untyped-def]
+    seen = jira(lambda r: _page())
+    cid = await _create(client)
+    resp = await client.post(f"{_sync_url(cid)}?{query}")
+    assert resp.status_code == 422
+    assert seen == []
+
+
+async def test_sync_stores_reporter_and_exposes_it(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda r: _page(_issue("DBA-1", **_reporter("Lan Phạm"))))
+    cid = await _create(client)
+    assert (await client.post(_sync_url(cid))).json()["added"] == 1
+    task = (await _tasks())[0]
+    assert task.reporter == "Lan Phạm"
+    resp = await client.get(f"/api/v1/tasks/{task.id}")
+    assert resp.status_code == 200 and resp.json()["reporter"] == "Lan Phạm"
+    assert "x@acme.com" not in str(task.raw_payload)
+    # Không đổi gì: idempotent, không event mới.
+    again = (await client.post(_sync_url(cid))).json()
+    assert (again["updated"], again["unchanged"]) == (0, 1)
+
+
+async def test_sync_fills_reporter_of_existing_task(client: httpx.AsyncClient, jira) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda r: _page(_issue("DBA-1")))  # Jira chưa có reporter: giống task cũ
+    cid = await _create(client)
+    await client.post(_sync_url(cid))
+    assert (await _tasks())[0].reporter is None
+
+    jira(lambda r: _page(_issue("DBA-1", **_reporter("Lan Phạm"))))
+    data = (await client.post(_sync_url(cid))).json()
+    assert data["updated"] == 1
+    task = (await _tasks())[0]
+    assert task.reporter == "Lan Phạm"
+    changes = [e.payload for e in await _events_of(task.id) if e.payload and "changes" in e.payload]
+    assert any(c["changes"].get("reporter") == {"from": None, "to": "Lan Phạm"} for c in changes)
+
+
+async def test_jira_reporter_change_applies_but_create_only_fields_stay(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda r: _page(_issue("DBA-1", **_reporter("Lan"))))
+    cid = await _create(client)
+    await client.post(_sync_url(cid))
+    task = (await _tasks())[0]
+    await _patch(client, str(task.id), priority="urgent", assignee="Người khác")
+
+    jira(
+        lambda r: _page(
+            _issue(
+                "DBA-1",
+                priority={"name": "Low"},
+                assignee={"displayName": "Jira Assignee"},
+                **_reporter("Mai"),
+            )
+        )
+    )
+    await client.post(_sync_url(cid))
+    after = (await _tasks())[0]
+    assert after.reporter == "Mai"
+    assert after.priority.value == "urgent" and after.assignee == "Người khác"
+
+
+async def test_reporter_only_run_does_not_mark_connection_synced(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda r: _page(_issue("DBA-1")))
+    cid = await _create(client)
+    data = (await client.post(f"{_sync_url(cid)}?reporter=Lan")).json()
+    assert await _last_sync(cid) is None
+    assert any("Lượt kéo theo người" in w["reason"] for w in data["warnings"])
+
+
+async def test_personal_task_reporter_is_untouched(  # type: ignore[no-untyped-def]
+    client: httpx.AsyncClient, jira, default_user
+) -> None:
+    jira(lambda r: _page(_issue("DBA-1", **_reporter("Lan"))))
+    cid = await _create(client)
+    await client.post(_sync_url(cid))
+    async with SessionFactory() as s:
+        await s.execute(
+            text("UPDATE tasks SET scope='personal', owner_id = :owner"),
+            {"owner": default_user.id},
+        )
+        await s.commit()
+    jira(lambda r: _page(_issue("DBA-1", **_reporter("Mai"))))
+    resp = (await client.post(_sync_url(cid))).json()
+    assert resp["skipped_personal"] == 1
+    assert (await _tasks())[0].reporter == "Lan"

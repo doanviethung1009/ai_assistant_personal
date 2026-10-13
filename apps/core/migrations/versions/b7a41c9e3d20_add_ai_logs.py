@@ -26,8 +26,14 @@ def upgrade() -> None:
         sa.Column(
             "category",
             sa.Enum(
-                "app", "api", "web", "tool", "other",
-                name="ai_log_category", native_enum=False, length=32,
+                "app",
+                "api",
+                "web",
+                "tool",
+                "other",
+                name="ai_log_category",
+                native_enum=False,
+                length=32,
             ),
             server_default="other",
             nullable=False,
@@ -36,8 +42,18 @@ def upgrade() -> None:
         sa.Column("handling", sa.Text(), nullable=False),
         sa.Column("response", sa.Text(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_ai_logs")),
     )
     op.create_index(op.f("ix_ai_logs_category"), "ai_logs", ["category"], unique=False)

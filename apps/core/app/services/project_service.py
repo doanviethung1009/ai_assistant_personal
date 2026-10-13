@@ -6,14 +6,17 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import CurrentUser
 from app.models.project import Project
 from app.schemas.project import ProjectCreate, ProjectUpdate
-from app.services.errors import ConflictError, NotFoundError
+from app.services import access
+from app.services.errors import ConflictError, ForbiddenError, NotFoundError
+
+# Project dùng chung cho mọi user nhìn thấy (list/get không lọc theo owner); `owner_id` chỉ để
+# biết ai được sửa/xoá (xem access.project_can_modify).
 
 
-async def list_projects(
-    session: AsyncSession, *, include_archived: bool = False
-) -> list[Project]:
+async def list_projects(session: AsyncSession, *, include_archived: bool = False) -> list[Project]:
     stmt = select(Project).order_by(Project.key)
     if not include_archived:
         stmt = stmt.where(Project.is_archived.is_(False))
@@ -28,8 +31,10 @@ async def get_project(session: AsyncSession, project_id: uuid.UUID) -> Project:
     return project
 
 
-async def create_project(session: AsyncSession, payload: ProjectCreate) -> Project:
-    project = Project(**payload.model_dump())
+async def create_project(
+    session: AsyncSession, user: CurrentUser, payload: ProjectCreate
+) -> Project:
+    project = Project(**payload.model_dump(), owner_id=user.id)
     session.add(project)
     try:
         await session.flush()
@@ -41,9 +46,11 @@ async def create_project(session: AsyncSession, payload: ProjectCreate) -> Proje
 
 
 async def update_project(
-    session: AsyncSession, project_id: uuid.UUID, payload: ProjectUpdate
+    session: AsyncSession, user: CurrentUser, project_id: uuid.UUID, payload: ProjectUpdate
 ) -> Project:
     project = await get_project(session, project_id)
+    if not access.project_can_modify(user, project):
+        raise ForbiddenError("Bạn không có quyền sửa project này")
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(project, field, value)
     await session.flush()
@@ -51,9 +58,11 @@ async def update_project(
     return project
 
 
-async def delete_project(session: AsyncSession, project_id: uuid.UUID) -> None:
+async def delete_project(session: AsyncSession, user: CurrentUser, project_id: uuid.UUID) -> None:
     """Xoá project. Task thuộc project sẽ được set project_id = NULL, không bị xoá."""
     project = await get_project(session, project_id)
+    if not access.project_can_modify(user, project):
+        raise ForbiddenError("Bạn không có quyền xoá project này")
     await session.delete(project)
     await session.flush()
 

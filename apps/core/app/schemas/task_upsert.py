@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import TaskPriority, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
-from app.schemas.task import MAX_ASSIGNEE_LEN, clean_assignee
+from app.schemas.task import MAX_ASSIGNEE_LEN, MAX_REPORTER_LEN, clean_assignee
 
 MAX_BATCH_ITEMS = 1000
 MAX_DESCRIPTION_LEN = 32_000
@@ -34,6 +34,8 @@ class TaskUpsert(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LEN)
     assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
+    # Tên hiển thị người báo cáo ở nguồn (chỉ xem). Vắng khoá = giữ giá trị DB; null = xoá.
+    reporter: str | None = Field(default=None, max_length=MAX_REPORTER_LEN)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     due_at: datetime | None = None
@@ -60,6 +62,7 @@ class TaskUpsert(BaseModel):
         "title",
         "description",
         "assignee",
+        "reporter",
         "external_url",
         "project_key",
         "project_name",
@@ -116,7 +119,7 @@ class TaskUpsert(BaseModel):
             raise ValueError("external_url chứa ký tự không hợp lệ")
         return stripped
 
-    @field_validator("assignee")
+    @field_validator("assignee", "reporter")
     @classmethod
     def _clean_assignee(cls, value: str | None) -> str | None:
         return clean_assignee(value)

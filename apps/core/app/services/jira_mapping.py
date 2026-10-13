@@ -27,7 +27,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.models.enums import TaskPriority, TaskStatus
 from app.schemas.common import MAX_TAGS
-from app.schemas.task import MAX_ASSIGNEE_LEN
+from app.schemas.task import MAX_ASSIGNEE_LEN, MAX_REPORTER_LEN
 from app.schemas.task_upsert import TaskUpsert
 from app.services.import_service import normalize_project_key
 
@@ -175,9 +175,16 @@ def build_raw_payload(issue: dict[str, Any], base_host: str) -> dict[str, Any]:
     for key in ("summary", "updated", "created", "resolutiondate", "duedate"):
         if isinstance(fields.get(key), str):
             out_fields[key] = _cap(clean_text(fields[key]), _MAX_TITLE)
-    for key, inner in (("status", "name"), ("priority", "name"), ("assignee", "displayName")):
+    for key, inner in (
+        ("status", "name"),
+        ("priority", "name"),
+        ("assignee", "displayName"),
+        ("reporter", "displayName"),
+    ):
         picked = pick_name(key, inner)
         if picked is not None:
+            if key == "reporter":
+                picked = {inner: picked[inner][:MAX_REPORTER_LEN]}
             out_fields[key] = picked
     project_key = pick_name("project", "key")
     if project_key is not None:
@@ -298,6 +305,13 @@ def map_issue(
         if notes is not None:
             notes.append("tên assignee quá dài nên bị cắt")
 
+    # Chỉ đọc displayName: không đụng emailAddress/accountId/avatarUrls (PII).
+    reporter = clean_text(_obj(fields.get("reporter")).get("displayName")) or None
+    if reporter is not None and len(reporter) > MAX_REPORTER_LEN:
+        reporter = reporter[:MAX_REPORTER_LEN].strip()
+        if notes is not None:
+            notes.append("tên reporter quá dài nên bị cắt")
+
     updated_at = parse_jira_datetime(fields.get("updated"))
     resolved = parse_jira_datetime(fields.get("resolutiondate")) or updated_at
     priority = _PRIORITY_MAP.get(clean_text(_obj(fields.get("priority")).get("name")).lower())
@@ -307,6 +321,7 @@ def map_issue(
         "title": title,
         "description": description,
         "assignee": assignee,
+        "reporter": reporter,
         "status": status,
         "tags": tag_list,
         "external_url": f"{base_url}/browse/{key}",
@@ -336,6 +351,9 @@ def map_issue(
 #   assignee, project_key. Khớp bản TS (task có sẵn không bị đổi các trường này) để giá trị
 #   User sửa tay không bị sync ghi đè và task cũ không bị chuyển project. Status, title,
 #   external_url và tags (gộp) vẫn được áp khi cập nhật.
+# - reporter: LUÔN cập nhật theo Jira, không create-only. Reporter không sửa tay được
+#   (không có trong TaskUpdate) nên không có gì để giữ; create-only sẽ khiến task cũ không
+#   bao giờ có reporter.
 # - priority: bản TS luôn đặt `medium` khi tạo; ở đây ánh xạ từ tên priority của Jira
 #   (Highest/Critical/Blocker -> urgent ... Lowest -> low), tên lạ thì mặc định của task mới.
 # - due_at/due_all_day: luôn gửi (null khi Jira không có hạn). Khi cập nhật, hạn chỉ bị ghi

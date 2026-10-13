@@ -1,5 +1,8 @@
 """Pha B2: app_settings, /settings/*, /tasks/assignees và nhập meta.current_users, sync_urls.
 
+Sau epic đăng nhập: `current_users` thành alias Jira của người nhập và `display_timezone` thành
+múi giờ của người nhập (bảng users); chỉ `sync_urls` còn là cài đặt toàn cục trong app_settings.
+
 Mọi dữ liệu đều tổng hợp. Riêng test cuối chỉ ĐỌC file thật của User (mở 'rb') để suy
 kỳ vọng từ nội dung file; không bao giờ ghi hay chép nó.
 """
@@ -25,6 +28,7 @@ from app.models.enums import ImportEntity, SettingKey
 from app.schemas.imports import SUPPORTED_DATAFILE_VERSION, DataFileEnvelope, ImportReport
 from app.schemas.settings import normalize_names, normalize_urls
 from app.services import import_service, settings_service
+from tests.conftest import Persona, create_persona
 from tests.test_import_service import _read_only_fingerprint
 from tests.test_task_scope import _alembic, _sql
 
@@ -102,8 +106,6 @@ async def test_settings_require_api_key(client: httpx.AsyncClient) -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as bare:
         for method, path in [
-            ("GET", "/api/v1/settings/current-users"),
-            ("PUT", "/api/v1/settings/current-users"),
             ("GET", "/api/v1/settings/sync-urls"),
             ("PUT", "/api/v1/settings/sync-urls"),
             ("GET", "/api/v1/tasks/assignees"),
@@ -112,40 +114,29 @@ async def test_settings_require_api_key(client: httpx.AsyncClient) -> None:
             assert resp.status_code == 401, (method, path)
 
 
-async def test_current_users_defaults_empty_and_round_trips(client: httpx.AsyncClient) -> None:
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": []}
-    put = await client.put(
-        "/api/v1/settings/current-users", json={"names": [" Đoàn Việt Hưng ", "An", "An"]}
-    )
-    assert put.status_code == 200
-    assert put.json() == {"names": ["Đoàn Việt Hưng", "An"]}
-    assert (await client.get("/api/v1/settings/current-users")).json() == put.json()
-    # Ghi đè hoàn toàn, kể cả về rỗng.
-    assert (await client.put("/api/v1/settings/current-users", json={"names": []})).json() == {
-        "names": []
-    }
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": []}
+async def test_removed_settings_routes_are_gone(client: httpx.AsyncClient) -> None:
+    """current-users và display-timezone đã thay bằng alias (admin) và /me/timezone."""
+    for method, path in [
+        ("GET", "/api/v1/settings/current-users"),
+        ("PUT", "/api/v1/settings/current-users"),
+        ("GET", "/api/v1/settings/display-timezone"),
+        ("PUT", "/api/v1/settings/display-timezone"),
+    ]:
+        resp = await client.request(method, path, json={"names": [], "timezone": None})
+        assert resp.status_code in (404, 405), (method, path)
 
 
-@pytest.mark.parametrize(
-    "body",
-    [
-        {"names": [f"n{i}" for i in range(21)]},
-        {"names": ["ok", "  "]},
-        {"names": ["x" * 201]},
-        {"names": "Hung"},
-        {"names": [1]},
-        {"names": None},
-        {},
-        {"names": ["a"], "extra": 1},
-    ],
-)
-async def test_current_users_rejects_bad_body(client: httpx.AsyncClient, body: Any) -> None:
-    await client.put("/api/v1/settings/current-users", json={"names": ["giu"]})
-    resp = await client.put("/api/v1/settings/current-users", json=body)
-    assert resp.status_code == 422
-    # Lỗi không làm mất giá trị cũ.
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": ["giu"]}
+async def test_sync_urls_are_admin_only(client: httpx.AsyncClient) -> None:
+    """Link chia sẻ thường mang token: lead và member không đọc/ghi được."""
+    from app.models.enums import UserRole
+
+    for role in (UserRole.MEMBER, UserRole.LEAD):
+        who = await create_persona(f"{role.value}-urls@test.local", role)
+        got = await client.get("/api/v1/settings/sync-urls", headers=who.headers)
+        put = await client.put(
+            "/api/v1/settings/sync-urls", json={"urls": [SHEET]}, headers=who.headers
+        )
+        assert (got.status_code, put.status_code) == (403, 403)
 
 
 async def test_sync_urls_round_trip(client: httpx.AsyncClient) -> None:
@@ -222,26 +213,16 @@ async def test_get_sync_urls_returns_stored_even_if_allowlist_changed(
     assert (await client.put("/api/v1/settings/sync-urls", json={"urls": []})).status_code == 200
 
 
-async def test_malformed_stored_value_reads_as_empty(
-    client: httpx.AsyncClient, session: AsyncSession
-) -> None:
-    await session.execute(
-        text("INSERT INTO app_settings (key, value) VALUES ('current_users', '{\"a\": 1}')")
-    )
-    await session.commit()
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": []}
-
-
 async def test_put_bumps_updated_at(client: httpx.AsyncClient, session: AsyncSession) -> None:
-    await client.put("/api/v1/settings/current-users", json={"names": ["a"]})
+    await client.put("/api/v1/settings/sync-urls", json={"urls": [SHEET]})
     first = await session.scalar(
-        text("SELECT updated_at FROM app_settings WHERE key = 'current_users'")
+        text("SELECT updated_at FROM app_settings WHERE key = 'sync_urls'")
     )
     await session.rollback()
     await asyncio.sleep(0.01)
-    await client.put("/api/v1/settings/current-users", json={"names": ["b"]})
+    await client.put("/api/v1/settings/sync-urls", json={"urls": [SHEET2]})
     second = await session.scalar(
-        text("SELECT updated_at FROM app_settings WHERE key = 'current_users'")
+        text("SELECT updated_at FROM app_settings WHERE key = 'sync_urls'")
     )
     await session.rollback()
     assert second > first
@@ -410,6 +391,14 @@ def _file(**extra: Any) -> dict[str, Any]:
     }
 
 
+@pytest.fixture(autouse=True)
+def _importer(default_user: Persona) -> None:
+    _IMPORTER["who"] = default_user
+
+
+_IMPORTER: dict[str, Persona] = {}
+
+
 async def _import(
     session: AsyncSession,
     data: dict[str, Any],
@@ -424,7 +413,21 @@ async def _import(
         expect_replaced=None if dry_run else expect,
         expect_sha256=None if dry_run else SHA,
         file_sha256=SHA,
+        importer=_IMPORTER["who"].user,
     )
+
+
+async def _aliases(session: AsyncSession) -> list[str]:
+    rows = await session.scalars(text("SELECT alias FROM user_aliases ORDER BY alias"))
+    out = list(rows.all())
+    await session.rollback()
+    return out
+
+
+async def _user_tz(session: AsyncSession) -> str | None:
+    value = await session.scalar(text("SELECT timezone FROM users LIMIT 1"))
+    await session.rollback()
+    return value
 
 
 async def _setting(session: AsyncSession, key: str) -> Any:
@@ -433,8 +436,8 @@ async def _setting(session: AsyncSession, key: str) -> Any:
     return value
 
 
-def test_supported_version_is_7() -> None:
-    assert SUPPORTED_DATAFILE_VERSION == 7
+def test_supported_version_is_8() -> None:
+    assert SUPPORTED_DATAFILE_VERSION == 8
 
 
 async def test_import_creates_settings_then_is_idempotent(session: AsyncSession) -> None:
@@ -444,7 +447,8 @@ async def test_import_creates_settings_then_is_idempotent(session: AsyncSession)
     )
     dry = await _import(session, data, dry_run=True)
     assert dry.errors == 0 and not dry.committed
-    assert await _setting(session, "current_users") is None  # dry-run không ghi
+    assert await _aliases(session) == []  # dry-run không ghi
+    assert await _setting(session, "sync_urls") is None
 
     real = await _import(session, data)
     assert real.committed, real.issues
@@ -452,7 +456,9 @@ async def test_import_creates_settings_then_is_idempotent(session: AsyncSession)
     assert real.counts["settings"].received == 2
     # D-B2a: minutes_logged_* và khoá lạ KHÔNG được lưu, chỉ liệt kê tên.
     assert real.ignored_fields["meta"] == ["minutes_logged_today", "x"]
-    assert await _setting(session, "current_users") == ["Hung", "An"]
+    # current_users thành alias Jira của NGƯỜI NHẬP, không còn ghi vào app_settings.
+    assert await _aliases(session) == ["An", "Hung"]
+    assert await _setting(session, "current_users") is None
     assert await _setting(session, "sync_urls") == [SHEET]
     audits = (
         await session.execute(text("SELECT entity, action FROM import_audit ORDER BY entity"))
@@ -467,51 +473,74 @@ async def test_import_creates_settings_then_is_idempotent(session: AsyncSession)
     assert again.replacements == []
 
 
+async def test_import_alias_owned_by_other_user_is_skipped_with_warning(
+    session: AsyncSession,
+) -> None:
+    """Nhập file không được cướp alias: nó quyết định quyền sửa task work của người khác."""
+    from tests.conftest import add_aliases
+
+    other = await create_persona("other-alias@test.local")
+    await add_aliases(other, "Hung")
+    report = await _import(session, _file(meta={"current_users": ["Hung", "An"]}))
+    assert report.committed, report.issues
+    assert any(i.code == "alias_taken" and i.level == "warning" for i in report.issues)
+    assert await _aliases(session) == ["An", "Hung"]  # Hung vẫn của `other`
+    holder = await session.scalar(text("SELECT user_id FROM user_aliases WHERE alias = 'Hung'"))
+    await session.rollback()
+    assert holder == other.id
+
+
 async def test_import_replace_reports_audits_and_requires_expect(
     session: AsyncSession,
 ) -> None:
-    await settings_service.set_current_users(session, ["Cũ"])
+    await settings_service.set_sync_urls(session, [SHEET])
     await session.commit()
-    data = _file(meta={"current_users": ["Mới"]})
+    data = _file(sync_urls=[SHEET2])
 
     dry = await _import(session, data, dry_run=True)
     assert dry.counts["settings"].replaced == 1
     [rep] = dry.replacements
     assert rep.entity == "setting"
-    assert rep.label == "current_users"
+    assert rep.label == "sync_urls"
     assert rep.file_older_than_db is False
-    assert [(c.field, c.old, c.new) for c in rep.changes] == [("value", ["Cũ"], ["Mới"])]
-    assert await _setting(session, "current_users") == ["Cũ"]
+    # Báo cáo ẩn query của URL (có thể mang token).
+    assert [(c.field, c.old, c.new) for c in rep.changes] == [
+        (
+            "value",
+            ["https://docs.google.com/spreadsheets/d/abc/export"],
+            ["https://contoso.sharepoint.com/sites/x/file.xlsx"],
+        )
+    ]
+    assert await _setting(session, "sync_urls") == [SHEET]
 
     # Rào chắn B1 giữ nguyên: sai expect_replaced thì huỷ, không ghi.
     wrong = await _import(session, data, expect=0)
     assert not wrong.committed
     assert any(i.code == "replace_count_mismatch" for i in wrong.issues)
-    assert await _setting(session, "current_users") == ["Cũ"]
+    assert await _setting(session, "sync_urls") == [SHEET]
 
     ok = await _import(session, data, expect=1)
     assert ok.committed
-    assert await _setting(session, "current_users") == ["Mới"]
+    assert await _setting(session, "sync_urls") == [SHEET2]
     row = (
         await session.execute(
             text("SELECT entity, action, before, changed_fields FROM import_audit")
         )
     ).one()
     assert (row.entity, row.action) == ("setting", "replaced")
-    assert row.before == {"key": "current_users", "value": ["Cũ"]}
+    assert row.before == {"key": "sync_urls", "value": [SHEET]}
     assert row.changed_fields == ["value"]
     await session.rollback()
 
 
 async def test_import_absent_or_null_keys_do_not_touch_db(session: AsyncSession) -> None:
-    await settings_service.set_current_users(session, ["Giữ"])
     await settings_service.set_sync_urls(session, [SHEET])
     await session.commit()
     for data in (_file(), _file(meta={}), _file(meta={"current_users": None}, sync_urls=None)):
         report = await _import(session, data)
         assert report.committed
         assert report.counts["settings"].received == 0
-    assert await _setting(session, "current_users") == ["Giữ"]
+    assert await _aliases(session) == []
     assert await _setting(session, "sync_urls") == [SHEET]
 
 
@@ -569,23 +598,24 @@ async def test_import_old_version_file_without_settings_still_works(
         assert report.schema_version == version
 
 
-async def test_import_api_accepts_v6_and_writes_settings(client: httpx.AsyncClient) -> None:
+async def test_import_api_accepts_v6_and_writes_settings(
+    client: httpx.AsyncClient, default_user: Persona
+) -> None:
     body = json.dumps(_file(meta={"current_users": ["Hung"]}, sync_urls=[SHEET])).encode()
     sha = hashlib.sha256(body).hexdigest()
     headers = {"Content-Type": "application/json"}
     dry = await client.post("/api/v1/import/datafile", content=body, headers=headers)
     assert dry.status_code == 200
     assert dry.json()["counts"]["settings"]["created"] == 2
-    from tests.conftest import IMPORT_SECRET
-
     real = await client.post(
         "/api/v1/import/datafile",
         params={"dry_run": "false", "expect_replaced": "0", "expect_sha256": sha},
         content=body,
-        headers={**headers, "X-Import-Secret": IMPORT_SECRET},
+        headers=headers,
     )
     assert real.status_code == 200 and real.json()["committed"]
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": ["Hung"]}
+    me = (await client.get("/api/v1/me")).json()
+    assert me["aliases"] == [{"source": "jira", "alias": "Hung"}]
     assert (await client.get("/api/v1/settings/sync-urls")).json() == {"urls": [SHEET]}
 
 
@@ -615,6 +645,7 @@ async def test_real_file_current_users_imported_then_unchanged(session: AsyncSes
             expect_replaced=None if dry_run else expect,
             expect_sha256=None if dry_run else sha_before,
             file_sha256=sha_before,
+            importer=_IMPORTER["who"].user,
         )
 
     dry = await run(True)
@@ -623,7 +654,7 @@ async def test_real_file_current_users_imported_then_unchanged(session: AsyncSes
     assert first.committed, first.issues[:5]
     if "current_users" in (raw.get("meta") or {}):
         assert first.counts["settings"].created >= 1
-        assert await _setting(session, "current_users") == expected
+        assert await _aliases(session) == sorted(expected)
     again = await run(False)
     assert again.committed
     assert again.counts["settings"].created == again.counts["settings"].replaced == 0
@@ -658,17 +689,13 @@ async def test_put_settings_waits_for_import_lock_then_409(
     monkeypatch.setattr(settings_service, "SETTINGS_LOCK_TIMEOUT", "200ms")
     await _hold_import_lock(session)
     try:
-        for path, body in [
-            ("/api/v1/settings/current-users", {"names": ["a"]}),
-            ("/api/v1/settings/sync-urls", {"urls": [SHEET]}),
-        ]:
-            resp = await client.put(path, json=body)
-            assert resp.status_code == 409, resp.text
+        resp = await client.put("/api/v1/settings/sync-urls", json={"urls": [SHEET]})
+        assert resp.status_code == 409, resp.text
     finally:
         await session.rollback()  # nhả khoá
     # Hết khoá thì ghi bình thường; lần 409 không để lại gì.
-    assert (await client.get("/api/v1/settings/current-users")).json() == {"names": []}
-    ok = await client.put("/api/v1/settings/current-users", json={"names": ["a"]})
+    assert (await client.get("/api/v1/settings/sync-urls")).json() == {"urls": []}
+    ok = await client.put("/api/v1/settings/sync-urls", json={"urls": [SHEET]})
     assert ok.status_code == 200
 
 
@@ -677,15 +704,13 @@ async def test_put_proceeds_once_import_lock_released(
 ) -> None:
     """Khoá giữ ngắn hơn timeout: PUT chờ rồi thành công (không 409)."""
     await _hold_import_lock(session)
-    task = asyncio.create_task(
-        client.put("/api/v1/settings/current-users", json={"names": ["chờ"]})
-    )
+    task = asyncio.create_task(client.put("/api/v1/settings/sync-urls", json={"urls": [SHEET]}))
     await asyncio.sleep(0.3)
     assert not task.done()  # đang chờ khoá
     await session.rollback()
     resp = await asyncio.wait_for(task, timeout=4)
     assert resp.status_code == 200
-    assert resp.json() == {"names": ["chờ"]}
+    assert resp.json() == {"urls": [SHEET]}
 
 
 def _check_values(defn: str) -> set[str]:
@@ -768,9 +793,6 @@ async def test_settings_422_does_not_echo_input(client: httpx.AsyncClient) -> No
     assert "TOPSECRET" not in resp.text and "evil.example.com" not in resp.text
     for err in resp.json()["detail"]:
         assert set(err) == {"type", "loc", "msg"}
-    resp = await client.put("/api/v1/settings/current-users", json={"names": ["x", 1]})
-    assert resp.status_code == 422
-    assert all("input" not in e and "ctx" not in e for e in resp.json()["detail"])
 
 
 async def test_other_routes_keep_default_422_shape(client: httpx.AsyncClient) -> None:
@@ -783,7 +805,7 @@ async def test_other_routes_keep_default_422_shape(client: httpx.AsyncClient) ->
 #  Múi giờ hiển thị (display_timezone) và due_all_day khi nhập
 # ═══════════════════════════════════════════════════════════════════════
 
-TZ_URL = "/api/v1/settings/display-timezone"
+TZ_URL = "/api/v1/me/timezone"
 
 
 def test_normalize_timezone_rules() -> None:
@@ -796,42 +818,48 @@ def test_normalize_timezone_rules() -> None:
             normalize_timezone(bad)
 
 
-async def test_display_timezone_defaults_to_env(client: httpx.AsyncClient) -> None:
-    body = (await client.get(TZ_URL)).json()
-    assert body == {
-        "timezone": app_config.display_timezone,
-        "default": app_config.display_timezone,
-        "source": "default",
-    }
+async def test_my_timezone_defaults_to_env(client: httpx.AsyncClient) -> None:
+    me = (await client.get("/api/v1/me")).json()
+    assert me["timezone"] is None
+    assert me["effective_timezone"] == app_config.display_timezone
 
 
-async def test_display_timezone_put_get_and_reset(
+async def test_my_timezone_put_get_and_reset(
     client: httpx.AsyncClient, session: AsyncSession
 ) -> None:
     put = await client.put(TZ_URL, json={"timezone": " America/New_York "})
     assert put.status_code == 200
     assert put.json()["timezone"] == "America/New_York"
-    assert put.json()["source"] == "setting"
-    assert (await client.get(TZ_URL)).json()["timezone"] == "America/New_York"
-    assert await _setting(session, "display_timezone") == "America/New_York"
+    assert put.json()["effective_timezone"] == "America/New_York"
+    me = (await client.get("/api/v1/me")).json()
+    assert (me["timezone"], me["effective_timezone"]) == ("America/New_York",) * 2
+    assert await _user_tz(session) == "America/New_York"
 
     info = (await client.get("/api/v1/system/info")).json()
     assert info["display_timezone"] == "America/New_York"
     assert info["display_timezone_default"] == app_config.display_timezone
 
     reset = await client.put(TZ_URL, json={"timezone": None})
-    assert reset.status_code == 200 and reset.json()["source"] == "default"
-    assert await _setting(session, "display_timezone") is None
-    assert (await client.get("/api/v1/system/info")).json()["display_timezone"] == (
-        app_config.display_timezone
-    )
+    assert reset.status_code == 200 and reset.json()["timezone"] is None
+    assert reset.json()["effective_timezone"] == app_config.display_timezone
+    assert await _user_tz(session) is None
+
+
+async def test_timezone_is_per_user(client: httpx.AsyncClient) -> None:
+    """Đổi múi giờ của A không đổi múi giờ của B (trước đây là cài đặt toàn cục)."""
+    other = await create_persona("tz-other@test.local")
+    await client.put(TZ_URL, json={"timezone": "Asia/Tokyo"})
+    mine = (await client.get("/api/v1/me")).json()
+    theirs = (await client.get("/api/v1/me", headers=other.headers)).json()
+    assert mine["effective_timezone"] == "Asia/Tokyo"
+    assert theirs["effective_timezone"] == app_config.display_timezone
 
 
 @pytest.mark.parametrize("bad", ["Mars/Base", "Factory", "x" * 65, "", 5])
-async def test_display_timezone_put_rejects_invalid(client: httpx.AsyncClient, bad: Any) -> None:
+async def test_my_timezone_put_rejects_invalid(client: httpx.AsyncClient, bad: Any) -> None:
     resp = await client.put(TZ_URL, json={"timezone": bad})
     assert resp.status_code == 422
-    assert (await client.get(TZ_URL)).json()["source"] == "default"
+    assert (await client.get("/api/v1/me")).json()["timezone"] is None
 
 
 async def test_timezones_catalog(client: httpx.AsyncClient) -> None:
@@ -845,27 +873,27 @@ async def test_timezones_catalog(client: httpx.AsyncClient) -> None:
     assert by_name["Pacific/Kiritimati"] == 840
 
 
-async def test_bad_display_timezone_row_falls_back_to_env(
+async def test_bad_stored_timezone_falls_back_to_env(
     client: httpx.AsyncClient, session: AsyncSession
 ) -> None:
-    await session.execute(
-        text("INSERT INTO app_settings (key, value) VALUES ('display_timezone', '\"Mars/Base\"')")
-    )
+    await session.execute(text("UPDATE users SET timezone = 'Mars/Base'"))
     await session.commit()
-    body = (await client.get(TZ_URL)).json()
-    assert body["source"] == "default" and body["timezone"] == app_config.display_timezone
     assert (await client.get("/api/v1/tasks/agenda")).status_code == 200
+    me = (await client.get("/api/v1/me")).json()
+    assert me["effective_timezone"] == app_config.display_timezone
 
 
 async def test_import_display_timezone_valid_and_invalid(session: AsyncSession) -> None:
     ok = await _import(session, _file(display_timezone="Asia/Tokyo"))
     assert ok.committed, ok.issues
-    assert await _setting(session, "display_timezone") == "Asia/Tokyo"
+    assert await _user_tz(session) == "Asia/Tokyo"
     # Cũng nhận ở meta (chế độ file của web ghi vào đó), và không bị liệt kê là field lạ.
-    meta = await _import(session, _file(meta={"display_timezone": "Europe/Paris"}), expect=1)
+    # Múi giờ người nhập đã đặt rồi thì file KHÔNG ghi đè (unchanged).
+    meta = await _import(session, _file(meta={"display_timezone": "Europe/Paris"}))
     assert meta.committed
     assert "meta" not in meta.ignored_fields
-    assert await _setting(session, "display_timezone") == "Europe/Paris"
+    assert meta.counts["settings"].unchanged == 1
+    assert await _user_tz(session) == "Asia/Tokyo"
 
     bad = await _import(
         session, _file(display_timezone="Mars/Base", meta={"current_users": ["An"]})
@@ -873,8 +901,8 @@ async def test_import_display_timezone_valid_and_invalid(session: AsyncSession) 
     # Sai múi giờ chỉ là cảnh báo: phần còn lại vẫn nhập, giá trị cũ giữ nguyên.
     assert bad.committed and bad.errors == 0
     assert any(i.code == "setting_invalid" and i.level == "warning" for i in bad.issues)
-    assert await _setting(session, "display_timezone") == "Europe/Paris"
-    assert await _setting(session, "current_users") == ["An"]
+    assert await _user_tz(session) == "Asia/Tokyo"
+    assert await _aliases(session) == ["An"]
 
 
 def _task_row(ext: str, **over: Any) -> dict[str, Any]:
@@ -905,8 +933,13 @@ async def test_import_old_file_backfills_due_all_day(session: AsyncSession) -> N
             _task_row("J-1", due_at="2026-10-09T00:00:00.000Z"),  # Jira, nửa đêm UTC
             _task_row("J-2", due_at="2026-10-09T10:00:00Z"),  # Jira nhưng có giờ
             _task_row("J-3"),  # không hạn
-            _task_row("M-1", source="manual", external_id=None, title="manual",
-                      due_at="2026-10-09T00:00:00Z"),
+            _task_row(
+                "M-1",
+                source="manual",
+                external_id=None,
+                title="manual",
+                due_at="2026-10-09T00:00:00Z",
+            ),
         ],
     )
     report = await _import(session, data)

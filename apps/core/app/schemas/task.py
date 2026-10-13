@@ -14,13 +14,13 @@ from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
 from app.services import clock
 
-# Giới hạn tham số `owner` của view=mine (spec task-scope 3.1): chặn đầu vào
-# không đáng tin làm phình mệnh đề IN.
-MAX_OWNERS = 20
+# Độ dài tối đa một tên người (assignee/person) nhận từ query.
 MAX_OWNER_LEN = 200
 
 
 MAX_ASSIGNEE_LEN = 200
+# Cùng độ dài với cột tasks.reporter (String(200)).
+MAX_REPORTER_LEN = MAX_ASSIGNEE_LEN
 
 
 def clean_assignee(value: str | None) -> str | None:
@@ -40,7 +40,7 @@ class TaskView(StrEnum):
     """Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
 
     `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
-    scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+    scope, assignee và người gọi (không phải cột): xem `access.task_view_clause`.
     """
 
     ALL = "all"
@@ -168,6 +168,7 @@ class TaskRead(BaseModel):
     title: str
     description: str | None
     assignee: str | None
+    reporter: str | None
     status: TaskStatus
     priority: TaskPriority
     project_id: uuid.UUID | None
@@ -185,11 +186,17 @@ class TaskRead(BaseModel):
     scope: TaskScope
     external_id: str | None
     external_url: str | None
+    # Chủ task. personal: người sở hữu; work: người tạo tay, hoặc null (thuộc team: sync/nhập).
+    owner_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = Field(
         default=None, description="Khác null nghĩa là đang ở trong thùng rác"
     )
+    # Quyền ghi CỦA NGƯỜI GỌI trên task này, API tính bằng access.task_permissions để web ẩn
+    # nút mà không phải chép lại quy tắc. Core vẫn kiểm lại khi ghi (403), đây chỉ là gợi ý UI.
+    can_edit: bool = False
+    can_delete: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
@@ -336,9 +343,7 @@ class TrashResponse(BaseModel):
     total: int
     limit: int
     offset: int
-    retention_days: int = Field(
-        description="Số ngày giữ task đã xoá trước khi xoá vĩnh viễn"
-    )
+    retention_days: int = Field(description="Số ngày giữ task đã xoá trước khi xoá vĩnh viễn")
     purged_now: int = Field(
         default=0,
         description="Số task quá hạn vừa bị dọn trong lần gọi này",

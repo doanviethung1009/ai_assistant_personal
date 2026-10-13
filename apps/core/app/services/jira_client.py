@@ -59,6 +59,7 @@ BASE_FIELDS: Final = (
     "status",
     "priority",
     "assignee",
+    "reporter",
     "project",
     "labels",
     "components",
@@ -111,22 +112,28 @@ def build_jql(
     current_users: list[str],
     since_minutes: int | None,
     assignees: list[str] | None = None,
+    reporters: list[str] | None = None,
 ) -> str:
     """JQL cuối cùng cho lần sync.
 
     - `config_jql` có: dùng nguyên (do chủ kết nối tự viết); nếu chỉ là danh sách mã dự án
       ("DBA, PROJ", không có `=`, ` in `, ` is `, `~`) thì thành `project in (...)` như bản
       web.
-    - Không có: `assignee in (...)` theo `current_users` (B2). Cả hai rỗng thì LỖI, không
-      bao giờ chạy truy vấn toàn Jira.
+    - Không có: `assignee in (...)` theo `current_users` (alias Jira của người gọi). Cả hai
+      rỗng thì LỖI, không bao giờ chạy truy vấn toàn Jira.
     - `assignees`: kéo theo người. Thêm `AND assignee in (...)` vào JQL của kết nối (hoặc dùng
       riêng nó nếu kết nối không có JQL, khi đó bỏ qua `current_users`). WHY: một JQL rộng
       trả hàng chục MB và chạm trần dung lượng; lọc theo người thu nhỏ lượt kéo.
+    - `reporters`: như `assignees` nhưng theo người báo cáo. Có cả hai thì nối `OR` và BỌC
+      NGOẶC, rồi `AND` với JQL kết nối. WHY ngoặc: `AND` ưu tiên hơn `OR`, thiếu ngoặc thì
+      `project = X AND assignee = A OR reporter = A` kéo reporter A trên MỌI project.
     - `since_minutes`: thêm `updated >= -Nm`, N là SỐ NGUYÊN do server tính; không có chuỗi
       nào từ client được nối vào JQL.
     """
     jql = (config_jql or "").strip()
     picked = [a.strip() for a in (assignees or []) if a and a.strip()]
+    picked_reporters = [a.strip() for a in (reporters or []) if a and a.strip()]
+    has_people = bool(picked or picked_reporters)
     if jql:
         lowered = jql.lower()
         if "=" not in jql and " in " not in lowered and " is " not in lowered and "~" not in jql:
@@ -134,20 +141,25 @@ def build_jql(
             if not keys:
                 raise ValidationError("JQL của kết nối không hợp lệ")
             jql = f"project in ({', '.join(jql_string(k) for k in keys)}) ORDER BY updated DESC"
-    elif picked:
+    elif has_people:
         jql = ""
     elif current_users:
         names = ", ".join(jql_string(n) for n in current_users)
         jql = f"assignee in ({names}) ORDER BY updated DESC"
     else:
         raise ValidationError(
-            "Kết nối chưa có JQL và chưa đặt 'Tên người dùng' (current_users) trong cài đặt, "
-            "nên không có điều kiện lọc. Nhập JQL cho kết nối hoặc đặt tên người dùng."
+            "Kết nối chưa có JQL và tài khoản của bạn chưa có alias Jira (current_users, do "
+            "quản trị viên đặt), nên không có điều kiện lọc. Nhập JQL cho kết nối hoặc nhờ "
+            "quản trị viên đặt alias."
         )
-    if picked:
-        names = ", ".join(jql_string(n) for n in picked)
+    if has_people:
+        conds: list[str] = []
+        if picked:
+            conds.append(f"assignee in ({', '.join(jql_string(n) for n in picked)})")
+        if picked_reporters:
+            conds.append(f"reporter in ({', '.join(jql_string(n) for n in picked_reporters)})")
+        cond = conds[0] if len(conds) == 1 else f"({' OR '.join(conds)})"
         base = _ORDER_BY_RE.sub("", jql).strip()
-        cond = f"assignee in ({names})"
         jql = f"({base}) AND {cond}" if base else cond
         jql += " ORDER BY updated DESC"
     if since_minutes is not None:

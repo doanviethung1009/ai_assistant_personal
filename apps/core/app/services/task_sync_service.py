@@ -107,6 +107,7 @@ _SYNCED_FIELDS = (
     "title",
     "description",
     "assignee",
+    "reporter",
     "status",
     "priority",
     "scheduled_for",
@@ -292,8 +293,20 @@ async def _resolve_projects(
     return dict(rows.all())
 
 
-def _event(task: Task, kind: TaskEventType, actor: str, payload: dict[str, Any]) -> TaskEvent:
-    return TaskEvent(task_id=task.id, event_type=kind, actor=actor, payload=jsonable(payload))
+def _event(
+    task: Task,
+    kind: TaskEventType,
+    actor: str,
+    payload: dict[str, Any],
+    actor_user_id: uuid.UUID | None = None,
+) -> TaskEvent:
+    return TaskEvent(
+        task_id=task.id,
+        event_type=kind,
+        actor=actor,
+        actor_user_id=actor_user_id,
+        payload=jsonable(payload),
+    )
 
 
 def _same_host(url: str | None, host: str) -> bool:
@@ -380,6 +393,7 @@ async def upsert_batch(
     items: Sequence[TaskUpsert],
     *,
     actor: str | None = None,
+    actor_user_id: uuid.UUID | None = None,
     create_only: frozenset[str] = frozenset(),
     owner_host: str | None = None,
     due_baseline: DueBaseline | None = None,
@@ -408,6 +422,9 @@ async def upsert_batch(
     `actor` là giá trị ghi vào `task_events.actor`; mặc định `integration:<source>` (route
     upsert-batch). Connector chạy trong core truyền `integration:<tên kết nối>` để sổ sự
     kiện nói rõ kết nối nào đã ghi. Chuỗi bị cắt về 100 ký tự (độ dài cột).
+
+    `actor_user_id`: người kích hoạt lô (ghi vào `task_events.actor_user_id`). Task do lô này
+    TẠO có `scope=work` và `owner_id = NULL` (thuộc team), không thuộc người kích hoạt.
 
     `create_only`: tên trường (`priority`, `due_at`, `assignee`, `project_key`...) chỉ được
     ghi khi TẠO task, không bao giờ ghi đè task đã có. Jira sync dùng để giữ giá trị User
@@ -485,6 +502,7 @@ async def upsert_batch(
                     TaskEventType.SYNCED,
                     actor,
                     {"action": "created", "source": source.value, "external_id": task.external_id},
+                    actor_user_id,
                 )
             )
             added += 1
@@ -513,7 +531,9 @@ async def upsert_batch(
         if not diff:
             unchanged += 1
             continue
-        new_events.append(_event(task, TaskEventType.UPDATED, actor, {"changes": diff}))
+        new_events.append(
+            _event(task, TaskEventType.UPDATED, actor, {"changes": diff}, actor_user_id)
+        )
         updated += 1
 
     # Một flush cho cả lô; task mới đã có id sẵn nên event gắn được trước khi flush.
@@ -564,6 +584,7 @@ def _build_task(p: _Prepared, source: TaskSource, project_ids: dict[str, uuid.UU
         title=item.title,
         description=item.description,
         assignee=item.assignee,
+        reporter=item.reporter,
         status=status,
         priority=item.priority,
         project_id=project_ids[p.project_key] if p.project_key else None,

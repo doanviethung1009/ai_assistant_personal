@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
@@ -19,10 +20,29 @@ from app.core.logging import configure_logging
 from app.core.metrics import setup_metrics
 from app.core.rate_limit import setup_rate_limit
 from app.db.redis import close_redis
-from app.db.session import engine
+from app.db.session import SessionFactory, engine
+from app.services import user_service
 from app.services.errors import DomainError
 
 logger = logging.getLogger(__name__)
+
+
+async def _sync_admin_emails() -> None:
+    """Upsert `ADMIN_EMAILS` thành admin khi khởi động (đường "phá kính" khi lỡ khoá hết admin).
+
+    Lỗi (vd chưa chạy `make migrate` nên chưa có bảng users) chỉ được ghi log, KHÔNG chặn core
+    khởi động: nếu chặn thì không dựng được stack mới để chạy migrate. Hậu quả: chưa có admin
+    nào cho tới khi migrate rồi khởi động lại, hoặc chạy `python -m app.cli.auth bootstrap`.
+    """
+    if not settings.admin_emails:
+        return
+    try:
+        async with SessionFactory() as session:
+            changed = await user_service.sync_admin_emails(session, settings.admin_emails)
+            await session.commit()
+        logger.info("đã đồng bộ ADMIN_EMAILS", extra={"changed": changed})
+    except Exception:
+        logger.exception("không đồng bộ được ADMIN_EMAILS (đã chạy migrate chưa?)")
 
 
 @asynccontextmanager
@@ -32,6 +52,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         "khởi động",
         extra={"version": __version__, "environment": settings.environment},
     )
+    if os.environ.get("IMPORT_COMMIT_SECRET"):
+        # Mật khẩu nhập đã bị thay bằng quyền `data:import` của admin; biến còn sót là vô hiệu.
+        logger.warning("IMPORT_COMMIT_SECRET đã bỏ, không còn tác dụng: hãy xoá khỏi môi trường")
+    await _sync_admin_emails()
     yield
     await close_redis()
     await engine.dispose()
@@ -43,7 +67,9 @@ app = FastAPI(
     version=__version__,
     description=(
         "Core API của Builder AI Assistant. Phase 1: task store nhập tay.\n\n"
-        "Xác thực bằng header `X-API-Key` cho mọi endpoint dưới `/api/v1`. "
+        "Xác thực: header `X-API-Key` cho mọi endpoint dưới `/api/v1` (chứng minh request đến "
+        "từ web), cộng `Authorization: Bearer <JWT 60 giây>` cho mọi endpoint trừ "
+        "`/api/v1/auth/login`. "
         "Các endpoint `/health/*` và `/metrics` mở để probe gọi được."
     ),
     lifespan=lifespan,
@@ -66,7 +92,11 @@ setup_rate_limit(app)
 
 @app.exception_handler(DomainError)
 async def handle_domain_error(request: Request, exc: DomainError) -> JSONResponse:
-    return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+    content: dict[str, str] = {"detail": exc.message}
+    if exc.code is not None:
+        content["code"] = exc.code
+    headers = {"WWW-Authenticate": "Bearer"} if exc.status_code == 401 else None
+    return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
 
 
 SETTINGS_PATH_PREFIX = "/api/v1/settings"
@@ -75,6 +105,8 @@ _NO_ECHO_PREFIXES = (
     SETTINGS_PATH_PREFIX,
     # Body có API token của integration: 422 mà echo `input` là lộ token.
     "/api/v1/integrations",
+    # Claim Google (email, sub) trong body đăng nhập: 422 không được echo lại.
+    "/api/v1/auth",
     # raw_payload của nguồn ngoài có thể mang token/cookie: không echo lại trong 422.
     "/api/v1/tasks/upsert-batch",
 )

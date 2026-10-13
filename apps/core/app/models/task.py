@@ -36,6 +36,9 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(500))
     description: Mapped[str | None] = mapped_column(Text, default=None)
     assignee: Mapped[str | None] = mapped_column(String(200), default=None, index=True)
+    # Tên hiển thị người tạo issue ở nguồn, chỉ để xem: không quyết định quyền/view,
+    # không lưu email.
+    reporter: Mapped[str | None] = mapped_column(String(200), default=None)
 
     status: Mapped[TaskStatus] = mapped_column(
         enum_column(TaskStatus, "task_status"),
@@ -70,21 +73,15 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scheduled_for: Mapped[date | None] = mapped_column(Date, default=None, index=True)
     estimate_minutes: Mapped[int | None] = mapped_column(Integer, default=None)
     spent_minutes: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     # ── Thùng rác ───────────────────────────────────────────────────
     # Xoá là xoá mềm: đặt deleted_at rồi giữ lại một thời gian
     # (settings.trash_retention_days, mặc định 30 ngày) để còn phục hồi.
     # Mọi truy vấn nghiệp vụ phải lọc `deleted_at IS NULL`.
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
-    tags: Mapped[list[str]] = mapped_column(
-        ARRAY(String(64)), default=list, server_default="{}"
-    )
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String(64)), default=list, server_default="{}")
 
     # ── Nguồn gốc: khai báo sẵn cho integration ở Phase 2 ───────────
     source: Mapped[TaskSource] = mapped_column(
@@ -100,6 +97,12 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     scope: Mapped[TaskScope] = mapped_column(
         enum_column(TaskScope, "task_scope"),
         server_default=TaskScope.PERSONAL.value,
+    )
+    # Chủ của task. `personal`: chỉ owner thấy và sửa (CHECK bắt buộc có owner). `work`: NULL =
+    # thuộc team (sync/nhập tạo ra), có giá trị = người tạo tay. RESTRICT: không xoá cứng được
+    # user còn sở hữu dữ liệu. Mọi truy vấn phải qua services/access.py, không tự lọc owner_id.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), default=None
     )
     external_id: Mapped[str | None] = mapped_column(String(255), default=None)
     external_url: Mapped[str | None] = mapped_column(Text, default=None)
@@ -144,6 +147,15 @@ class Task(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             "AND (due_at AT TIME ZONE 'UTC')::time = '00:00')",
             name="due_all_day_midnight",
         ),
+        # NOT VALID ở migration (dữ liệu cũ chưa có chủ cho tới khi chạy CLI bootstrap, lúc đó
+        # mới VALIDATE). Model khai cùng tên để DB và model khớp nhau.
+        CheckConstraint("scope <> 'personal' OR owner_id IS NOT NULL", name="personal_has_owner"),
+        Index(
+            "ix_tasks_owner_scope",
+            "owner_id",
+            "scope",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
         Index("ix_tasks_tags", "tags", postgresql_using="gin"),
         # Phủ đúng truy vấn của view agenda. Partial để index chỉ chứa task
         # còn sống, vốn là toàn bộ dữ liệu mà nghiệp vụ quan tâm.
@@ -179,11 +191,14 @@ class TaskEvent(UUIDPrimaryKeyMixin, Base):
         ForeignKey("tasks.id", ondelete="CASCADE"),
         index=True,
     )
-    event_type: Mapped[TaskEventType] = mapped_column(
-        enum_column(TaskEventType, "task_event_type")
-    )
+    event_type: Mapped[TaskEventType] = mapped_column(enum_column(TaskEventType, "task_event_type"))
     # "user" cho hành động thủ công, "agent:<tên>" khi agent tự làm
     actor: Mapped[str] = mapped_column(String(100), default="user", server_default="user")
+    # Người kích hoạt (để tách giờ ghi theo user). Event cũ để NULL: không đoán người làm.
+    # Chuỗi `actor` ghi thêm `user:<uuid>` cho khớp.
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
     payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -191,7 +206,16 @@ class TaskEvent(UUIDPrimaryKeyMixin, Base):
 
     task: Mapped[Task] = relationship(back_populates="events")
 
-    __table_args__ = (Index("ix_task_events_task_created", "task_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_task_events_task_created", "task_id", "created_at"),
+        # Phục vụ thống kê phút đã ghi hôm nay theo người (get_stats).
+        Index(
+            "ix_task_events_actor_created",
+            "actor_user_id",
+            "created_at",
+            postgresql_where=text("event_type = 'time_logged'"),
+        ),
+    )
 
     def __repr__(self) -> str:
         return f"<TaskEvent {self.event_type} task={self.task_id}>"

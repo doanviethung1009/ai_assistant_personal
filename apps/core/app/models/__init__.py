@@ -6,7 +6,10 @@ là có thể sinh migration DROP bảng đó.
 
 from app.db.base import Base
 from app.models.app_setting import AppSetting
+from app.models.audit_log import AuditLog
 from app.models.enums import (
+    AliasSource,
+    AuditAction,
     ImportAction,
     ImportEntity,
     ImportKind,
@@ -18,15 +21,21 @@ from app.models.enums import (
     TaskPriority,
     TaskSource,
     TaskStatus,
+    UserRole,
+    UserStatus,
 )
 from app.models.import_audit import ImportAudit, ImportRun
 from app.models.integration import IntegrationConnection
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
+from app.models.user import User, UserAlias
 
 __all__ = [
+    "AliasSource",
     "AppSetting",
+    "AuditAction",
+    "AuditLog",
     "Base",
     "ImportAction",
     "ImportAudit",
@@ -46,4 +55,8 @@ __all__ = [
     "TaskPriority",
     "TaskSource",
     "TaskStatus",
+    "User",
+    "UserAlias",
+    "UserRole",
+    "UserStatus",
 ]

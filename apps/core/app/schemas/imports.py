@@ -35,7 +35,7 @@ from app.schemas.task import clean_assignee
 # Web lên phiên bản mới mà backend chưa lên thì mọi file mới xuất sẽ bị 422. Backend
 # nhận cả v5 và v6 (và cũ hơn): `ge=1, le=` ở envelope. v7 thêm `tasks.due_all_day` và
 # `display_timezone` (cài đặt múi giờ).
-SUPPORTED_DATAFILE_VERSION = 7
+SUPPORTED_DATAFILE_VERSION = 8
 
 # ═══════════════════════════════════════════════════════════════════════
 #  Envelope
@@ -115,6 +115,8 @@ class ImportTask(_Row):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = None
     assignee: str | None = Field(default=None, max_length=200)
+    # File < v8 không có khoá này: vắng = tạo mới NULL, ghi đè thì giữ giá trị DB.
+    reporter: str | None = Field(default=None, max_length=200)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     project_id: uuid.UUID | None = None
@@ -146,7 +148,7 @@ class ImportTask(_Row):
     def _title(cls, value: str) -> str:
         return _not_blank(value)
 
-    @field_validator("assignee")
+    @field_validator("assignee", "reporter")
     @classmethod
     def _assignee(cls, value: str | None) -> str | None:
         return clean_assignee(value)
