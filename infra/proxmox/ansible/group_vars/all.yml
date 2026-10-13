@@ -4,6 +4,9 @@ admin_cidr: 192.168.100.0/24
 # Cổng web của app (docker-compose.yml: WEB_PORT). Mặc định app chỉ bind 127.0.0.1;
 # cần `make lan-up`/override mới ra LAN. Mở ở firewall trước để không phải sửa lại sau.
 web_port: 3000
+# true: mở web ra LAN (docker-compose.lan.yml, EXPOSE_LAN=true trong .env). App CHƯA có đăng nhập: chỉ bật khi tin toàn bộ
+# thiết bị trong dải admin_cidr. API (8000), Postgres, Redis vẫn chỉ nghe 127.0.0.1/nội bộ. Đặt false để chỉ dùng SSH tunnel.
+expose_lan: true
 repo_url: https://github.com/doanviethung1009/ai_assistant_personal.git
 app_root: /srv/builder-ai
 

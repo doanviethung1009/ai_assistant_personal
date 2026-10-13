@@ -34,5 +34,6 @@
   loop:
     - {key: COMPOSE_PROJECT_NAME, value: "builder-{{ env_name }}"}
     - {key: ENVIRONMENT, value: "{{ {'prod': 'production', 'staging': 'staging', 'dev': 'development'}[env_name] }}"}
+    - {key: EXPOSE_LAN, value: "{{ expose_lan | string | lower }}"}
     - {key: CORS_ORIGINS, value: "http://{{ ansible_host }}:{{ web_port }}"}
   become: false

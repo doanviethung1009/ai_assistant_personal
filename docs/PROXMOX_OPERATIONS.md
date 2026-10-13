@@ -4,6 +4,8 @@ Cập nhật: 2026-10-09. Tài liệu này dành cho **việc hằng ngày sau k
 VM, snapshot/backup, cập nhật, xoay token, xử lý sự cố. Cách dựng ban đầu nằm ở
 [PROXMOX_DEPLOY.md](PROXMOX_DEPLOY.md); thiết kế và lý do ở [spec](specs/proxmox-deploy.md).
 
+> Tìm tài liệu khác: xem **Bản đồ tài liệu** ở [SYSTEMS_INVENTORY.md](SYSTEMS_INVENTORY.md). SSH vào server và mở web các môi trường: [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md).
+
 ## 1. Hiện trạng (đo bằng `make pve-check`, 2026-10-09)
 
 | Mục | Giá trị |
@@ -300,8 +302,8 @@ Mục đích: chứng minh VM dựng bằng script chạy được sản phẩm 
 
 5 lỗi smoke cùng một dạng: sau khi xóa (mềm hoặc vĩnh viễn) một task/note, đọc lại ngay vẫn trả 200 thay vì 404. Gọi
 tay có độ trễ thì đúng 404. Nghi ngờ **race**: transaction của `get_session` commit sau khi response đã gửi. Đây là lỗi của
-mã backend trên nhánh `main`, **không do hạ tầng Proxmox**; đã tạo việc điều tra riêng. Staging chưa nên coi là đạt
-nghiệm thu cho tới khi smoke xanh 100%.
+mã backend trên nhánh `main`, **không do hạ tầng Proxmox**. Bản sửa đã vào `main` (PR #24, commit transaction trước khi gửi response);
+**chưa chạy lại smoke trên staging**. Staging chưa nên coi là đạt nghiệm thu cho tới khi smoke xanh 100% sau khi cập nhật code.
 
 Lưu ý: nhánh `uat` trên remote đang **cũ hơn `main` 195 commit** nên thử nghiệm này checkout `main` tay trên VM staging.
 Làm đúng quy trình cần thăng cấp `main → uat` (`make promote-uat`, có `git push`, phải được bạn đồng ý) rồi VM mới `git pull --ff-only`.
@@ -311,8 +313,8 @@ Làm đúng quy trình cần thăng cấp `main → uat` (`make promote-uat`, c�
 | Cần gì | Lệnh |
 |---|---|
 | Xem hạ tầng | `make pve-check` |
-| Dựng VM | `make pve-vm ENV=staging\|prod [DRY=1]` |
-| Cấu hình VM | `make pve-config ENV=staging\|prod [CHECK=1]` |
+| Dựng VM | `make pve-vm ENV=dev\|staging\|prod [DRY=1]` |
+| Cấu hình VM | `make pve-config ENV=dev\|staging\|prod [CHECK=1]` |
 | Danh sách VM | `qm list` (trên node) |
 | Snapshot / lùi | `qm snapshot` / `qm rollback` |
 | Backup / restore | `vzdump` / `qmrestore` |
