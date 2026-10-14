@@ -44,12 +44,13 @@ if [[ -f .env ]]; then
   if [[ "${1:-}" == "--fill-missing" ]]; then
     fill_if_missing IMPORT_COMMIT_SECRET "$(openssl rand -hex 12)"
     fill_if_missing INTEGRATION_SECRET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
+    fill_if_missing CORE_JWT_SECRET "$(openssl rand -hex 32)"
     chmod 600 .env
     echo "  Khởi động lại api để nhận biến mới: make up"
     exit 0
   fi
   echo "  .env đã tồn tại, không ghi đè."
-  echo "  Thiếu IMPORT_COMMIT_SECRET hoặc INTEGRATION_SECRET_KEY (.env cũ)? Chạy: make env-fill"
+  echo "  Thiếu IMPORT_COMMIT_SECRET, INTEGRATION_SECRET_KEY hoặc CORE_JWT_SECRET (.env cũ)? Chạy: make env-fill"
   echo "  Muốn sinh lại toàn bộ: mv .env .env.bak && bash scripts/gen-env.sh"
   exit 0
 fi
@@ -72,6 +73,8 @@ set_var IMPORT_COMMIT_SECRET "$(openssl rand -hex 12)"
 # Khoá Fernet mã hoá token Jira trước khi lưu ở Postgres (base64 url-safe của 32 byte).
 # Không in ra màn hình: mất khoá thì phải nhập lại token, nên hãy sao lưu .env.
 set_var INTEGRATION_SECRET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
+# Khoá ký JWT HS256 web->core (>= 32 ký tự, KHÁC API_KEY). Thiếu thì core không khởi động.
+set_var CORE_JWT_SECRET "$(openssl rand -hex 32)"
 
 chmod 600 .env
 

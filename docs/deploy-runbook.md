@@ -170,7 +170,9 @@ make health
 
 **Ngoại lệ: biến `NEXT_PUBLIC_*` (hiện tại chỉ có `NEXT_PUBLIC_DISPLAY_TZ`).**
 Next.js nhúng giá trị này vào bundle **lúc build**, không đọc được lúc chạy.
-Đổi `TZ` trong `.env` mà không rebuild thì web vẫn hiển thị giờ cũ:
+Múi giờ do người dùng chọn trên UI (lưu DB); biến này chỉ là múi giờ dự phòng khi
+API không trả lời, và là mặc định khi chưa ai chọn. Đổi `TZ` trong `.env` mà không
+rebuild thì giá trị dự phòng vẫn là giá trị cũ:
 
 ```bash
 make prod-build   # bắt buộc, vì build arg lấy từ ${TZ}

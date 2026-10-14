@@ -4,6 +4,9 @@
 có hạn, không ghi nhật ký thay đổi. Cái đáng chú ý duy nhất là xoá mềm và
 ràng buộc unique khi phục hồi.
 
+PHẠM VI: note chỉ của chủ (kể cả admin cũng không đọc được note người khác). Mọi truy vấn qua
+`access.note_visible_clause`; note của người khác trả 404, không lộ sự tồn tại.
+
 LƯU Ý AN TOÀN: `note.content` chỉ được đọc và ghi như chuỗi ký tự. Không có
 chỗ nào trong file này đưa nó vào shell, vào eval, hay nối vào câu SQL. Mọi
 truy vấn đều qua SQLAlchemy với tham số bind.
@@ -20,11 +23,13 @@ from sqlalchemy import Select, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import CurrentUser
 from app.core.config import settings
 from app.models.enums import NoteKind, NoteSource
 from app.models.note import Note
 from app.models.project import Project
 from app.schemas.note import NoteCreate, NoteUpdate
+from app.services import access
 from app.services.clock import now_utc
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 
@@ -65,8 +70,8 @@ def _archive_view(archived: bool):
     return Note.archived_at.is_not(None) if archived else Note.archived_at.is_(None)
 
 
-def _apply_filters(stmt: Select[Any], filters: NoteFilters) -> Select[Any]:
-    stmt = stmt.where(_alive(), _archive_view(filters.archived))
+def _apply_filters(stmt: Select[Any], user: CurrentUser, filters: NoteFilters) -> Select[Any]:
+    stmt = stmt.where(_alive(), access.note_visible_clause(user), _archive_view(filters.archived))
 
     if filters.kind:
         stmt = stmt.where(Note.kind.in_(filters.kind))
@@ -100,17 +105,13 @@ def _apply_filters(stmt: Select[Any], filters: NoteFilters) -> Select[Any]:
 
 def _apply_sort(stmt: Select[Any], filters: NoteFilters) -> Select[Any]:
     column: Any = getattr(Note, filters.sort_by)
-    ordering = (
-        column.desc().nulls_last() if filters.sort_desc else column.asc().nulls_last()
-    )
+    ordering = column.desc().nulls_last() if filters.sort_desc else column.asc().nulls_last()
     # Note đã ghim luôn đứng trước, bất kể sắp xếp theo gì. Đó là toàn bộ ý
     # nghĩa của việc ghim.
     return stmt.order_by(Note.is_pinned.desc(), ordering, Note.created_at.desc())
 
 
-async def _ensure_project_exists(
-    session: AsyncSession, project_id: uuid.UUID | None
-) -> None:
+async def _ensure_project_exists(session: AsyncSession, project_id: uuid.UUID | None) -> None:
     if project_id is None:
         return
     exists = await session.scalar(select(Project.id).where(Project.id == project_id))
@@ -124,9 +125,9 @@ async def _ensure_project_exists(
 
 
 async def list_notes(
-    session: AsyncSession, filters: NoteFilters
+    session: AsyncSession, user: CurrentUser, filters: NoteFilters
 ) -> tuple[list[Note], int]:
-    base = _apply_filters(select(Note), filters)
+    base = _apply_filters(select(Note), user, filters)
 
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
 
@@ -136,18 +137,22 @@ async def list_notes(
 
 
 async def get_note(
-    session: AsyncSession, note_id: uuid.UUID, *, include_deleted: bool = False
+    session: AsyncSession, user: CurrentUser, note_id: uuid.UUID, *, include_deleted: bool = False
 ) -> Note:
-    note = await session.get(Note, note_id)
-    if note is None or (note.deleted_at is not None and not include_deleted):
+    """Note của chính `user`, hoặc 404 (cả khi note tồn tại nhưng của người khác)."""
+    stmt = select(Note).where(Note.id == note_id, access.note_visible_clause(user))
+    if not include_deleted:
+        stmt = stmt.where(_alive())
+    note = (await session.execute(stmt)).scalars().unique().one_or_none()
+    if note is None:
         raise NotFoundError(f"Không tìm thấy note {note_id}")
     return note
 
 
 async def list_trash(
-    session: AsyncSession, *, limit: int = 100, offset: int = 0
+    session: AsyncSession, user: CurrentUser, *, limit: int = 100, offset: int = 0
 ) -> tuple[list[Note], int]:
-    base = select(Note).where(Note.deleted_at.is_not(None))
+    base = select(Note).where(Note.deleted_at.is_not(None), access.note_visible_clause(user))
 
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
 
@@ -157,7 +162,7 @@ async def list_trash(
 
 
 async def count_by_kind(
-    session: AsyncSession, *, archived: bool = False
+    session: AsyncSession, user: CurrentUser, *, archived: bool = False
 ) -> dict[str, int]:
     """Đếm theo kind trong đúng view đang xem (Đang dùng hoặc Lưu trữ).
 
@@ -165,7 +170,7 @@ async def count_by_kind(
     """
     stmt = (
         select(Note.kind, func.count())
-        .where(_alive(), _archive_view(archived))
+        .where(_alive(), access.note_visible_clause(user), _archive_view(archived))
         .group_by(Note.kind)
     )
     result = await session.execute(stmt)
@@ -177,27 +182,27 @@ async def count_by_kind(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def create_note(session: AsyncSession, payload: NoteCreate) -> Note:
+async def create_note(session: AsyncSession, user: CurrentUser, payload: NoteCreate) -> Note:
     await _ensure_project_exists(session, payload.project_id)
 
-    note = Note(**payload.model_dump())
+    # Chủ luôn là người gọi; client không gửi được owner_id (schema không có field này).
+    note = Note(**payload.model_dump(), owner_id=user.id)
     session.add(note)
     try:
         await session.flush()
     except IntegrityError as exc:
         await session.rollback()
         raise ConflictError(
-            f"Đã có note từ nguồn {payload.source.value} với external_id "
-            f"'{payload.external_id}'"
+            f"Đã có note từ nguồn {payload.source.value} với external_id '{payload.external_id}'"
         ) from exc
     await session.refresh(note)
     return note
 
 
 async def update_note(
-    session: AsyncSession, note_id: uuid.UUID, payload: NoteUpdate
+    session: AsyncSession, user: CurrentUser, note_id: uuid.UUID, payload: NoteUpdate
 ) -> Note:
-    note = await get_note(session, note_id)
+    note = await get_note(session, user, note_id)
     changes = payload.model_dump(exclude_unset=True)
 
     if "project_id" in changes:
@@ -211,13 +216,13 @@ async def update_note(
     return note
 
 
-async def mark_used(session: AsyncSession, note_id: uuid.UUID) -> Note:
+async def mark_used(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> Note:
     """Ghi nhận một lần dùng, để sắp xếp theo mức độ hay dùng.
 
     Web gọi khi người dùng bấm copy. Không phải bằng chứng là lệnh đã chạy,
     chỉ là dấu hiệu note này còn hữu ích.
     """
-    note = await get_note(session, note_id)
+    note = await get_note(session, user, note_id)
     note.use_count += 1
     note.last_used_at = now_utc()
     await session.flush()
@@ -230,13 +235,13 @@ async def mark_used(session: AsyncSession, note_id: uuid.UUID) -> Note:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def archive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+async def archive_note(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> Note:
     """Ẩn note khỏi danh sách mặc định mà không đưa vào thùng rác.
 
     Idempotent: bấm đúp hoặc hai tab cùng bấm không được ra lỗi, và phải giữ
     archived_at của lần đầu. Note đã xoá mềm thì 404 (get_note).
     """
-    note = await get_note(session, note_id)
+    note = await get_note(session, user, note_id)
     if note.archived_at is None:
         note.archived_at = now_utc()
         await session.flush()
@@ -244,9 +249,9 @@ async def archive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
     return note
 
 
-async def unarchive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+async def unarchive_note(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> Note:
     """Đưa note về danh sách đang dùng. Idempotent như archive_note."""
-    note = await get_note(session, note_id)
+    note = await get_note(session, user, note_id)
     if note.archived_at is not None:
         note.archived_at = None
         await session.flush()
@@ -259,12 +264,12 @@ async def unarchive_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def delete_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+async def delete_note(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> Note:
     """Xoá mềm: đưa vào thùng rác, giữ theo settings.trash_retention_days.
 
     Retention bằng 0 thì xoá thẳng, không qua thùng rác.
     """
-    note = await get_note(session, note_id)
+    note = await get_note(session, user, note_id)
 
     if settings.trash_retention_days == 0:
         await session.delete(note)
@@ -276,9 +281,9 @@ async def delete_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
     return note
 
 
-async def restore_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
+async def restore_note(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> Note:
     """Lấy note ra khỏi thùng rác."""
-    note = await get_note(session, note_id, include_deleted=True)
+    note = await get_note(session, user, note_id, include_deleted=True)
 
     if note.deleted_at is None:
         raise ValidationError(f"Note {note_id} không nằm trong thùng rác")
@@ -307,9 +312,9 @@ async def restore_note(session: AsyncSession, note_id: uuid.UUID) -> Note:
     return note
 
 
-async def purge_note(session: AsyncSession, note_id: uuid.UUID) -> None:
+async def purge_note(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> None:
     """Xoá vĩnh viễn. Chỉ áp dụng cho note đang nằm trong thùng rác."""
-    note = await get_note(session, note_id, include_deleted=True)
+    note = await get_note(session, user, note_id, include_deleted=True)
 
     if note.deleted_at is None:
         raise ValidationError(
@@ -321,15 +326,18 @@ async def purge_note(session: AsyncSession, note_id: uuid.UUID) -> None:
     await session.flush()
 
 
-async def purge_note_now(session: AsyncSession, note_id: uuid.UUID) -> None:
+async def purge_note_now(session: AsyncSession, user: CurrentUser, note_id: uuid.UUID) -> None:
     """Xoá vĩnh viễn ngay, bỏ qua thùng rác."""
-    note = await get_note(session, note_id, include_deleted=True)
+    note = await get_note(session, user, note_id, include_deleted=True)
     await session.delete(note)
     await session.flush()
 
 
 async def purge_expired(session: AsyncSession) -> int:
-    """Xoá vĩnh viễn note đã quá thời hạn giữ. Trả về số bản ghi đã xoá."""
+    """Xoá vĩnh viễn note đã quá thời hạn giữ. Trả về số bản ghi đã xoá.
+
+    Dọn TOÀN HỆ THỐNG theo chính sách lưu giữ, không phải quyền của ai nên không lọc theo user.
+    """
     retention = settings.trash_retention_days
     if retention == 0:
         return 0
@@ -342,8 +350,10 @@ async def purge_expired(session: AsyncSession) -> int:
     return int(result.rowcount or 0)
 
 
-async def empty_trash(session: AsyncSession) -> int:
-    """Xoá vĩnh viễn toàn bộ thùng rác, không chờ hết hạn."""
-    result = await session.execute(delete(Note).where(Note.deleted_at.is_not(None)))
+async def empty_trash(session: AsyncSession, user: CurrentUser) -> int:
+    """Xoá vĩnh viễn thùng rác CỦA user, không chờ hết hạn."""
+    result = await session.execute(
+        delete(Note).where(Note.deleted_at.is_not(None), access.note_visible_clause(user))
+    )
     await session.flush()
     return int(result.rowcount or 0)

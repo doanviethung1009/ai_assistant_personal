@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import TaskPriority, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
-from app.schemas.task import MAX_ASSIGNEE_LEN, clean_assignee
+from app.schemas.task import MAX_ASSIGNEE_LEN, MAX_REPORTER_LEN, clean_assignee
 
 MAX_BATCH_ITEMS = 1000
 MAX_DESCRIPTION_LEN = 32_000
@@ -34,9 +34,14 @@ class TaskUpsert(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     description: str | None = Field(default=None, max_length=MAX_DESCRIPTION_LEN)
     assignee: str | None = Field(default=None, max_length=MAX_ASSIGNEE_LEN)
+    # Tên hiển thị người báo cáo ở nguồn (chỉ xem). Vắng khoá = giữ giá trị DB; null = xoá.
+    reporter: str | None = Field(default=None, max_length=MAX_REPORTER_LEN)
     status: TaskStatus = TaskStatus.TODO
     priority: TaskPriority = TaskPriority.MEDIUM
     due_at: datetime | None = None
+    # Hạn là CẢ NGÀY (Jira `duedate`): bắt buộc `due_at` đúng 00:00:00 UTC. None = không nói
+    # gì: tạo mới thì false; cập nhật thì giữ nguyên cờ hiện có trừ khi `due_at` đổi.
+    due_all_day: bool | None = None
     scheduled_for: date | None = None
     estimate_minutes: int | None = Field(default=None, gt=0, le=60 * 24 * 30)
     tags: list[str] = Field(default_factory=list)
@@ -57,6 +62,7 @@ class TaskUpsert(BaseModel):
         "title",
         "description",
         "assignee",
+        "reporter",
         "external_url",
         "project_key",
         "project_name",
@@ -66,6 +72,19 @@ class TaskUpsert(BaseModel):
     def _drop_nul(cls, value: Any) -> Any:
         # Postgres từ chối U+0000 trong text: một ký tự này làm hỏng cả lô (500).
         return value.replace("\x00", "") if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def _all_day_is_midnight_utc(self) -> TaskUpsert:
+        if self.due_all_day:
+            due = self.due_at
+            # Datetime không múi giờ sẽ được hiểu theo múi giờ hiển thị, không thể là nửa đêm UTC.
+            if (
+                due is None
+                or due.tzinfo is None
+                or due.astimezone(UTC).time() != datetime.min.time()
+            ):
+                raise ValueError("due_all_day=true đòi due_at là đúng 00:00:00 UTC")
+        return self
 
     @field_validator("tags", mode="before")
     @classmethod
@@ -100,7 +119,7 @@ class TaskUpsert(BaseModel):
             raise ValueError("external_url chứa ký tự không hợp lệ")
         return stripped
 
-    @field_validator("assignee")
+    @field_validator("assignee", "reporter")
     @classmethod
     def _clean_assignee(cls, value: str | None) -> str | None:
         return clean_assignee(value)
@@ -144,6 +163,10 @@ class TaskUpsertResult(BaseModel):
         description="Trùng khoá với task scope=personal nên bị bỏ qua, không ghi đè"
     )
     errors: list[UpsertItemError] = Field(default_factory=list)
+    kept_manual_due: int = Field(
+        default=0,
+        description="Số task giữ nguyên hạn vì User đã sửa tay (chỉ khi sync_if_unchanged)",
+    )
     warnings: list[UpsertItemWarning] = Field(
         default_factory=list,
         description="Item đã upsert nhưng bị bỏ raw_payload (quá lớn, quá sâu, hết ngân sách lô)",

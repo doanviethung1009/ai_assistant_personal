@@ -20,13 +20,13 @@ export function ApiTester() {
 
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm sm:p-6 sm:py-12">
-          <div className="flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/5">
+          <div className="flex h-full w-full max-w-none flex-col overflow-hidden rounded-xl bg-white shadow-2xl ring-1 ring-black/5">
             <div className="flex items-center justify-between border-b border-gray-200 bg-gray-50 px-4 py-3">
               <div>
                 <h2 className="text-sm font-semibold text-gray-800">
                   Giao diện Test API Trực tiếp (Swagger)
                 </h2>
-                <p className="text-[10px] text-gray-500">
+                <p className="text-xs text-gray-500">
                   Backend phải đang chạy (localhost:8000). Mọi thao tác gửi request đều ghi trực tiếp vào Database thật của bạn.
                 </p>
               </div>

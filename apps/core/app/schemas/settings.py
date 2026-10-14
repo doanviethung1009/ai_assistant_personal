@@ -1,7 +1,7 @@
-"""Schema và chuẩn hoá cho cài đặt người dùng (current_users, sync_urls).
+"""Schema và chuẩn hoá cho cài đặt (sync_urls) và múi giờ của user (`DisplayTimezoneBody`).
 
-Hàm `normalize_names` và `normalize_urls` là NGUỒN DUY NHẤT của luật hợp lệ: API
-PUT và bước nhập file (import_service) cùng gọi, để một giá trị bị API từ chối
+Hàm `normalize_names`, `normalize_urls` và `normalize_timezone` là NGUỒN DUY NHẤT của luật
+hợp lệ: API PUT và bước nhập file (import_service) cùng gọi, để một giá trị bị API từ chối
 không thể lọt vào DB qua đường nhập.
 """
 
@@ -14,6 +14,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.core.config import settings
+from app.core.timezones import normalize_timezone
 from app.core.url_allowlist import check_sync_url
 
 MAX_USER_NAMES = 20
@@ -87,20 +88,6 @@ def normalize_urls(raw: Any) -> list[str]:
     return out
 
 
-class CurrentUsersBody(BaseModel):
-    """Danh sách tên của chính User, dùng để lọc `view=mine`/`owner`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    # max_length chặn payload khổng lồ trước khi validator chạy; luật chi tiết ở normalize_names.
-    names: list[str] = Field(max_length=MAX_USER_NAMES)
-
-    @field_validator("names", mode="after")
-    @classmethod
-    def _names(cls, value: list[str]) -> list[str]:
-        return normalize_names(value)
-
-
 class SyncUrlsBody(BaseModel):
     """Danh sách URL file đồng bộ (Google Sheets, SharePoint...)."""
 
@@ -112,3 +99,39 @@ class SyncUrlsBody(BaseModel):
     @classmethod
     def _urls(cls, value: list[str]) -> list[str]:
         return normalize_urls(value)
+
+
+class DisplayTimezoneBody(BaseModel):
+    """Đặt múi giờ của chính user (`PUT /me/timezone`). `timezone = null` về mặc định env."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    timezone: str | None = Field(default=None, max_length=64)
+
+    @field_validator("timezone", mode="after")
+    @classmethod
+    def _timezone(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_timezone(value)
+
+
+class TimezoneOption(BaseModel):
+    name: str = Field(description="Tên IANA, ví dụ Asia/Ho_Chi_Minh")
+    utc_offset_minutes: int = Field(
+        description="Offset TẠI THỜI ĐIỂM gọi (DST làm thay đổi), chỉ để hiển thị"
+    )
+
+
+class TimezoneList(BaseModel):
+    items: list[TimezoneOption]
+    total: int
+
+
+__all__ = [
+    "DisplayTimezoneBody",
+    "SyncUrlsBody",
+    "TimezoneList",
+    "TimezoneOption",
+    "normalize_names",
+    "normalize_timezone",
+    "normalize_urls",
+]

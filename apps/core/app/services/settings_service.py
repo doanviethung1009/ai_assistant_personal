@@ -1,4 +1,8 @@
-"""Đọc/ghi cài đặt người dùng (app_settings) và danh sách assignee.
+"""Đọc/ghi cài đặt toàn cục (app_settings: sync_urls) và danh sách assignee.
+
+`current_users` và `display_timezone` KHÔNG còn được đọc/ghi ở đây: chúng thành alias và múi giờ
+của từng user (bảng `users`/`user_aliases`). Dòng cũ trong app_settings được CLI bootstrap sao chép
+đi rồi để nguyên (downgrade code cũ vẫn chạy).
 
 Chỉ nhận khoá khai báo ở `SettingKey`. Dữ liệu vào đã được chuẩn hoá ở
 `schemas/settings.py` (cùng luật với đường nhập file).
@@ -12,11 +16,12 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.timezones import utc_offset_minutes, valid_timezone_names
 from app.db import locks
 from app.models.app_setting import AppSetting
 from app.models.enums import SettingKey, TaskScope
 from app.models.task import Task
-from app.schemas.settings import normalize_names, normalize_urls
+from app.schemas.settings import TimezoneList, TimezoneOption, normalize_urls
 from app.services.task_service import _alive
 
 # Chặn kích thước danh sách assignee: DISTINCT trên cột có thể phình khi Jira sync kéo
@@ -43,7 +48,7 @@ async def _get_list(session: AsyncSession, key: SettingKey) -> list[str]:
     return [item for item in value if isinstance(item, str)]
 
 
-async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> None:
+async def put_value(session: AsyncSession, key: SettingKey, value: Any) -> None:
     """Upsert một dòng. `updated_at` đặt tường minh vì ON CONFLICT không kích hoạt `onupdate`.
 
     KHÔNG chuẩn hoá: người gọi phải đưa giá trị đã qua `normalize_*` (API và đường nhập
@@ -57,16 +62,9 @@ async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> 
     await session.execute(stmt)
 
 
-async def get_current_users(session: AsyncSession) -> list[str]:
-    return await _get_list(session, SettingKey.CURRENT_USERS)
-
-
-async def set_current_users(session: AsyncSession, names: list[str]) -> list[str]:
-    """Ghi đè toàn bộ danh sách. Chuẩn hoá lại ở đây để service an toàn khi gọi ngoài API."""
-    clean = normalize_names(names)
-    await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
-    await put_list(session, SettingKey.CURRENT_USERS, clean)
-    return clean
+async def put_list(session: AsyncSession, key: SettingKey, value: list[str]) -> None:
+    """Ghi cài đặt dạng danh sách chuỗi (xem `put_value`)."""
+    await put_value(session, key, value)
 
 
 async def get_sync_urls(session: AsyncSession) -> list[str]:
@@ -79,6 +77,15 @@ async def set_sync_urls(session: AsyncSession, urls: list[str]) -> list[str]:
     await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
     await put_list(session, SettingKey.SYNC_URLS, clean)
     return clean
+
+
+def list_timezones() -> TimezoneList:
+    """Danh mục IANA. Không phân trang: ~600 tên tĩnh (< 25 KB), không phải dữ liệu tăng dần."""
+    items = [
+        TimezoneOption(name=name, utc_offset_minutes=utc_offset_minutes(name))
+        for name in sorted(valid_timezone_names())
+    ]
+    return TimezoneList(items=items, total=len(items))
 
 
 async def list_assignees(session: AsyncSession) -> list[str]:

@@ -7,6 +7,15 @@
 #
 #  Chạy:  make smoke
 #  Exit:  0 nếu tất cả pass, 1 nếu có bất kỳ test fail
+#
+#  Đăng nhập: core đòi `X-API-Key` + JWT người dùng (JWT sống tối đa 120 giây).
+#  Script tự lấy JWT bằng `make -s auth-token EMAIL=... TTL=120`, tức
+#  `python -m app.cli.auth token --email ... --ttl 120` trong container api, và
+#  lấy lại khi gần hết hạn. Điều kiện:
+#    - SMOKE_EMAIL (mặc định: email đầu tiên trong ADMIN_EMAILS của .env) là user
+#      ADMIN và đã đăng nhập Google ít nhất một lần (status active).
+#    - SMOKE_EMAIL_2 (tuỳ chọn): user thứ hai; có thì kiểm cô lập task cá nhân.
+#    - SMOKE_TOKEN (tuỳ chọn): JWT dựng sẵn, bỏ qua bước lấy token (hết hạn sau 120 giây).
 # ═══════════════════════════════════════════════════════════════════════
 
 set -uo pipefail
@@ -38,6 +47,15 @@ TASK_ID=""
 DUP_ID=""
 NOTE_ID=""
 NOTE_DUP_ID=""
+TZ_READ=""     # "yes" khi đã đọc múi giờ của user smoke (để cleanup khôi phục)
+TZ_ORIG=""     # múi giờ riêng ban đầu của user smoke; rỗng = đang dùng mặc định
+TZ_UPSERT_ID=""
+OTHER_TASK_ID=""
+SMOKE_EMAIL="${SMOKE_EMAIL:-${ADMIN_EMAILS%%,*}}"
+SMOKE_EMAIL_2="${SMOKE_EMAIL_2:-}"
+TOKEN="${SMOKE_TOKEN:-}"
+TOKEN_AT=0
+USE_JWT=1
 
 # ── Tiện ích ───────────────────────────────────────────────────────────
 
@@ -58,6 +76,22 @@ print("" if data is None else data)
 PY
 }
 
+# Lấy JWT cho một email qua CLI trong container api (xem header). Chỉ token ra stdout.
+mint_token() {
+  make -s auth-token EMAIL="$1" TTL=120 2>/dev/null | tail -n1
+}
+
+# Lấy lại token khi còn dưới 30 giây (JWT sống tối đa 120 giây, smoke chạy lâu hơn thế).
+ensure_token() {
+  [[ -n "${SMOKE_TOKEN:-}" ]] && return 0
+  local now
+  now="$(date +%s)"
+  if [[ -z "$TOKEN" || $((now - TOKEN_AT)) -gt 90 ]]; then
+    TOKEN="$(mint_token "$SMOKE_EMAIL")"
+    TOKEN_AT="$now"
+  fi
+}
+
 STATUS=""
 BODY=""
 
@@ -65,11 +99,38 @@ req() {
   local method="$1" path="$2" data="${3:-}" key="${4-$KEY}"
   local args=(-sS -X "$method" -H "Content-Type: application/json" -w $'\n%{http_code}')
   [[ -n "$key" ]] && args+=(-H "X-API-Key: $key")
+  if [[ "$USE_JWT" == "1" ]]; then
+    ensure_token
+    [[ -n "$TOKEN" ]] && args+=(-H "Authorization: Bearer $TOKEN")
+  fi
   [[ -n "$data" ]] && args+=(-d "$data")
   local raw
   raw="$(curl "${args[@]}" "$BASE$path" 2>/dev/null)"
   STATUS="$(tail -n1 <<<"$raw")"
   BODY="$(sed '$d' <<<"$raw")"
+}
+
+# Gọi như req nhưng KHÔNG gửi JWT (kiểm core đòi JWT).
+req_nojwt() {
+  USE_JWT=0
+  req "$@"
+  USE_JWT=1
+}
+
+# Gọi với JWT của user khác (token do người gọi truyền vào).
+req_as() {
+  local token="$1"; shift
+  local saved_use="$USE_JWT"
+  USE_JWT=0
+  local method="$1" path="$2" data="${3:-}"
+  local args=(-sS -X "$method" -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
+    -H "Authorization: Bearer $token" -w $'\n%{http_code}')
+  [[ -n "$data" ]] && args+=(-d "$data")
+  local raw
+  raw="$(curl "${args[@]}" "$BASE$path" 2>/dev/null)"
+  STATUS="$(tail -n1 <<<"$raw")"
+  BODY="$(sed '$d' <<<"$raw")"
+  USE_JWT="$saved_use"
 }
 
 expect() {
@@ -92,6 +153,16 @@ cleanup() {
   [[ -n "$DUP_ID" ]] && req DELETE "/api/v1/tasks/$DUP_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$NOTE_ID" ]] && req DELETE "/api/v1/notes/$NOTE_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$NOTE_DUP_ID" ]] && req DELETE "/api/v1/notes/$NOTE_DUP_ID?permanent=true" >/dev/null 2>&1
+  [[ -n "$TZ_UPSERT_ID" ]] && req DELETE "/api/v1/tasks/$TZ_UPSERT_ID?permanent=true" >/dev/null 2>&1
+  [[ -n "$OTHER_TASK_ID" ]] && req DELETE "/api/v1/tasks/$OTHER_TASK_ID?permanent=true" >/dev/null 2>&1
+  # Khôi phục múi giờ của user smoke về đúng trạng thái ban đầu, kể cả khi test dừng giữa chừng.
+  if [[ "$TZ_READ" == "yes" ]]; then
+    if [[ -n "$TZ_ORIG" ]]; then
+      req PUT /api/v1/me/timezone "{\"timezone\": \"$TZ_ORIG\"}" >/dev/null 2>&1
+    else
+      req PUT /api/v1/me/timezone '{"timezone": null}' >/dev/null 2>&1
+    fi
+  fi
   # Project xoá sau cùng: task và note tham chiếu tới nó qua FK
   [[ -n "$PROJECT_ID" ]] && req DELETE "/api/v1/projects/$PROJECT_ID" >/dev/null 2>&1
   return 0
@@ -134,6 +205,25 @@ expect "thiếu API key trả 401" "401" "$STATUS"
 req GET /api/v1/tasks "" "sai-khoa-hoan-toan"
 expect "API key sai trả 403" "403" "$STATUS"
 
+req_nojwt GET /api/v1/tasks
+expect "có API key nhưng thiếu JWT trả 401" "401" "$STATUS"
+expect "thiếu JWT báo code token_invalid" "token_invalid" "$(jget "$BODY" code)"
+
+req_as "khong.phai.jwt" GET /api/v1/tasks
+expect "JWT rác trả 401" "401" "$STATUS"
+
+ensure_token
+if [[ -z "$TOKEN" ]]; then
+  echo "  ${RED}Không lấy được JWT cho '${SMOKE_EMAIL}'.${RESET} Đặt SMOKE_EMAIL (admin đã đăng nhập Google)"
+  echo "  hoặc SMOKE_TOKEN; cần target 'make auth-token'."
+  exit 1
+fi
+
+req GET /api/v1/me
+expect "GET /me với JWT hợp lệ trả 200" "200" "$STATUS"
+SMOKE_USER_ID="$(jget "$BODY" id)"
+expect "user smoke là admin" "admin" "$(jget "$BODY" role)"
+
 # ── Nhóm 3: project ────────────────────────────────────────────────────
 
 echo ""
@@ -175,6 +265,8 @@ expect "task mặc định status todo" "todo" "$(jget "$BODY" status)"
 expect "task mặc định source manual" "manual" "$(jget "$BODY" source)"
 expect "tag được chuẩn hoá và loại trùng" "['smoke-test', 'tmp']" "$(jget "$BODY" tags)"
 expect "event created được ghi" "created" "$(jget "$BODY" events 0 event_type)"
+expect "task mới là cá nhân của người tạo" "$SMOKE_USER_ID" "$(jget "$BODY" owner_id)"
+expect "người tạo sửa được task của mình" "True" "$(jget "$BODY" can_edit)"
 
 if [[ -z "$TASK_ID" ]]; then
   echo ""
@@ -187,8 +279,22 @@ req GET "/api/v1/tasks?q=Smoke%20task%20$STAMP"
 expect "tìm task theo q trả 200" "200" "$STATUS"
 expect "tìm thấy đúng 1 task" "1" "$(jget "$BODY" total)"
 
+# Cô lập: user thứ hai (nếu có) không thấy task cá nhân của user smoke (404, không lộ tồn tại).
+if [[ -n "$SMOKE_EMAIL_2" ]]; then
+  TOKEN_2="$(mint_token "$SMOKE_EMAIL_2")"
+  req_as "$TOKEN_2" GET "/api/v1/tasks/$TASK_ID"
+  expect "user khác đọc task cá nhân của tôi trả 404" "404" "$STATUS"
+  req_as "$TOKEN_2" GET "/api/v1/tasks?q=Smoke%20task%20$STAMP"
+  expect "user khác không thấy task cá nhân trong danh sách" "0" "$(jget "$BODY" total)"
+  req_as "$TOKEN_2" PATCH "/api/v1/tasks/$TASK_ID" '{"title":"chiếm"}'
+  expect "user khác sửa task cá nhân của tôi trả 404" "404" "$STATUS"
+else
+  echo "  (bỏ qua kiểm cô lập hai user: chưa đặt SMOKE_EMAIL_2)"
+fi
+
 req GET "/api/v1/tasks/$TASK_ID"
 expect "lấy chi tiết task trả 200" "200" "$STATUS"
+expect "TaskRead luôn có khoá reporter" "True" "$(python3 -c 'import json,sys; print("reporter" in json.loads(sys.argv[1]))' "$BODY")"
 
 # Patch này chứa datetime và UUID trong diff của event payload.
 # Nếu JSONB serialization không xử lý được thì sẽ ra 500.
@@ -513,6 +619,84 @@ if [[ -n "$NOTE_ID" ]]; then
 
   req POST /api/v1/notes/trash/purge
   expect "dọn quá hạn note trả 200" "200" "$STATUS"
+fi
+
+# ── Nhóm: múi giờ hiển thị và hạn cả ngày ─────────────────────────────
+
+echo ""
+echo "${DIM}múi giờ hiển thị và hạn cả ngày${RESET}"
+
+req GET /api/v1/me
+expect "đọc /me trả 200" "200" "$STATUS"
+TZ_ORIG="$(jget "$BODY" timezone)"      # rỗng = đang dùng mặc định
+TZ_READ="yes"                           # từ đây trap khôi phục về trạng thái này
+req GET /api/v1/system/info
+expect "system/info (admin) trả 200" "200" "$STATUS"
+TZ_DEFAULT="$(jget "$BODY" display_timezone_default)"
+
+req GET /api/v1/settings/timezones
+expect "danh mục múi giờ trả 200" "200" "$STATUS"
+if grep -q '"Asia/Ho_Chi_Minh"' <<<"$BODY"; then
+  expect "danh mục múi giờ có Asia/Ho_Chi_Minh" "yes" "yes"
+else
+  expect "danh mục múi giờ có Asia/Ho_Chi_Minh" "yes" "no"
+fi
+
+req PUT /api/v1/me/timezone '{"timezone": "Mars/Base"}'
+expect "múi giờ rác bị từ chối 422" "422" "$STATUS"
+req PUT /api/v1/me/timezone '{"timezone": "Factory"}'
+expect "múi giờ Factory bị từ chối 422" "422" "$STATUS"
+
+# Hai múi giờ lệch nhau 26 giờ nên reference_date luôn khác nhau.
+req PUT /api/v1/me/timezone '{"timezone": "Pacific/Kiritimati"}'
+expect "đặt Pacific/Kiritimati trả 200" "200" "$STATUS"
+req GET /api/v1/tasks/agenda
+REF_PLUS14="$(jget "$BODY" reference_date)"
+req PUT /api/v1/me/timezone '{"timezone": "Etc/GMT+12"}'
+expect "đặt Etc/GMT+12 trả 200" "200" "$STATUS"
+req GET /api/v1/tasks/agenda
+REF_MINUS12="$(jget "$BODY" reference_date)"
+if [[ -n "$REF_PLUS14" && "$REF_PLUS14" != "<missing>" && "$REF_PLUS14" != "$REF_MINUS12" ]]; then
+  expect "reference_date đổi theo múi giờ" "yes" "yes"
+else
+  expect "reference_date đổi theo múi giờ" "yes" "no ($REF_PLUS14 vs $REF_MINUS12)"
+fi
+req GET /api/v1/system/info
+expect "system/info báo múi giờ hiệu lực" "Etc/GMT+12" "$(jget "$BODY" display_timezone)"
+expect "system/info báo múi giờ mặc định" "$TZ_DEFAULT" "$(jget "$BODY" display_timezone_default)"
+
+# upsert-batch cần quyền integration:sync (lead/admin): user smoke là admin nên đủ.
+# Không còn mật khẩu X-Import-Secret.
+if true; then
+  TZ_EXT="smoke-tz-$STAMP"
+  upsert() {
+    ensure_token
+    curl -sS -X POST -H "Content-Type: application/json" -H "X-API-Key: $KEY" \
+      -H "Authorization: Bearer $TOKEN" -w $'\n%{http_code}' \
+      -d "$1" "$BASE/api/v1/tasks/upsert-batch" 2>/dev/null
+  }
+  # 10:00Z không phải nửa đêm UTC nên due_all_day=true phải bị từ chối.
+  raw="$(upsert "{\"source\":\"jira\",\"items\":[{\"external_id\":\"$TZ_EXT\",\"title\":\"$TZ_EXT\",\"due_at\":\"2026-01-01T10:00:00Z\",\"due_all_day\":true}]}")"
+  STATUS="$(tail -n1 <<<"$raw")"; BODY="$(sed '$d' <<<"$raw")"
+  expect "due_all_day với due_at 10:00Z bị từ chối 422" "422" "$STATUS"
+
+  # Hạn cả ngày = hôm nay theo múi giờ hiện hành (Etc/GMT+12) thì chưa quá hạn.
+  LOCAL_TODAY="$(python3 -c "from datetime import datetime; from zoneinfo import ZoneInfo; print(datetime.now(ZoneInfo('Etc/GMT+12')).date())")"
+  raw="$(upsert "{\"source\":\"jira\",\"items\":[{\"external_id\":\"$TZ_EXT\",\"title\":\"$TZ_EXT\",\"due_at\":\"${LOCAL_TODAY}T00:00:00Z\",\"due_all_day\":true}]}")"
+  STATUS="$(tail -n1 <<<"$raw")"; BODY="$(sed '$d' <<<"$raw")"
+  expect "upsert hạn cả ngày hôm nay trả 200" "200" "$STATUS"
+  req GET "/api/v1/tasks?q=$TZ_EXT"
+  TZ_UPSERT_ID="$(jget "$BODY" items 0 id)"
+  expect "task hạn cả ngày có due_all_day=True" "True" "$(jget "$BODY" items 0 due_all_day)"
+  expect "hạn cả ngày hôm nay chưa quá hạn" "False" "$(jget "$BODY" items 0 is_overdue)"
+fi
+
+# X-Import-Secret đã gỡ: endpoint xác minh mật khẩu không còn tồn tại.
+req POST /api/v1/import/verify-secret
+if [[ "$STATUS" == "404" || "$STATUS" == "405" ]]; then
+  expect "/import/verify-secret đã gỡ" "yes" "yes"
+else
+  expect "/import/verify-secret đã gỡ" "yes" "no ($STATUS)"
 fi
 
 # ── Tổng kết ───────────────────────────────────────────────────────────

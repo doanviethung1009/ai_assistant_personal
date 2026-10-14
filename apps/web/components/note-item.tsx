@@ -12,6 +12,7 @@ import {
 import { DangerBadge, NoteKindBadge, ProjectBadge, TagBadge } from "@/components/badges";
 import { CopyButton } from "@/components/copy-button";
 import { formatDateTime } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import type { Note } from "@/lib/types";
 
 const ACTION_CLASS =
@@ -29,6 +30,7 @@ export function NoteItem({
   note: Note;
   archiveSupported: boolean;
 }) {
+  const tz = useDisplayTz();
   // archived_at là optional trong type sinh ra, nên `?? null` gộp cả undefined.
   const archivedAt = note.archived_at ?? null;
   const [error, setError] = useState<string | null>(null);
@@ -165,10 +167,10 @@ export function NoteItem({
 
         <span className="ml-auto text-xs text-[var(--color-ink-muted)]">
           {note.use_count > 0
-            ? `Đã dùng ${note.use_count} lần, gần nhất ${formatDateTime(note.last_used_at)}`
+            ? `Đã dùng ${note.use_count} lần, gần nhất ${formatDateTime(note.last_used_at, tz)}`
             : "Chưa dùng lần nào"}
           {archivedAt !== null
-            ? ` · Lưu trữ lúc ${formatDateTime(archivedAt)}`
+            ? ` · Lưu trữ lúc ${formatDateTime(archivedAt, tz)}`
             : ""}
         </span>
       </div>

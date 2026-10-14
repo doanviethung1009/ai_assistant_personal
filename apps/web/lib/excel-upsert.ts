@@ -167,6 +167,10 @@ export function rowsToUpsertItems(rows: unknown[]): {
     const assignee = cell(row, "Assignee");
     if (assignee) item.assignee = assignee;
     else if (columns.has("Assignee")) item.assignee = null;
+    // Chỉ khi sheet CÓ cột Reporter mới gửi khoá (vắng khoá = core giữ giá trị đang có).
+    const reporter = cell(row, "Reporter");
+    if (reporter) item.reporter = reporter.slice(0, 200);
+    else if (columns.has("Reporter")) item.reporter = null;
     const created = parseDate(row["Created Date"]);
     if (created) item.created_at = created;
     const due = parseDate(row["Due Date"]);

@@ -11,6 +11,7 @@ import { FileUploadManager } from "@/components/file-upload-manager";
 import { JiraConnectionsManager } from "@/components/jira-connections-manager";
 import { JiraSyncManager } from "@/components/jira-sync-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
+import { TimezonePicker } from "@/components/timezone-picker";
 import { UrlSyncManager } from "@/components/url-sync-manager";
 import { VaultImportManager } from "@/components/vault-import-manager";
 import { WipeDataManager } from "@/components/wipe-data-manager";
@@ -18,13 +19,15 @@ import {
   IS_LOCAL,
   getAssigneesApi,
   getCurrentUsersApi,
+  getDisplayTimezoneApi,
   getSyncUrlsApi,
   listIntegrations,
   listNotes,
   listProjects,
   listTasks,
+  listTimezonesApi,
 } from "@/lib/api";
-import type { IntegrationConnection } from "@/lib/types";
+import type { IntegrationConnection, TimezoneOption } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -53,40 +56,61 @@ export default async function DataPage({
   let projectCount: number;
   let noteCount: number;
   let projectList: Awaited<ReturnType<typeof listProjects>> = [];
-  let syncUrls: string[];
-  let currentUsers: string[];
-  let assignees: string[];
+  let syncUrls: string[] = [];
+  let currentUsers: string[] = [];
+  let assignees: string[] = [];
   let connections: IntegrationConnection[] = [];
   let connectionsTotal = 0;
   let connectionsError: string | null = null;
+  let timezone = "";
+  let tzDefault = "";
+  let tzSource: Awaited<ReturnType<typeof getDisplayTimezoneApi>>["source"] = "default";
+  let timezoneOptions: TimezoneOption[] = [];
 
+  // Mỗi tab là một lần render server, nên chỉ gọi API mà tab đó dùng: trước đây
+  // mỗi cú bấm tab bắn 8 request (kể cả khi chỉ ở tab Xuất), dễ chạm rate limit.
+  // Ba số đếm luôn cần vì DataSourceCard hiện ở mọi tab.
+  const needSync = tab === "dong-bo";
   try {
-    const [tasks, projects, notes, urls, users, assigneeList, integrationPage] = await Promise.all([
+    const [tasks, projects, notes] = await Promise.all([
       listTasks({ includeClosed: true, limit: 1 }),
       listProjects(true),
       listNotes({ limit: 1 }),
-      getSyncUrlsApi(),
-      getCurrentUsersApi(),
-      getAssigneesApi(),
-      // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
-      IS_LOCAL
-        ? Promise.resolve(null)
-        : listIntegrations().catch((error: unknown) => {
-            connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
-            return null;
-          }),
     ]);
-    if (integrationPage) {
-      connections = integrationPage.items;
-      connectionsTotal = integrationPage.total;
-    }
     taskCount = tasks.total;
     projectCount = projects.length;
     projectList = projects.filter((p) => !p.is_archived);
     noteCount = notes.total;
-    syncUrls = urls;
-    currentUsers = users;
-    assignees = assigneeList;
+
+    if (needSync || tab === "nguy-hiem") {
+      assignees = await getAssigneesApi();
+    }
+    if (needSync) {
+      // Danh mục múi giờ lỗi không được làm sập trang: ô nhập vẫn gõ tay được.
+      const [urls, users, tz, tzList, integrationPage] = await Promise.all([
+        getSyncUrlsApi(),
+        getCurrentUsersApi(),
+        getDisplayTimezoneApi(),
+        listTimezonesApi()
+          .then((list) => list.items)
+          .catch(() => [] as TimezoneOption[]),
+        // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
+        IS_LOCAL
+          ? Promise.resolve(null)
+          : listIntegrations().catch((error: unknown) => {
+              connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
+              return null;
+            }),
+      ]);
+      syncUrls = urls;
+      currentUsers = users;
+      ({ timezone, default: tzDefault, source: tzSource } = tz);
+      timezoneOptions = tzList;
+      if (integrationPage) {
+        connections = integrationPage.items;
+        connectionsTotal = integrationPage.total;
+      }
+    }
   } catch (error) {
     return (
       <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />
@@ -94,7 +118,7 @@ export default async function DataPage({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 pb-12">
+    <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
       <div className="relative">
         <div className="absolute -inset-1 rounded-lg bg-gradient-to-r from-blue-500 to-purple-600 opacity-10 blur"></div>
         <div className="relative">
@@ -150,6 +174,10 @@ export default async function DataPage({
         // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api nằm ở nút Cào ngay (B4b).
         <div className="flex flex-col gap-8">
           <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
+          <TimezonePicker
+            current={{ timezone, default: tzDefault, source: tzSource }}
+            options={timezoneOptions}
+          />
           {IS_LOCAL ? (
             <JiraSyncManager
               taskCount={taskCount}

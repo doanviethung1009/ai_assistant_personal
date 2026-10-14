@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from app.db.session import SessionFactory, engine
-from tests.conftest import IMPORT_SECRET
+from tests.conftest import Persona, create_persona
 
 pytestmark = pytest.mark.db
 
@@ -19,9 +19,9 @@ FIXTURES = Path(__file__).parent / "fixtures"
 DATAFILE = (FIXTURES / "datafile_sample.json").read_bytes()
 JSON_HEADERS = {"Content-Type": "application/json"}
 DATAFILE_SHA = hashlib.sha256(DATAFILE).hexdigest()
-# Nhập thật cần: expect_replaced + expect_sha256 (từ dry-run) và mật khẩu nhập.
+# Nhập thật cần: expect_replaced + expect_sha256 (từ dry-run) và quyền `data:import` (admin).
 COMMIT_PARAMS = {"dry_run": "false", "expect_replaced": "0", "expect_sha256": DATAFILE_SHA}
-COMMIT_HEADERS = {**JSON_HEADERS, "X-Import-Secret": IMPORT_SECRET}
+COMMIT_HEADERS = JSON_HEADERS
 
 
 async def _count(table: str) -> int:
@@ -93,46 +93,29 @@ async def test_commit_with_wrong_sha_is_refused(client: httpx.AsyncClient) -> No
     assert await _count("tasks") == 0
 
 
-async def test_commit_requires_secret(client: httpx.AsyncClient) -> None:
+async def test_import_requires_data_import_permission(client: httpx.AsyncClient) -> None:
+    """Nhập (kể cả dry-run) chỉ dành cho admin; lead và member nhận 403, không ghi gì."""
+    from app.models.enums import UserRole
+
     post = {"params": COMMIT_PARAMS, "content": DATAFILE}
-    missing = await client.post("/api/v1/import/datafile", headers=JSON_HEADERS, **post)
-    wrong = await client.post(
-        "/api/v1/import/datafile",
-        headers={**JSON_HEADERS, "X-Import-Secret": "sai-mat-khau-sai-mat-khau"},
-        **post,
-    )
-    non_ascii = await client.post(
-        "/api/v1/import/datafile",
-        headers={**JSON_HEADERS, "X-Import-Secret": "mật-khẩu".encode()},
-        **post,
-    )
-    assert (missing.status_code, wrong.status_code, non_ascii.status_code) == (403, 403, 403)
-    # Không echo bí mật đúng lẫn sai trong thông điệp.
-    for resp in (missing, wrong, non_ascii):
-        assert IMPORT_SECRET not in resp.text
-        assert "sai-mat-khau" not in resp.text
+    for role in (UserRole.MEMBER, UserRole.LEAD):
+        who = await create_persona(f"{role.value}-imp@test.local", role)
+        denied = await client.post(
+            "/api/v1/import/datafile", headers={**JSON_HEADERS, **who.headers}, **post
+        )
+        dry = await client.post(
+            "/api/v1/import/datafile",
+            headers={**JSON_HEADERS, **who.headers},
+            params={"dry_run": "true"},
+            content=DATAFILE,
+        )
+        assert (denied.status_code, dry.status_code) == (403, 403)
+        assert denied.json()["code"] == "forbidden"
     assert await _count("tasks") == 0
 
     ok = await client.post("/api/v1/import/datafile", headers=COMMIT_HEADERS, **post)
     assert ok.status_code == 200
     assert ok.json()["committed"] is True
-
-
-async def test_commit_disabled_when_secret_not_configured(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "import_commit_secret", None)
-    resp = await client.post(
-        "/api/v1/import/datafile",
-        params=COMMIT_PARAMS,
-        content=DATAFILE,
-        headers=COMMIT_HEADERS,
-    )
-    assert resp.status_code == 403
-    assert "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
-    assert await _count("tasks") == 0
 
 
 async def test_malformed_external_url_is_a_warning_not_a_500(client: httpx.AsyncClient) -> None:
@@ -146,24 +129,7 @@ async def test_malformed_external_url_is_a_warning_not_a_500(client: httpx.Async
     assert sum(1 for i in body["issues"] if i["code"] == "external_url_dropped") == 2
 
 
-async def test_wrong_secret_is_logged_without_the_value(
-    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level("WARNING")
-    wrong = "mat-khau-sai-rat-dac-biet"
-    resp = await client.post(
-        "/api/v1/import/datafile",
-        params=COMMIT_PARAMS,
-        content=DATAFILE,
-        headers={**JSON_HEADERS, "X-Import-Secret": wrong},
-    )
-    assert resp.status_code == 403
-    assert "nhập thật bị từ chối" in caplog.text
-    assert wrong not in caplog.text
-    assert IMPORT_SECRET not in caplog.text
-
-
-async def test_dry_run_needs_no_secret(client: httpx.AsyncClient) -> None:
+async def test_dry_run_needs_no_expect_params(client: httpx.AsyncClient) -> None:
     resp = await client.post(
         "/api/v1/import/datafile",
         params={"dry_run": "true"},
@@ -221,26 +187,29 @@ async def test_unsupported_schema_version_is_422(client: httpx.AsyncClient) -> N
     assert resp.status_code == 422
 
 
-async def test_schema_version_5_and_6_accepted_and_7_rejected(client: httpx.AsyncClient) -> None:
+async def test_schema_version_5_to_8_accepted_and_9_rejected(client: httpx.AsyncClient) -> None:
     data = json.loads(DATAFILE)
-    for version in (5, 6):
+    for version in (5, 6, 7, 8):
         data["schema_version"] = version
         ok = await client.post("/api/v1/import/datafile", json=data)
         assert ok.status_code == 200
         assert ok.json()["schema_version"] == version
-    data["schema_version"] = 7
+    data["schema_version"] = 9
     assert (await client.post("/api/v1/import/datafile", json=data)).status_code == 422
 
 
-async def test_include_personal_query_param_reaches_service(client: httpx.AsyncClient) -> None:
+async def test_include_personal_query_param_reaches_service(
+    client: httpx.AsyncClient, default_user: Persona
+) -> None:
     """Tham số route từng bị khai mà không truyền xuống service (xem test_task_api)."""
     async with SessionFactory() as s:
         await s.execute(
             text(
-                "INSERT INTO tasks (id, title, source, scope, external_id) VALUES "
+                "INSERT INTO tasks (id, title, source, scope, external_id, owner_id) VALUES "
                 "('aaaaaaa1-0000-4000-8000-000000000001', 'Cua rieng', "
-                "'jira', 'personal', 'DEMO-1')"
-            )
+                "'jira', 'personal', 'DEMO-1', :owner)"
+            ),
+            {"owner": default_user.id},
         )
         await s.commit()
     blocked = (
@@ -313,49 +282,10 @@ async def test_openapi_documents_import_paths(client: httpx.AsyncClient) -> None
     assert "Replacement" in schema["components"]["schemas"]
 
 
-# ── /import/verify-secret ───────────────────────────────────────────
+# ── /import/verify-secret đã gỡ ────────────────────────────────────
 
 
 @pytest.mark.db
-async def test_verify_secret_accepts_only_the_real_secret(
-    client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
-) -> None:
-    caplog.set_level("WARNING")
-    url = "/api/v1/import/verify-secret"
-    ok = await client.post(url, headers={"X-Import-Secret": IMPORT_SECRET})
-    assert ok.status_code == 204 and ok.content == b""
-    wrong = await client.post(url, headers={"X-Import-Secret": "sai-mat-khau-WRONG-123"})
-    missing = await client.post(url)
-    assert wrong.status_code == 403 and missing.status_code == 403
-    for resp in (ok, wrong, missing):
-        assert IMPORT_SECRET not in resp.text and "WRONG" not in resp.text
-    # Đối chứng dương tính: cổng mật khẩu PHẢI để lại dòng log cảnh báo, nếu không các assert
-    # "không chứa" bên dưới có thể đúng chỉ vì logger bị tắt.
-    assert "nhập thật bị từ chối" in caplog.text
-    assert IMPORT_SECRET not in caplog.text and "WRONG" not in caplog.text
-
-
-@pytest.mark.db
-async def test_verify_secret_rejected_when_not_configured(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from app.core.config import settings
-
-    monkeypatch.setattr(settings, "import_commit_secret", None)
-    resp = await client.post(
-        "/api/v1/import/verify-secret", headers={"X-Import-Secret": IMPORT_SECRET}
-    )
-    assert resp.status_code == 403 and "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
-
-
-@pytest.mark.db
-async def test_verify_secret_requires_api_key() -> None:
-    from app.main import app
-
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as anon:
-        resp = await anon.post(
-            "/api/v1/import/verify-secret", headers={"X-Import-Secret": IMPORT_SECRET}
-        )
-    assert resp.status_code in (401, 403)
+async def test_verify_secret_endpoint_is_gone(client: httpx.AsyncClient) -> None:
+    resp = await client.post("/api/v1/import/verify-secret")
+    assert resp.status_code in (404, 405)

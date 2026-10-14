@@ -27,7 +27,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from app.models.enums import TaskPriority, TaskStatus
 from app.schemas.common import MAX_TAGS
-from app.schemas.task import MAX_ASSIGNEE_LEN
+from app.schemas.task import MAX_ASSIGNEE_LEN, MAX_REPORTER_LEN
 from app.schemas.task_upsert import TaskUpsert
 from app.services.import_service import normalize_project_key
 
@@ -136,7 +136,8 @@ def parse_jira_datetime(value: Any) -> datetime | None:
 
 
 def _parse_due(value: Any) -> datetime | None:
-    # Bản TS: new Date("YYYY-MM-DD").toISOString() = 00:00 UTC của ngày đó.
+    # Cách lưu CHUẨN của hạn cả ngày: 00:00 UTC của ngày lịch (không phụ thuộc múi giờ hiển thị),
+    # đi kèm `due_all_day=True`. Bản TS: new Date("YYYY-MM-DD").toISOString() cho cùng giá trị.
     if not isinstance(value, str) or not value:
         return None
     try:
@@ -144,6 +145,18 @@ def _parse_due(value: Any) -> datetime | None:
     except ValueError:
         return None
     return datetime(day.year, day.month, day.day, tzinfo=UTC)
+
+
+def previous_due(payload: dict[str, Any] | None) -> tuple[datetime | None, bool] | None:
+    """Hạn mà lần sync TRƯỚC đã đặt, suy từ `raw_payload.fields.duedate`.
+
+    `duedate` vắng trong payload nghĩa là Jira không có hạn (build_raw_payload bỏ khoá null).
+    None = không biết (task chưa từng có payload từ Jira), người gọi phải giữ hạn hiện có.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("fields"), dict):
+        return None
+    due = _parse_due(payload["fields"].get("duedate"))
+    return due, due is not None
 
 
 def _cap(text: str, limit: int) -> str:
@@ -162,9 +175,16 @@ def build_raw_payload(issue: dict[str, Any], base_host: str) -> dict[str, Any]:
     for key in ("summary", "updated", "created", "resolutiondate", "duedate"):
         if isinstance(fields.get(key), str):
             out_fields[key] = _cap(clean_text(fields[key]), _MAX_TITLE)
-    for key, inner in (("status", "name"), ("priority", "name"), ("assignee", "displayName")):
+    for key, inner in (
+        ("status", "name"),
+        ("priority", "name"),
+        ("assignee", "displayName"),
+        ("reporter", "displayName"),
+    ):
         picked = pick_name(key, inner)
         if picked is not None:
+            if key == "reporter":
+                picked = {inner: picked[inner][:MAX_REPORTER_LEN]}
             out_fields[key] = picked
     project_key = pick_name("project", "key")
     if project_key is not None:
@@ -285,6 +305,13 @@ def map_issue(
         if notes is not None:
             notes.append("tên assignee quá dài nên bị cắt")
 
+    # Chỉ đọc displayName: không đụng emailAddress/accountId/avatarUrls (PII).
+    reporter = clean_text(_obj(fields.get("reporter")).get("displayName")) or None
+    if reporter is not None and len(reporter) > MAX_REPORTER_LEN:
+        reporter = reporter[:MAX_REPORTER_LEN].strip()
+        if notes is not None:
+            notes.append("tên reporter quá dài nên bị cắt")
+
     updated_at = parse_jira_datetime(fields.get("updated"))
     resolved = parse_jira_datetime(fields.get("resolutiondate")) or updated_at
     priority = _PRIORITY_MAP.get(clean_text(_obj(fields.get("priority")).get("name")).lower())
@@ -294,6 +321,7 @@ def map_issue(
         "title": title,
         "description": description,
         "assignee": assignee,
+        "reporter": reporter,
         "status": status,
         "tags": tag_list,
         "external_url": f"{base_url}/browse/{key}",
@@ -306,10 +334,11 @@ def map_issue(
     # Priority lạ -> không gửi: task mới lấy mặc định, task cũ giữ giá trị User đã đặt.
     if priority is not None:
         data["priority"] = priority
-    # Jira không có hạn -> không gửi `due_at` (due_at chỉ-khi-tạo, nên null cũng vô nghĩa).
+    # Hạn Jira là NGÀY thuần nên luôn cả ngày. Jira bỏ hạn thì gửi null tường minh; việc có
+    # ghi đè hạn User đã sửa hay không do task_sync_service quyết (luật due_baseline).
     due = _parse_due(fields.get("duedate"))
-    if due is not None:
-        data["due_at"] = due
+    data["due_at"] = due
+    data["due_all_day"] = due is not None
     try:
         return TaskUpsert(**data)
     except PydanticValidationError:
@@ -318,13 +347,18 @@ def map_issue(
 
 
 # Điểm lệch có chủ đích so với bản TS (và cách Jira sync dùng upsert):
-# - Trường CHỈ GHI KHI TẠO (create_only trong integration_sync_service): priority, due_at,
+# - Trường CHỈ GHI KHI TẠO (create_only trong integration_sync_service): priority,
 #   assignee, project_key. Khớp bản TS (task có sẵn không bị đổi các trường này) để giá trị
 #   User sửa tay không bị sync ghi đè và task cũ không bị chuyển project. Status, title,
 #   external_url và tags (gộp) vẫn được áp khi cập nhật.
+# - reporter: LUÔN cập nhật theo Jira, không create-only. Reporter không sửa tay được
+#   (không có trong TaskUpdate) nên không có gì để giữ; create-only sẽ khiến task cũ không
+#   bao giờ có reporter.
 # - priority: bản TS luôn đặt `medium` khi tạo; ở đây ánh xạ từ tên priority của Jira
 #   (Highest/Critical/Blocker -> urgent ... Lowest -> low), tên lạ thì mặc định của task mới.
-# - due_at: chỉ gửi khi Jira có hạn (và chỉ có tác dụng khi tạo).
+# - due_at/due_all_day: luôn gửi (null khi Jira không có hạn). Khi cập nhật, hạn chỉ bị ghi
+#   đè nếu User chưa sửa tay: so hạn hiện có với `raw_payload.fields.duedate` lần trước
+#   (`previous_due`). Bản TS (jira-actions.ts) áp cùng luật.
 # - completed_at: bản TS luôn đè bằng resolutiondate mỗi lần sync; ở đây chỉ đổi khi status
 #   chuyển sang đóng (hoặc điền khi đang đóng mà trống), theo task_sync_service.
 # - external_url: bản TS chỉ đặt khi tạo; ở đây được áp cả khi cập nhật (tự dựng từ base_url

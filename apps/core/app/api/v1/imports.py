@@ -22,11 +22,12 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from pydantic import ValidationError as PydanticValidationError
 
-from app.api.deps import ImportSecretHeader, SessionDep, guard_import_secret
+from app.api.deps import CurrentUserDep, SessionDep, require_permission
+from app.core.permissions import Permission
 from app.schemas.imports import DataFileEnvelope, ImportReport
 from app.services import import_service
 
@@ -68,7 +69,8 @@ IncludePersonalQuery = Annotated[
     Query(
         description=(
             "false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè "
-            "(đếm `skipped_personal`). true: cho phép ghi đè cả task cá nhân."
+            "(đếm `skipped_personal`). true: cho phép ghi đè task cá nhân CỦA CHÍNH người nhập; "
+            "dữ liệu riêng của người khác luôn được bảo vệ."
         )
     ),
 ]
@@ -122,19 +124,12 @@ def _parse[M: BaseModel](body: bytes, model: type[M]) -> M:
         raise HTTPException(status_code=422, detail="; ".join(details)) from exc
 
 
-def _guard_commit(
-    request: Request,
-    dry_run: bool,
-    expect_replaced: int | None,
-    expect_sha256: str | None,
-    secret: str | None,
-) -> None:
+def _guard_commit(dry_run: bool, expect_replaced: int | None, expect_sha256: str | None) -> None:
     """Rào chắn cho nhập THẬT, chạy trước khi đọc body hay chạm DB.
 
-    Thứ tự: tham số bắt buộc (422), rồi mật khẩu (403). Web không có đăng nhập và
-    API key đã nằm trong server env của web, nên chỉ API key thì bất kỳ ai mở được
-    `/data` đều ghi đè được dữ liệu; mật khẩu nhập là lớp thứ hai.
-    Dry-run chỉ đọc nên không cần mật khẩu.
+    Tham số bắt buộc (422). Quyền `data:import` (admin) do dependency của route kiểm (403) và
+    thay cho mật khẩu `X-Import-Secret` cũ. Lớp chống nhập nhầm vẫn là `expect_replaced` +
+    `expect_sha256` lấy từ dry-run.
     """
     if dry_run:
         return
@@ -143,40 +138,25 @@ def _guard_commit(
             status_code=422,
             detail="dry_run=false bắt buộc có expect_replaced và expect_sha256.",
         )
-    guard_import_secret(request, secret)
-
-
-@router.post(
-    "/verify-secret",
-    status_code=204,
-    summary="Kiểm mật khẩu nhập (X-Import-Secret), không ghi gì",
-)
-async def verify_secret(request: Request, import_secret: ImportSecretHeader = None) -> Response:
-    """Cho web xác minh mật khẩu THẬT trước khi tải URL (tới 20 MB) hay parse Excel.
-
-    Nếu chỉ kiểm cú pháp, người gọi Server Action giả chưa biết mật khẩu vẫn gây tốn
-    băng thông/CPU. Không đọc body, không chạm DB; 403 như mọi đường dùng mật khẩu nhập.
-    """
-    guard_import_secret(request, import_secret)
-    return Response(status_code=204)
 
 
 @router.post(
     "/datafile",
     response_model=ImportReport,
-    summary="Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá)",
+    dependencies=[Depends(require_permission(Permission.DATA_IMPORT))],
+    summary="Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá; chỉ admin)",
     openapi_extra=_body_schema(DataFileEnvelope),
 )
 async def import_datafile(
     request: Request,
     session: SessionDep,
+    user: CurrentUserDep,
     dry_run: DryRunQuery = True,
     expect_replaced: ExpectReplacedQuery = None,
     expect_sha256: ExpectSha256Query = None,
-    import_secret: ImportSecretHeader = None,
     include_personal: IncludePersonalQuery = False,
 ) -> ImportReport:
-    _guard_commit(request, dry_run, expect_replaced, expect_sha256, import_secret)
+    _guard_commit(dry_run, expect_replaced, expect_sha256)
     body = await _read_body(request)
     envelope = _parse(body, DataFileEnvelope)
     return await import_service.import_datafile(
@@ -187,4 +167,5 @@ async def import_datafile(
         expect_replaced=expect_replaced,
         expect_sha256=expect_sha256,
         file_sha256=hashlib.sha256(body).hexdigest(),
+        importer=user,
     )

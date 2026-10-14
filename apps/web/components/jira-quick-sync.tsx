@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { syncJiraAction } from "@/app/jira-actions";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { STORAGE_KEY } from "@/lib/jira-storage";
 
@@ -43,7 +44,9 @@ export function JiraQuickSync() {
     }
   }, []);
 
-  if (configs.length === 0) return null;
+  // Chưa có cấu hình trong localStorage: vẫn hiện nút, dẫn tới trang Dữ liệu để thêm kết nối,
+  // thay vì ẩn đi làm người dùng tưởng tính năng đã mất.
+  if (configs.length === 0) return <JiraSyncLink />;
 
   async function handleQuickSync() {
     setIsSyncing(true);
@@ -146,16 +149,36 @@ export function JiraQuickSync() {
       </button>
       
       {skippedNote > 0 && !isSyncing && (
-        <span className="text-[10px] text-[var(--color-ink-muted)] mr-1">
+        <span className="text-xs text-[var(--color-ink-muted)] mr-1">
           Bỏ qua {skippedNote} task cá nhân
         </span>
       )}
 
       {lastSyncText && !isSyncing && syncStatus !== "success" && (
-        <span className="text-[10px] text-[var(--color-ink-muted)] mr-1">
+        <span className="text-xs text-[var(--color-ink-muted)] mr-1">
           Lần cuối: {lastSyncText}
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * Nút đồng bộ dạng liên kết tới trang Dữ liệu.
+ *
+ * Dùng khi không thể đồng bộ ngay tại chỗ: chế độ api (token nằm ở server, "Cào ngay" đòi mật
+ * khẩu nhập/đồng bộ nên chỉ làm ở trang Dữ liệu) hoặc chế độ file chưa có cấu hình. Mục đích là
+ * mọi trang task đều có lối vào đồng bộ, bất kể DATA_SOURCE.
+ */
+export function JiraSyncLink() {
+  return (
+    <Link
+      href="/data"
+      title="Mở trang Dữ liệu để đồng bộ Jira"
+      className="flex h-9 items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 text-sm font-medium text-[var(--color-ink)] shadow-sm transition-all hover:border-blue-500/30 hover:bg-[var(--color-surface-hover)] hover:text-blue-500"
+    >
+      <RefreshCw className="size-4 text-[var(--color-ink-muted)]" />
+      Cập nhật Jira
+    </Link>
   );
 }

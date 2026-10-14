@@ -69,42 +69,37 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
 
-    tags: Mapped[list[str]] = mapped_column(
-        ARRAY(String(64)), default=list, server_default="{}"
+    tags: Mapped[list[str]] = mapped_column(ARRAY(String(64)), default=list, server_default="{}")
+
+    # Note luôn là của riêng một người (kể cả admin cũng không đọc được note của người khác).
+    # NULLable ở schema chỉ vì dữ liệu cũ chưa có chủ cho tới khi chạy CLI bootstrap; CHECK
+    # `owner_required` (NOT VALID rồi VALIDATE) chặn bản ghi mới thiếu chủ.
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="RESTRICT"), default=None
     )
 
     # ── Cách dùng ───────────────────────────────────────────────────
     # Ghim để nổi lên đầu danh sách, dành cho thứ dùng hằng ngày.
-    is_pinned: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    is_pinned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     # Cờ do NGƯỜI DÙNG đặt, không phải máy suy ra. Web có gợi ý tự tích sẵn
     # dựa trên một vài từ khoá, nhưng người dùng luôn sửa được. Giữ một nguồn
     # sự thật trong DB thay vì để UI và backend đoán khác nhau.
-    is_dangerous: Mapped[bool] = mapped_column(
-        Boolean, default=False, server_default="false"
-    )
+    is_dangerous: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     use_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
-    last_used_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     # ── Thùng rác ───────────────────────────────────────────────────
     # Xoá là xoá mềm, giống Task. Một câu lệnh mất nửa ngày mới dò ra thì
     # không nên bốc hơi vì bấm nhầm. Mọi truy vấn nghiệp vụ lọc
     # `deleted_at IS NULL` qua helper _alive() trong note_service.
-    deleted_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     # ── Lưu trữ ─────────────────────────────────────────────────────
     # Khác thùng rác: note lưu trữ vẫn "sống" (đọc, sửa, copy được), không bao
     # giờ bị purge_expired dọn, và vẫn chiếm chỗ unique (source, external_id).
     # Chỉ ẩn khỏi danh sách mặc định. Giữ nguyên khi note bị xoá mềm để phục
     # hồi về đúng trạng thái cũ.
-    archived_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     # ── Nguồn gốc: khai báo sẵn cho integration ở Phase 2 ───────────
     source: Mapped[NoteSource] = mapped_column(
@@ -119,9 +114,7 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     raw_payload: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
 
     # ── Quan hệ ─────────────────────────────────────────────────────
-    project: Mapped[Project | None] = relationship(
-        back_populates="notes", lazy="selectin"
-    )
+    project: Mapped[Project | None] = relationship(back_populates="notes", lazy="selectin")
 
     __table_args__ = (
         # Partial index, cùng lý do như bên tasks: note đã xoá mềm không được
@@ -138,6 +131,8 @@ class Note(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         # Note rỗng không có giá trị gì, và để lọt sẽ làm danh sách đầy rác.
         CheckConstraint("length(btrim(content)) > 0", name="content_not_blank"),
         CheckConstraint("use_count >= 0", name="use_count_non_negative"),
+        CheckConstraint("owner_id IS NOT NULL", name="owner_required"),
+        Index("ix_notes_owner_id", "owner_id", postgresql_where=text("deleted_at IS NULL")),
         Index("ix_notes_tags", "tags", postgresql_using="gin"),
         # Phủ đúng thứ tự sắp xếp mặc định của danh sách: ghim trước, rồi mới
         # xét lần sửa gần nhất.

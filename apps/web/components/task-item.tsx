@@ -12,11 +12,12 @@ import { PriorityBadge, ProjectBadge, SourceBadge, StatusBadge, TagBadge } from 
 import { ScopeBadge } from "@/components/scope-badge";
 import { isSyncManaged, scopeOf } from "@/lib/task-scope";
 import {
-  formatDateTime,
+  formatDue,
   formatMinutes,
   formatPlainDate,
   todayInDisplayTz,
 } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import { STATUS_LABELS, type Task, type TaskStatus } from "@/lib/types";
 
 const ALL_STATUSES: TaskStatus[] = [
@@ -29,9 +30,10 @@ const ALL_STATUSES: TaskStatus[] = [
 ];
 
 const ICON_BUTTON =
-  "rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] transition-all hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)] hover:border-[var(--color-border-hover)] disabled:opacity-40 shadow-sm";
+  "w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-center text-sm font-medium text-[var(--color-ink-muted)] transition-all hover:bg-[var(--color-surface-hover)] hover:text-[var(--color-ink)] hover:border-[var(--color-border-hover)] disabled:opacity-40 shadow-sm";
 
 export function TaskItem({ task }: { task: Task }) {
+  const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -127,15 +129,23 @@ export function TaskItem({ task }: { task: Task }) {
                   href={task.external_url || undefined}
                   target="_blank"
                   rel="noreferrer"
-                  className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shadow-sm"
+                  className="rounded-full bg-blue-500/10 px-2.5 py-0.5 text-[0.8125rem] font-bold tracking-wide text-blue-600 dark:text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition-colors shadow-sm"
                   title="Mở trên hệ thống gốc"
                 >
                   {task.external_id}
                 </a>
               ) : null}
               {task.assignee ? (
-                <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[11px] font-bold tracking-wide text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">
+                <span className="rounded-full bg-orange-500/10 px-2.5 py-0.5 text-[0.8125rem] font-bold tracking-wide text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">
                   @{task.assignee}
+                </span>
+              ) : null}
+              {task.reporter && task.reporter !== task.assignee ? (
+                <span
+                  className="rounded-full bg-slate-500/10 px-2.5 py-0.5 text-[0.8125rem] font-bold tracking-wide text-slate-600 dark:text-slate-400 border border-slate-500/20 shadow-sm"
+                  title="Người báo cáo trên Jira"
+                >
+                  Báo cáo: {task.reporter}
                 </span>
               ) : null}
               {task.tags.map((tag) => (
@@ -152,7 +162,7 @@ export function TaskItem({ task }: { task: Task }) {
                       task.is_overdue ? "text-red-500 bg-red-500/10 px-1.5 py-0.5 rounded-md" : ""
                     }`}
                   >
-                    {formatDateTime(task.due_at)}
+                    {formatDue(task, tz)}
                     {task.is_overdue ? " (quá hạn)" : ""}
                   </dd>
                 </div>
@@ -161,7 +171,7 @@ export function TaskItem({ task }: { task: Task }) {
               {task.scheduled_for ? (
                 <div className="flex items-center gap-1.5">
                   <dt className="font-medium opacity-70">Dự định:</dt>
-                  <dd className="font-semibold text-[var(--color-ink)]">{formatPlainDate(task.scheduled_for)}</dd>
+                  <dd className="font-semibold text-[var(--color-ink)]">{formatPlainDate(task.scheduled_for, tz)}</dd>
                 </div>
               ) : null}
 
@@ -189,8 +199,8 @@ export function TaskItem({ task }: { task: Task }) {
         </div>
 
         {/* Cụm Action */}
-        <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-3 mt-4 sm:mt-0 w-full sm:w-auto border-t sm:border-t-0 border-[var(--color-border)] pt-4 sm:pt-0 relative z-10">
-          <div>
+        <div className="flex flex-col gap-3 mt-4 sm:mt-0 w-full sm:w-[17rem] lg:w-[19rem] shrink-0 border-t sm:border-t-0 border-[var(--color-border)] pt-4 sm:pt-0 relative z-10">
+          <div className="w-full">
             <label htmlFor={`status-${task.id}`} className="sr-only">
               Trạng thái của {task.title}
             </label>
@@ -206,7 +216,7 @@ export function TaskItem({ task }: { task: Task }) {
                   ? "Đồng bộ từ Jira: trạng thái sẽ bị ghi đè ở lần đồng bộ sau."
                   : undefined
               }
-              className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-xs font-medium text-[var(--color-ink)] shadow-sm focus:ring-2 focus:ring-[var(--color-accent)] outline-none transition-shadow"
+              className="w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm font-medium text-[var(--color-ink)] shadow-sm focus:ring-2 focus:ring-[var(--color-accent)] outline-none transition-shadow"
             >
               {ALL_STATUSES.map((status) => (
                 <option key={status} value={status}>
@@ -215,18 +225,18 @@ export function TaskItem({ task }: { task: Task }) {
               ))}
             </select>
             {syncManaged ? (
-              <p className="mt-1 max-w-[11rem] text-right text-[10px] leading-tight text-[var(--color-ink-muted)]">
+              <p className="mt-1 text-xs leading-tight text-[var(--color-ink-muted)]">
                 Đồng bộ từ Jira: trạng thái sẽ bị ghi đè ở lần đồng bộ sau.
               </p>
             ) : null}
           </div>
 
-          <div className="flex gap-1.5">
+          <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
               disabled={pending}
               onClick={toggleScope}
-              className={ICON_BUTTON}
+              className={`${ICON_BUTTON} col-span-2`}
               title={
                 scope === "work"
                   ? "Tách khỏi đồng bộ, coi là việc riêng"
@@ -235,12 +245,12 @@ export function TaskItem({ task }: { task: Task }) {
             >
               {scope === "work" ? "Chuyển thành cá nhân" : "Chuyển thành công việc"}
             </button>
-            {!isClosed && task.scheduled_for !== todayInDisplayTz() ? (
+            {!isClosed && task.scheduled_for !== todayInDisplayTz(tz) ? (
               <button
                 type="button"
                 disabled={pending}
                 onClick={() =>
-                  run(() => setScheduleAction(task.id, todayInDisplayTz()))
+                  run(() => setScheduleAction(task.id, todayInDisplayTz(tz)))
                 }
                 className={ICON_BUTTON}
                 title="Xếp vào hôm nay"
@@ -266,7 +276,7 @@ export function TaskItem({ task }: { task: Task }) {
                 type="button"
                 disabled={pending}
                 onClick={() => run(() => setStatusAction(task.id, "done"))}
-                className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400 transition-all hover:bg-emerald-500 hover:text-white shadow-sm"
+                className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-sm font-medium text-emerald-600 dark:text-emerald-400 transition-all hover:bg-emerald-500 hover:text-white shadow-sm"
                 title="Đánh dấu hoàn thành"
               >
                 Xong
@@ -279,7 +289,7 @@ export function TaskItem({ task }: { task: Task }) {
                   type="button"
                   disabled={pending}
                   onClick={() => run(() => deleteTaskAction(task.id))}
-                  className="rounded-lg border border-red-500 bg-red-500 px-2.5 py-1.5 text-xs font-bold text-white shadow-sm hover:bg-red-600 transition-colors"
+                  className="w-full rounded-lg border border-red-500 bg-red-500 px-3 py-2 text-center text-sm font-bold text-white shadow-sm hover:bg-red-600 transition-colors"
                 >
                   Xoá thật
                 </button>
@@ -296,7 +306,7 @@ export function TaskItem({ task }: { task: Task }) {
                 type="button"
                 disabled={pending}
                 onClick={() => setConfirmingDelete(true)}
-                className="rounded-lg border border-transparent hover:border-red-500/30 bg-transparent hover:bg-red-500/10 px-2.5 py-1.5 text-xs font-medium text-[var(--color-ink-muted)] hover:text-red-500 transition-all opacity-0 md:group-hover:opacity-100 focus:opacity-100"
+                className="w-full rounded-lg border border-[var(--color-border)] hover:border-red-500/30 bg-transparent hover:bg-red-500/10 px-3 py-2 text-center text-sm font-medium text-[var(--color-ink-muted)] hover:text-red-500 transition-all"
                 title={`Xoá task ${task.title}`}
               >
                 Xoá

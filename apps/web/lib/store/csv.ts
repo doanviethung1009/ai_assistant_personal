@@ -137,6 +137,8 @@ export const TASK_COLUMNS = [
   "priority",
   "project_key",
   "due_at",
+  // true khi hạn là cả ngày (Jira duedate). Vắng khi nhập: suy từ source=jira + 00:00 UTC.
+  "due_all_day",
   "scheduled_for",
   "estimate_minutes",
   "spent_minutes",
@@ -152,6 +154,8 @@ export const TASK_COLUMNS = [
   // Khác rỗng nghĩa là task đang ở trong thùng rác. Giữ cột này để backup
   // và phục hồi không làm mất trạng thái đã xoá.
   "deleted_at",
+  // Tên hiển thị người báo cáo (Jira). Cột vắng hoặc rỗng khi nhập nghĩa là null.
+  "reporter",
 ] as const;
 
 export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
@@ -165,6 +169,7 @@ export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
     task.priority,
     task.project_id ? (keyById.get(task.project_id) ?? "") : "",
     task.due_at ?? "",
+    task.due_all_day ? "true" : "false",
     task.scheduled_for ?? "",
     task.estimate_minutes?.toString() ?? "",
     task.spent_minutes.toString(),
@@ -177,6 +182,7 @@ export function tasksToCsv(tasks: StoredTask[], projects: Project[]): string {
     task.created_at,
     task.updated_at,
     task.deleted_at ?? "",
+    task.reporter ?? "",
   ]);
 
   return buildCsv(TASK_COLUMNS, rows);
@@ -279,6 +285,11 @@ export function csvToTasks(
         project_id: project?.id ?? null,
         project: summary(project),
         due_at: record.due_at || null,
+        // Cột vắng (CSV cũ) thì suy như migrate v6→v7; có cột thì tin giá trị trong file.
+        due_all_day:
+          record.due_all_day !== undefined && record.due_all_day !== ""
+            ? record.due_all_day.toLowerCase() === "true"
+            : (source || "manual") === "jira" && /T00:00:00(\.0+)?Z$/.test(record.due_at ?? ""),
         scheduled_for: record.scheduled_for || null,
         estimate_minutes: optionalInt(record.estimate_minutes ?? ""),
         spent_minutes: Number.isFinite(spent) && spent > 0 ? spent : 0,
@@ -293,6 +304,7 @@ export function csvToTasks(
         created_at: record.created_at || nowIso(),
         updated_at: record.updated_at || nowIso(),
         deleted_at: record.deleted_at || null,
+        reporter: (record.reporter ?? "").slice(0, 200) || null,
       }),
     );
   });

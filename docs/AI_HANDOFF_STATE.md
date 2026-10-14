@@ -38,9 +38,9 @@
 ## 6. Chuyển dữ liệu từ file JSON sang Postgres (đang làm, 4 pha)
 
 - **Spec CHỐT:** `docs/specs/import-json-to-postgres.md` (User duyệt B1-B4, quyết định replace có rào chắn, Vault KHÔNG vào Postgres). Hướng dẫn dùng và hoàn tác: `docs/DATA_MIGRATION_TO_POSTGRES.md`.
-- **B1 đã code (nhánh `feat/import-b1`, chưa merge):** `POST /api/v1/import/datafile` và `/import/ai-logs`; migration `e5f1a3b7c9d2` (bảng `import_runs`, `import_audit`); panel nhập ở tab Nhập của trang Dữ liệu khi `DATA_SOURCE=api`. Rào chắn: `dry_run` mặc định, `expect_replaced`, `expect_sha256`, mật khẩu `IMPORT_COMMIT_SECRET` (header `X-Import-Secret`), advisory lock, khoá dòng, all-or-nothing, audit `before`.
+- **B1 đã code (đã merge vào `main`):** `POST /api/v1/import/datafile` và `/import/ai-logs`; migration `e5f1a3b7c9d2` (bảng `import_runs`, `import_audit`); panel nhập ở tab Nhập của trang Dữ liệu khi `DATA_SOURCE=api`. Rào chắn: `dry_run` mặc định, `expect_replaced`, `expect_sha256`, mật khẩu `IMPORT_COMMIT_SECRET` (header `X-Import-Secret`), advisory lock, khoá dòng, all-or-nothing, audit `before`.
 - **Việc cần làm khi bắt đầu dùng:** `.env` hiện có phải tự thêm `IMPORT_COMMIT_SECRET` (`make env` chỉ sinh khi tạo `.env` mới); thiếu thì core từ chối nhập thật.
-- **B2 (cài đặt người dùng, sync_urls) và B4 (Jira sync ở backend) chưa làm (B3 lịch sử Chrome đã bị gỡ, xem mục 9).** Đến lúc đó chế độ `api` vẫn chưa có Jira sync, nhập Excel, lọc task cá nhân/team, nên chưa bỏ chế độ file.
+- **B2 và B4 đã xong (xem mục 8, 10, 11); B3 lịch sử Chrome đã bị gỡ (mục 9). Câu dưới đây là bối cảnh lịch sử.** Đến lúc đó chế độ `api` vẫn chưa có Jira sync, nhập Excel, lọc task cá nhân/team, nên chưa bỏ chế độ file.
 - **Vault không nằm trong Postgres:** `pg_dump` không chứa nó; sao lưu riêng bằng `/api/export?entity=vault`.
 - **Rủi ro đã ghi nhận:** web không có đăng nhập; file cũ có thể ghi đè trạng thái mới hơn (đã có cờ "File cũ hơn" và xác nhận 2 lớp); `import_audit.before` giữ bản sao đầy đủ và chưa có chính sách xoá.
 - **`data/builder-data.json` là dữ liệu thật của User:** test chỉ mở chế độ đọc (kiểm sha256 không đổi); không bao giờ ghi hay chép vào repo.
@@ -63,7 +63,7 @@
 - **Đã review và sửa (vòng 1):** Drive chuyển hướng sang `drive.usercontent.google.com` (đã thêm); Kelvin `K` lọt Python (đã chặn bằng `re.ASCII`); `SYNC_URL_EXTRA_HOSTS` từ chối host không dấu chấm và hậu tố dùng chung; tải file theo stream có trần 20 MB; thêm/xoá URL không bị khoá bởi URL cũ; PUT settings dùng chung advisory lock với nhập. Parity TS/Python đối chiếu 225 URL + 33 cấu hình, 0 lệch.
 - **Rủi ro còn lại:** `*.sharepoint.com` và `*.googleusercontent.com` nhận mọi tenant (nội dung do bên khác kiểm soát được parse và nhập); chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền); `xlsx` 0.18.5 có CVE (việc riêng đã tách); OneDrive cá nhân chưa kiểm được; `jira-actions.ts` fetch `baseUrl` tuỳ ý kèm `Authorization` (SSRF có sẵn, để B4).
 - **Merge:** sau PR task-scope (#13) vì migration nối tiếp. `.env` hiện có không có `SYNC_URL_EXTRA_HOSTS` (tuỳ chọn); Jira on-prem cần thêm host vào biến này.
-- **Chưa làm:** pha B4 (Jira sync ở backend; nút "Cào ngay" ở chế độ api khoá cho tới lúc đó). Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
+- **(Lỗi thời)** pha B4 đã xong ở mục 10, 11. Chưa chặn IP nội bộ sau khi phân giải DNS (allowlist theo tên miền; ghi nhận).
 
 ## 9. Lịch sử Chrome: đã GỠ HẲN (nhánh `chore/remove-browser-history`)
 
@@ -83,7 +83,7 @@
 - **Rủi ro còn lại:** `base_url` mới chỉ chặn theo tên host literal, **chưa phân giải DNS** (`127.0.0.1.nip.io`, DNS rebinding): B4b phải phân giải, chặn IP private, ghim IP, tắt redirect, không gửi `Authorization` sang host khác; `syncJiraAction` ở chế độ file vẫn gửi `Authorization` tới `baseUrl` tuỳ ý (SSRF có sẵn, vá ở B4b); tạo/xoá kết nối chưa đòi mật khẩu (web không có đăng nhập); audit kết nối chỉ là log có cấu trúc, chưa có bảng; `external_url` hardcode `onemount.atlassian.net`; chưa chạy UAT, `make smoke` (không có Docker).
 - **Chưa làm (B4b):** `POST /integrations/{id}/sync` (connector Python trong core, mặc định chặn IP private, mở bằng biến môi trường), JQL mặc định dùng `current_users`, bật nút "Cào ngay" ở chế độ api.
 
-## 11. Chạy sync Jira ở backend, phần B4b (nhánh `feat/jira-sync-b4b`, chưa merge)
+## 11. Chạy sync Jira ở backend, phần B4b (đã merge vào `main`, PR #17)
 
 - **Đã code:** `POST /api/v1/integrations/{id}/sync` (cần `X-Import-Secret`). Connector Python trong core: `services/jira_client.py` (phân trang, JQL, giới hạn), `jira_mapping.py` (ánh xạ issue sang task, khớp `syncJiraAction` chế độ file), `ssrf_guard.py` (phân giải DNS, chặn IP riêng, ghim IP), `integration_sync_service.py` (khoá advisory theo kết nối, ghi từng lô ngắn, không giữ transaction lúc gọi Jira). Web: nút "Cào ngay" ở chế độ api (mật khẩu, "Từ ngày", kết quả chi tiết).
 - **Chỉ Jira Cloud** (`*.atlassian.net`, User chốt). Không có cờ cho phép IP riêng/Jira on-prem (đã bỏ có chủ đích). Mọi dải riêng, loopback, link-local, metadata cloud luôn bị chặn.
@@ -94,12 +94,12 @@
 - **Phát hiện hạ tầng test:** assert "token không có trong caplog" ở các test cũ (B3, B4a) có thể vô nghĩa vì fixture migrate tắt logger của app; đã tách thành việc riêng (chip chore/fix-caplog-tests). `test_jira_sync_api.py` đã bật lại logger.
 - **Chuỗi B1-B4 đã xong về code.** Việc còn lại ngoài B4b: gỡ tính năng lịch sử duyệt web (User không cần nữa, session riêng), nâng `xlsx` (2 CVE), UAT ở máy có Docker.
 
-## 12. Hook ghi vết Claude Code (nhánh `feat/claude-trace-hooks`, giai đoạn 1, chưa merge)
+## 12. Hook ghi vết Claude Code (đã merge vào `main`, PR #21, #22)
 
 - Hook `Stop`/`SubagentStop`/`SessionEnd` (`.claude/hooks/trace-hook.py` + `trace_redact.py`) ghi vết ngoài repo (`~/.claude/trace/ai_assistant_personal/`), lọc secret trước khi ghi. Giai đoạn 1 chỉ THÊM (nay đã sang giai đoạn 2, xem mục 13); AI log viết tay, bảng `ai_logs`, `/ai-logs` giữ nguyên để so sánh. **Mặc định TẮT**, bật bằng `CLAUDE_TRACE_ENABLED=1` trong `.claude/settings.local.json` (gitignore). Chi tiết: `docs/CLAUDE_TRACE_HOOKS.md`.
 - **User chốt (2026-10-08):** lưu tóm tắt từng lượt + transcript đã lọc; dữ liệu Jira công ty **chưa được dùng để train** (chưa rõ chính sách). Giai đoạn 2 (gỡ AI log viết tay) đã làm ở mục 13.
 
-## 13. Gỡ AI log viết tay + xoay vòng trace (nhánh `chore/remove-handwritten-ai-log`, chưa merge)
+## 13. Gỡ AI log viết tay + xoay vòng trace (đã merge vào `main`, PR #23)
 
 - **Đã gỡ (User duyệt 2026-10-08):** rule `ai-logger.md`, mục 3.4 AGENTS.md (nay chỉ là con trỏ tới hook ghi vết), `scripts/add-ai-log.js`, `docs/ai_logs.md`, bảng `ai_logs` (migration `f3a8c1d5e7b9`, `down_revision d7e2a9c4b1f6`, downgrade tạo bảng RỖNG), API `/ai-logs` và `/import/ai-logs`, trang `/ai-logs`, nhánh import/export JSON nhật ký AI. Spec: `docs/specs/remove-handwritten-ai-log.md`.
 - **Bản sao log cũ** (72 mục + `ai_logs.md`) nằm NGOÀI repo: `~/.claude/trace/ai_assistant_personal/legacy-ai-logs/`. `data/ai-logs.json` của User để nguyên (gitignore), web thôi đọc.
@@ -109,4 +109,43 @@
 - **Đề xuất training:** `docs/LLM_TRAINING_DATA_PLAN.md` (chờ User chốt chính sách dữ liệu Jira).
 - **Chưa kiểm:** `make smoke`, `make gen-types` (không có Docker; `openapi.d.ts` sửa tay), migrate trên DB dev thật.
 
-*--- Bản cập nhật cuối cùng: [2026-10-08] ---*
+## 14. Giảm số request vào core / lỗi "Quá số lượng request" (nhánh `feat/auth-multiuser`, chưa commit)
+
+- **Nguyên nhân:** web chỉ gửi `X-API-Key` dùng chung (chưa gửi JWT từng user), nên `core/rate_limit.py` đếm mọi người và mọi trang vào MỘT bucket `key:<API_KEY>`. Ngưỡng cũ 120/phút cạn sau vài lần click filter.
+- **Đã sửa:** ngưỡng mặc định `RATE_LIMIT_REQUESTS_PER_MINUTE` 120 → 900 (`core/config.py`, `docker-compose.yml`). Biến này trong `.env` (nếu có) vẫn ghi đè.
+- **Cache `/team` riêng đã GỠ** (code-reviewer: dễ trả nhầm dữ liệu, mảng dùng chung bị sort tại chỗ); cache GET chung bên dưới đã đủ.
+- **Dedupe trong một lần render:** `getCurrentUsersApi` và `listProjects` bọc `React.cache` (`lib/api.ts`); `/` và `/tasks` giảm từ ~6 xuống ~4 lời gọi.
+- **Cache GET chung cho mọi lời gọi core (vòng 2):** `apps/web/lib/core-cache.ts`, dùng trong `coreFetch` (`lib/api.ts`). GET được cache 10 giây theo path+query và gộp lời gọi đồng thời; mọi lời gọi ghi và `revalidateAll()` xoá cache; `/api/v1/integrations*` không cache. `coreFetch` thử lại tối đa 1 lần khi core trả 429 với `Retry-After` ≤ 3 giây (không thử lại POST). State cache nằm trên `globalThis`; request có `Authorization` bỏ qua cache. **Việc còn lại:** khi web gửi JWT từng người, đưa user id vào khoá thay vì chỉ bỏ qua cache; chưa kiểm thật việc Server Action xoá được cache của trang (bấm hoàn thành task ở `/team?status=all` phải thấy cập nhật ngay).
+- **Lưu ý triển khai:** ngưỡng 900 chỉ có hiệu lực sau khi build lại và khởi động lại container `api` trên nơi đang chạy core (dev/staging VM). Nếu chưa deploy, core vẫn dùng 120.
+- **`/team` chế độ lai (vòng 3):** `status=open` (mặc định) và ≤ 1000 task đang mở → server tải một lần, giao xuống `components/team-open-list.tsx` (client) lọc tức thì (người làm, từ khoá, mốc thời gian, khoảng ngày, sắp xếp, phân trang, số theo người), 0 request mỗi click; URL đồng bộ bằng `history.replaceState`. Chọn "Đã hoàn thành"/"Tất cả" hoặc vượt ngưỡng → chế độ server cũ (tải hết rồi lọc, qua cache). Thêm `app/team/loading.tsx`, `app/tasks/loading.tsx` (skeleton). Chế độ client giới hạn 50/100/200 mỗi trang.
+- **Skill mới `nextjs-rendering`** (`.agents/skills/nextjs-rendering/SKILL.md`): quy tắc chọn server/client render, giảm request, làm filter mượt. Dùng khi làm trang có danh sách/filter.
+- **Việc còn lại:** lọc `/team` ở backend với phân trang server-side (S12); khi frontend đa người dùng gửi `Authorization: Bearer`, `_identity()` tự tách bucket theo user, lúc đó cân nhắc hạ ngưỡng.
+- **Chưa kiểm:** chưa restart stack và chưa đo số request thật; `make smoke` chưa chạy. `npm run lint` của web chưa có cấu hình ESLint (có sẵn từ trước), chỉ `tsc --noEmit` đã pass.
+
+## 15. Jira reporter và sửa project theo Company (nhánh `feat/auth-multiuser`, chưa commit)
+
+- **Spec CHỐT:** `docs/specs/jira-reporter.md` (User duyệt R1-R9). Code xong: migration `e8a3c6f2b1d7` (`tasks.reporter`, nối sau `b2f7a9c1d4e6` của epic auth nên commit SAU auth), `build_jql(..., reporters)` (`assignee OR reporter` bọc ngoặc, AND với JQL kết nối), query `reporter` của `POST /integrations/{id}/sync`, chế độ file `SCHEMA_VERSION` 8, `SUPPORTED_DATAFILE_VERSION` 8, Excel/CSV cột Reporter, badge trên task. Chỉ lưu `displayName`; audit chỉ ghi `reporter_count`.
+- **Sau deploy cần một lượt sync "Tất cả"** để task cũ có reporter (lượt đầu đánh mọi task là `updated`).
+- **Sửa project (chế độ file, `jira-actions.ts`):** project lấy từ custom field Company/Team trước. Trước đây trần 20 field theo thứ tự danh sách và nhánh cập nhật luôn ghi đè project theo Jira (nghi là nguyên nhân 4643 task về `DBA` sau lượt sync 09-10). Nay field Company xếp đầu, trần 60, cập nhật chỉ đổi project khi có giá trị Company; kết quả sync hiện `project_fields`/`project_from_field`. **Chưa kiểm với Jira thật. Bản Python (`jira_client.py`/`jira_mapping.py`) CHƯA sửa tương ứng.** Backup đúng project: `data/backups/builder-data-backup-2026-10-09T12-33-21-215Z.json` (958 task).
+- **Chưa làm / chưa kiểm:** test có DB của reporter chưa có kết quả (VM dev treo); `openapi.d.ts` chưa sinh lại (`lib/types.ts` đang khai bù `reporter`); `make smoke`. Lỗi có sẵn của epic auth: thiếu `pyjwt` trong `pyproject.toml`/`uv.lock`, 3 lỗi E501, `dev-vm-backend-test.sh` hỏng (`.dockerignore` loại `tests/`, `ENVIRONMENT=test` sai).
+
+## 16. Múi giờ chọn được và hạn cả ngày (đã merge vào `main`, spec CHỐT 2026-10-13)
+
+- **Spec CHỐT:** `docs/specs/user-timezone.md` (Q1-Q7 theo khuyến nghị). Setting `display_timezone` lưu ở `app_settings`, bộ chọn nằm ở `/data`; cột `tasks.due_all_day`; hạn cả ngày quá hạn khi ngày hạn < hôm nay theo múi giờ hiển thị (`services/clock.py`).
+- **Sync hạn có điều kiện (Q4 phương án C):** `due_at` chỉ bị Jira ghi đè khi User chưa sửa tay (so với baseline trong `raw_payload`), xem `task_sync_service.py`.
+- **Chế độ file:** `SCHEMA_VERSION` 7 (nay 8 do `reporter`). `NEXT_PUBLIC_DISPLAY_TZ` chỉ còn là giá trị dự phòng khi API không trả lời (`FALLBACK_TZ`, `lib/api.ts`); gỡ hẳn để epic sau. Đã thêm gói `tzdata`.
+- **Chưa kiểm:** UAT trên trình duyệt với nhiều múi giờ, `make smoke`.
+
+- **Ghi chú 2026-10-13:** `main` local từng cũ 25 commit so với `origin/main` (`git pull` trước khi so nhánh). Cụm user-timezone, team-participation, team-dashboard đã commit nhưng nằm trên `feat/auth-multiuser`, chưa vào `main`. Còn `stash@{0}` (55 file, trên `feat/user-timezone`) chưa rõ còn cần không.
+
+## 17. Epic đăng nhập đa người dùng: trạng thái review (nhánh `feat/auth-multiuser`)
+
+- **Spec CHỐT:** `docs/specs/auth-multiuser.md`. Core đã có: JWT HS256 web->core (`core/auth.py`), bảng `users`/`audit_log`, phân quyền (`core/permissions.py`, `services/access.py`), cô lập task/note theo chủ, CLI `python -m app.cli.auth` (`make auth-invite`, `auth-token`, `auth-bootstrap`).
+- **BẮT BUỘC sau `make migrate`:** chạy `make auth-bootstrap OWNER=<email admin>` ngay. Hai CHECK ở migration `b2f7a9c1d4e6` ở trạng thái NOT VALID; trước khi bootstrap, mọi UPDATE lên note cũ hoặc task cá nhân cũ (`owner_id` NULL) sẽ lỗi CheckViolation.
+- **Biến môi trường mới:** `CORE_JWT_SECRET` (>= 32 ký tự, khác `API_KEY`; thiếu thì core không khởi động), `ADMIN_EMAILS`, `GOOGLE_ALLOWED_HD`. `make env` tự sinh `CORE_JWT_SECRET`; `.env` cũ chạy `make env-fill`.
+- **Review 2026-10-13 (db-reviewer, security-auditor):** không có lỗi critical. Đã sửa: người được giao không còn chuyển task work của người khác thành cá nhân được (403; test `test_assignee_cannot_hijack_manual_work_task_into_personal`); compose truyền `CORE_JWT_SECRET`/`ADMIN_EMAILS`/`GOOGLE_ALLOWED_HD`.
+- **CHƯA làm (chặn chạy thật):** web chưa có Auth.js, chưa ký JWT từng người, Server Action chưa kiểm phiên, nên ở chế độ api core trả 401. Web còn gọi `/settings/current-users`, `/settings/display-timezone` (endpoint đã gỡ) và tham số `X-Import-Secret` cũ.
+- **Mức thấp còn mở:** `TaskCreate` nhận `source`/`external_id`/`external_url` từ mọi user; khoá cache web chưa chứa user id (rủi ro khi web gửi Bearer); lead kéo Jira theo người khi kết nối không có JQL; `count_open_tasks_by_project` không lọc phạm vi (hàm chết); `cli/auth.py:60` ghép SQL bằng f-string; `POST /tasks/trash/purge` không đòi quyền; API key thô nằm trong khoá Redis của rate limit; index `owner_id` chỉ partial nên xoá cứng user sẽ quét bảng (hiện chỉ vô hiệu hoá user).
+- **Chưa kiểm:** không có Docker nên chưa chạy pytest, `make smoke`, ruff.
+
+*--- Bản cập nhật cuối cùng: [2026-10-13] ---*

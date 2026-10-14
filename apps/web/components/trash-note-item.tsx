@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 import { purgeNoteAction, restoreNoteAction } from "@/app/actions";
 import { DangerBadge, NoteKindBadge, ProjectBadge } from "@/components/badges";
 import { formatDateTime } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import type { Note } from "@/lib/types";
 
 const BUTTON =
@@ -18,6 +19,7 @@ function remainingTone(days: number | null): string {
 }
 
 export function TrashNoteItem({ note }: { note: Note }) {
+  const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -76,7 +78,7 @@ export function TrashNoteItem({ note }: { note: Note }) {
           <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--color-ink-muted)]">
             <div className="flex gap-1">
               <dt>Đã xoá:</dt>
-              <dd>{formatDateTime(note.deleted_at)}</dd>
+              <dd>{formatDateTime(note.deleted_at, tz)}</dd>
             </div>
             <div className="flex gap-1">
               <dt>Xoá vĩnh viễn sau:</dt>

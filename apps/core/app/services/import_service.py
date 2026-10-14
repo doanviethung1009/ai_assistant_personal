@@ -34,7 +34,7 @@ import unicodedata
 import uuid
 from collections.abc import Awaitable, Callable, Hashable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from enum import Enum
 from typing import Any
 from urllib.parse import urlparse, urlsplit
@@ -45,19 +45,24 @@ from sqlalchemy import Select, Table, insert, select, text, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.auth import CurrentUser
 from app.models.app_setting import AppSetting
 from app.models.enums import (
+    AliasSource,
+    AuditAction,
     ImportAction,
     ImportEntity,
     ImportKind,
     SettingKey,
     TaskEventType,
+    TaskSource,
     default_scope_for,
 )
 from app.models.import_audit import ImportAudit, ImportRun
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
+from app.models.user import User, UserAlias
 from app.schemas.common import normalize_tags
 from app.schemas.imports import (
     DataFileEnvelope,
@@ -72,8 +77,8 @@ from app.schemas.imports import (
     KeyChange,
     Replacement,
 )
-from app.schemas.settings import normalize_names, normalize_urls
-from app.services import settings_service
+from app.schemas.settings import normalize_names, normalize_timezone, normalize_urls
+from app.services import audit_service, settings_service, user_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.jsonable import jsonable
 
@@ -107,10 +112,12 @@ TASK_FIELDS = (
     "title",
     "description",
     "assignee",
+    "reporter",
     "status",
     "priority",
     "project_id",
     "due_at",
+    "due_all_day",
     "scheduled_for",
     "estimate_minutes",
     "spent_minutes",
@@ -328,10 +335,18 @@ class _Ctx:
     """Bộ gom lỗi, đếm, diff và dấu vết audit của một lần nhập."""
 
     def __init__(
-        self, *, dry_run: bool, schema_version: int, include_personal: bool = False
+        self,
+        *,
+        dry_run: bool,
+        schema_version: int,
+        importer: CurrentUser,
+        include_personal: bool = False,
     ) -> None:
         self.import_id = uuid.uuid4()
         self.dry_run = dry_run
+        # Người nhập: chủ của note và task personal TẠO MỚI; bản ghi của người KHÁC không bị
+        # chạm tới (xem _plan_entity).
+        self.importer = importer
         # Mặc định tắt: task cá nhân trong DB không bị file ghi đè (spec task-scope S8).
         self.include_personal = include_personal
         self.schema_version = schema_version
@@ -625,6 +640,31 @@ def _parse_events(
     return out
 
 
+def _is_midnight_utc(value: datetime | None) -> bool:
+    return value is not None and value.astimezone(UTC).time() == time.min
+
+
+def _resolve_all_day(ctx: _Ctx, index: int, m: ImportTask, due: datetime | None) -> bool:
+    """`due_all_day` của một dòng task.
+
+    File < v7 không có cột: áp heuristic của migration (nguồn Jira và hạn đúng 00:00 UTC, vì
+    chỉ đồng bộ Jira mới sinh giá trị đó). Có giá trị tường minh mà không thoả CHECK của DB
+    (không có hạn, hoặc hạn không phải 00:00 UTC) thì hạ về false và cảnh báo, không từ chối task.
+    """
+    if m.due_all_day is None:
+        return m.source is TaskSource.JIRA and _is_midnight_utc(due)
+    if m.due_all_day and not _is_midnight_utc(due):
+        ctx.warn(
+            "task",
+            "due_all_day_dropped",
+            "due_all_day=true nhưng due_at không phải 00:00 UTC, coi là hạn có giờ.",
+            index=index,
+            id_=m.id,
+        )
+        return False
+    return m.due_all_day
+
+
 def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     m = _validate(ctx, "task", index, raw, ImportTask)
     if m is None:
@@ -647,6 +687,15 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
     fallback = _absent(raw, TASK_FIELDS)
     due = _aware(m.due_at, flag)
     completed = _aware(m.completed_at, flag)
+    due_all_day = _resolve_all_day(ctx, index, m, due)
+    # due_at và due_all_day là MỘT CẶP do CHECK ck_tasks_due_all_day_midnight ràng buộc: nếu chỉ
+    # ghi một nửa, giá trị còn lại của DB có thể không còn khớp (vd cờ true của DB + due_at
+    # không phải 00:00 UTC từ file). Hạn là dự phòng thì cờ cũng dự phòng; hạn có trong file
+    # thì cờ (tường minh hoặc suy lại bằng heuristic) luôn được ghi cùng.
+    if "due_at" in fallback:
+        fallback.add("due_all_day")
+    else:
+        fallback.discard("due_all_day")
     estimate = m.estimate_minutes
     if estimate is not None and not (0 < estimate <= 43_200):
         fallback.add("estimate_minutes")
@@ -701,10 +750,12 @@ def _parse_task(ctx: _Ctx, index: int, raw: dict[str, Any]) -> _Parsed | None:
         "title": m.title,
         "description": m.description,
         "assignee": m.assignee,
+        "reporter": m.reporter,
         "status": m.status,
         "priority": m.priority,
         "project_id": m.project_id,
         "due_at": due,
+        "due_all_day": due_all_day,
         "scheduled_for": m.scheduled_for,
         "estimate_minutes": estimate,
         "spent_minutes": m.spent_minutes,
@@ -997,7 +1048,15 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
             target = nat_rows.get(nat)
             matched_by = "natural_key"
         if target is None:
-            plan.creates.append({"id": r.file_id, **r.values})
+            created = {"id": r.file_id, **r.values}
+            # Note và task personal mới thuộc người nhập; task work thuộc team (owner NULL).
+            # Luôn có khoá owner_id (kể cả None): executemany yêu cầu mọi dòng cùng bộ khoá.
+            if spec.entity == "note":
+                created["owner_id"] = ctx.importer.id
+            elif spec.entity == "task":
+                is_personal = _canon("scope", r.values.get("scope")) == "personal"
+                created["owner_id"] = ctx.importer.id if is_personal else None
+            plan.creates.append(created)
             plan.id_map[r.file_id] = r.file_id
             plan.created_file_ids.add(r.file_id)
             if nat is not None:
@@ -1013,6 +1072,27 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
                 spec.entity,
                 "skipped_trash_in_db",
                 "Bản ghi tương ứng đang ở thùng rác trong DB, bỏ qua.",
+                index=r.index,
+                id_=r.file_id,
+            )
+            continue
+        owner = target.get("owner_id")
+        if (
+            (
+                spec.entity == "note"
+                or (spec.entity == "task" and _canon("scope", target.get("scope")) == "personal")
+            )
+            and owner is not None
+            and owner != ctx.importer.id
+        ):
+            # Dữ liệu riêng của NGƯỜI KHÁC: không ghi đè, và không đưa nhãn/nội dung của nó vào
+            # báo cáo (chỉ đếm). include_personal KHÔNG mở được ngoại lệ này.
+            counts.skipped_personal += 1
+            plan.skipped_personal_ids.add(r.file_id)
+            ctx.warn(
+                spec.entity,
+                "skipped_other_owner",
+                "Bản ghi tương ứng thuộc người dùng khác, bỏ qua.",
                 index=r.index,
                 id_=r.file_id,
             )
@@ -1097,6 +1177,13 @@ async def _plan_entity(ctx: _Ctx, session: AsyncSession, spec: _Spec, rows: list
         # Đặt updated_at tường minh (D13). Giữ created_at của DB, không đưa vào SET.
         set_values = {name: r.values[name] for name in eff_fields}
         set_values["updated_at"] = r.values["updated_at"]
+        if owner is None and (
+            spec.entity == "note"
+            or _canon("scope", set_values.get("scope", target.get("scope"))) == "personal"
+        ):
+            # Dữ liệu cũ chưa có chủ (chưa chạy bootstrap): người nhập nhận làm chủ. Bắt buộc,
+            # vì CHECK NOT VALID cũng áp cho dòng được SỬA, nên UPDATE mà thiếu chủ sẽ bị từ chối.
+            set_values["owner_id"] = ctx.importer.id
         # `changes` giữ lại để task ghi event `updated` mô tả đúng thay đổi.
         plan.updates.append(_Update(target["id"], r.file_id, set_values, changes))
         ctx.audit.append(
@@ -1164,12 +1251,19 @@ def _display_list(value: Any, *, redact_urls: bool = False) -> list[Any] | None:
     return [_redact_url(v) if redact_urls else _display(v) for v in value]
 
 
+def _display_setting(value: Any, *, redact_urls: bool = False) -> Any:
+    """Cài đặt cho báo cáo: danh sách thì từng phần tử, giá trị vô hướng (múi giờ) thì nguyên."""
+    if isinstance(value, str):
+        return _display(value)
+    return _display_list(value, redact_urls=redact_urls)
+
+
 def setting_entity_id(key: SettingKey) -> uuid.UUID:
     """UUID cố định đại diện một khoá cài đặt trong sổ audit/báo cáo."""
     return uuid.uuid5(SETTING_ENTITY_NS, f"app_settings:{key.value}")
 
 
-def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, list[str]]:
+def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, Any]:
     """Lấy cài đặt từ file: `meta.current_users` và `sync_urls` (cấp file, v6).
 
     Dùng ĐÚNG hàm chuẩn hoá của API PUT, nên giá trị API từ chối (URL ngoài allowlist,
@@ -1179,9 +1273,9 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, l
     `meta.minutes_logged_*` và khoá lạ không nhập (D-B2a: backend tự tính từ nhật ký
     time_logged); chỉ liệt kê tên trong ignored_fields["meta"].
     """
-    out: dict[SettingKey, list[str]] = {}
+    out: dict[SettingKey, Any] = {}
     meta = envelope.meta or {}
-    skipped = [name for name in meta if name != "current_users"]
+    skipped = [name for name in meta if name not in ("current_users", "display_timezone")]
     if skipped:
         ctx.note_ignored("meta", skipped)
     candidates = (
@@ -1208,13 +1302,99 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, l
             ctx.error(
                 "setting", "setting_invalid", f"{where} không hợp lệ: {exc}.{hint}", id_=key.value
             )
+    # Múi giờ: sai chỉ là CẢNH BÁO và bỏ qua khoá này (không làm hỏng cả lần nhập), khác hai
+    # khoá trên vì đây là tuỳ chọn hiển thị, không liên quan an toàn (SSRF) hay quyền sở hữu.
+    raw_tz = envelope.display_timezone
+    if raw_tz is None:
+        raw_tz = meta.get("display_timezone")
+    if raw_tz is not None:
+        try:
+            out[SettingKey.DISPLAY_TIMEZONE] = normalize_timezone(raw_tz)
+        except ValueError as exc:
+            ctx.warn(
+                "setting",
+                "setting_invalid",
+                f"display_timezone không hợp lệ, bỏ qua: {exc}.",
+                id_=SettingKey.DISPLAY_TIMEZONE.value,
+            )
     return out
 
 
+@dataclass
+class _UserSettingsPlan:
+    """Phần cài đặt của file đi vào HỒ SƠ NGƯỜI NHẬP (không vào app_settings)."""
+
+    aliases: list[str] = field(default_factory=list)
+    timezone: str | None = None
+
+
+async def _plan_user_settings(
+    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, Any]
+) -> _UserSettingsPlan:
+    """`meta.current_users` -> alias Jira của người nhập; `display_timezone` -> múi giờ của họ.
+
+    Thêm, không xoá: tên đã là alias của chính người nhập thì bỏ qua (unchanged); tên đang thuộc
+    NGƯỜI KHÁC bị bỏ qua kèm cảnh báo `alias_taken` (alias quyết định quyền sửa task work nên
+    nhập file không được cướp). Múi giờ chỉ đặt khi người nhập chưa chọn.
+    """
+    plan = _UserSettingsPlan()
+    counts = ctx.counts_of("setting")
+    importer_id = ctx.importer.id
+    if SettingKey.CURRENT_USERS in wanted:
+        counts.received += 1
+        entity_id = setting_entity_id(SettingKey.CURRENT_USERS)
+        names: list[str] = wanted[SettingKey.CURRENT_USERS]
+        # Đọc từ DB (không tin ctx.importer.aliases, có thể cũ so với giao dịch này).
+        rows = await session.execute(
+            select(UserAlias.alias, UserAlias.user_id).where(
+                UserAlias.source == AliasSource.JIRA, UserAlias.alias.in_(names)
+            )
+        )
+        owner_of = dict(rows.all())
+        for name in names:
+            holder = owner_of.get(name)
+            if holder == importer_id:
+                continue  # đã là alias của chính người nhập
+            if holder is not None:
+                ctx.warn(
+                    "setting",
+                    "alias_taken",
+                    "Một tên trong meta.current_users đã thuộc người dùng khác, bỏ qua.",
+                    id_=entity_id,
+                )
+            else:
+                plan.aliases.append(name)
+        if plan.aliases:
+            counts.created += 1
+            ctx.audit.append(
+                _audit("setting", entity_id, ImportAction.CREATED, None, ["current_users"])
+            )
+        else:
+            counts.unchanged += 1
+    if SettingKey.DISPLAY_TIMEZONE in wanted:
+        counts.received += 1
+        current_tz = await session.scalar(select(User.timezone).where(User.id == importer_id))
+        if current_tz is None:
+            plan.timezone = wanted[SettingKey.DISPLAY_TIMEZONE]
+            counts.created += 1
+            ctx.audit.append(
+                _audit(
+                    "setting",
+                    setting_entity_id(SettingKey.DISPLAY_TIMEZONE),
+                    ImportAction.CREATED,
+                    None,
+                    ["value"],
+                )
+            )
+        else:
+            counts.unchanged += 1
+    return plan
+
+
 async def _plan_settings(
-    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, list[str]]
-) -> dict[SettingKey, list[str]]:
-    """So cài đặt trong file với DB; trả về những khoá cần ghi (mới hoặc khác).
+    ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, Any]
+) -> dict[SettingKey, Any]:
+    """So cài đặt TOÀN CỤC (sync_urls) trong file với DB; trả về khoá cần ghi (mới hoặc khác).
 
     Cài đặt không có `updated_at` trong file nên không có khái niệm "file cũ hơn DB"
     (`file_older_than_db` luôn False). Replace cả danh sách: file nói `[]` thì DB thành `[]`.
@@ -1230,7 +1410,7 @@ async def _plan_settings(
     ).scalars()
     existing = {row.key: row for row in rows}
     counts = ctx.counts_of("setting")
-    to_write: dict[SettingKey, list[str]] = {}
+    to_write: dict[SettingKey, Any] = {}
     for key, new in wanted.items():
         counts.received += 1
         row = existing.get(key.value)
@@ -1267,8 +1447,8 @@ async def _plan_settings(
                     changes=[
                         FieldChange(
                             field="value",
-                            old=_display_list(row.value, redact_urls=redact),
-                            new=_display_list(new, redact_urls=redact),
+                            old=_display_setting(row.value, redact_urls=redact),
+                            new=_display_setting(new, redact_urls=redact),
                         )
                     ],
                 )
@@ -1682,6 +1862,7 @@ async def import_datafile(
     expect_replaced: int | None = None,
     expect_sha256: str | None = None,
     file_sha256: str,
+    importer: CurrentUser,
     actor: str = "import:datafile",
     include_personal: bool = False,
 ) -> ImportReport:
@@ -1692,6 +1873,9 @@ async def import_datafile(
     đang `personal` trong DB được bảo vệ. Lưu ý `expect_replaced` lấy từ dry-run:
     dry-run không bật mà nhập thật bật thì số ghi đè lệch và bị huỷ
     (`replace_count_mismatch`), đó là hành vi mong muốn.
+
+    `importer`: người nhập. Note và task personal TẠO MỚI thuộc họ; bản ghi bị ghi đè giữ chủ đang
+    có; bản ghi riêng của NGƯỜI KHÁC không bị chạm tới. Quyền `data:import` do route kiểm.
     """
     _require_expect(dry_run, expect_replaced, expect_sha256)
     n_events = sum(len(t.get("events") or []) for t in envelope.tasks if isinstance(t, dict))
@@ -1702,6 +1886,7 @@ async def import_datafile(
     ctx = _Ctx(
         dry_run=dry_run,
         schema_version=envelope.schema_version,
+        importer=importer,
         include_personal=include_personal,
     )
     if envelope.model_extra:
@@ -1711,7 +1896,8 @@ async def import_datafile(
     tasks = _parse_rows(ctx, "task", envelope.tasks, _parse_task)
     notes = _parse_rows(ctx, "note", envelope.notes, _parse_note)
     wanted_settings = _parse_settings(ctx, envelope)
-    settings_to_write: dict[SettingKey, list[str]] = {}
+    settings_to_write: dict[SettingKey, Any] = {}
+    user_settings = _UserSettingsPlan()
 
     task_plan = note_plan = project_plan = _Plan()
     file_events: list[dict[str, Any]] = []
@@ -1724,7 +1910,11 @@ async def import_datafile(
             task_plan = await _plan_entity(ctx, session, TASK_SPEC, tasks)
             note_plan = await _plan_entity(ctx, session, NOTE_SPEC, notes)
             file_events, generated = await _plan_events(ctx, session, tasks, task_plan)
-            settings_to_write = await _plan_settings(ctx, session, wanted_settings)
+            global_wanted = {
+                key: value for key, value in wanted_settings.items() if key is SettingKey.SYNC_URLS
+            }
+            settings_to_write = await _plan_settings(ctx, session, global_wanted)
+            user_settings = await _plan_user_settings(ctx, session, wanted_settings)
         except SQLAlchemyError as exc:
             await session.rollback()
             _raise_if_lock_timeout(exc)
@@ -1738,9 +1928,15 @@ async def import_datafile(
         await _insert_rows(session, TaskEvent.__table__, generated)
         await _apply_plan(session, NOTE_SPEC.table, note_plan)
         for key, value in settings_to_write.items():
-            await settings_service.put_list(session, key, value)
+            await settings_service.put_value(session, key, value)
+        if user_settings.aliases:
+            await user_service.add_aliases(
+                session, ctx.importer.id, AliasSource.JIRA, user_settings.aliases
+            )
+        if user_settings.timezone is not None:
+            await user_service.set_timezone(session, ctx.importer.id, user_settings.timezone)
 
-    return await _finish(
+    result = await _finish(
         session,
         ctx,
         kind=ImportKind.DATAFILE,
@@ -1751,3 +1947,19 @@ async def import_datafile(
         actor=actor,
         write=write,
     )
+    if result.committed:
+        # Nhật ký quản trị: ai nhập, file nào, bao nhiêu bản ghi. Không có nội dung file.
+        audit_service.record(
+            session,
+            AuditAction.IMPORT_COMMITTED,
+            actor_user_id=importer.id,
+            target_type="import",
+            target_id=result.import_id,
+            details={
+                "file_sha256": result.file_sha256,
+                "created": sum(v.created for v in result.counts.values()),
+                "replaced": sum(v.replaced for v in result.counts.values()),
+            },
+        )
+        await session.commit()
+    return result

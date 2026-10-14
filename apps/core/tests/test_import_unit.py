@@ -53,6 +53,23 @@ def test_normalize_key_rejects_unusable(raw: str) -> None:
         normalize_project_key(raw)
 
 
+def test_reporter_is_an_importable_task_field() -> None:
+    assert "reporter" in TASK_FIELDS
+
+
+def test_import_task_reporter_is_cleaned_and_bounded() -> None:
+    from pydantic import ValidationError
+
+    from app.schemas.imports import ImportTask
+
+    base = {"id": "aaaaaaa1-0000-4000-8000-000000000001", "title": "t"}
+    assert ImportTask.model_validate({**base, "reporter": "  Lan "}).reporter == "Lan"
+    assert ImportTask.model_validate({**base, "reporter": "  "}).reporter is None
+    assert ImportTask.model_validate(base).reporter is None
+    with pytest.raises(ValidationError):
+        ImportTask.model_validate({**base, "reporter": "x" * 201})
+
+
 def test_normalize_color() -> None:
     hsl = normalize_color("hsl(253, 70%, 65%)")
     assert hsl is not None
@@ -114,28 +131,35 @@ def test_retryable_lock_codes_become_conflict() -> None:
     _raise_if_lock_timeout(DBAPIError("stmt", {}, FakeOrig("23514")))
 
 
-def test_short_commit_secret_is_not_leaked_in_validation_error() -> None:
+def test_short_jwt_secret_is_rejected_and_not_leaked() -> None:
     from pydantic import ValidationError
 
     from app.core.config import Settings
 
     short = "ngan-lo-ra-x"
     with pytest.raises(ValidationError) as info:
-        Settings(import_commit_secret=short)  # type: ignore[call-arg]
+        Settings(core_jwt_secret=short)  # type: ignore[call-arg]
     assert short not in str(info.value)
 
 
-def test_commit_secret_is_trimmed_and_blank_is_unset() -> None:
+def test_missing_jwt_secret_stops_startup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Fail closed: thiếu CORE_JWT_SECRET thì cấu hình không dựng được, core không lên."""
+    from pydantic import ValidationError
+
     from app.core.config import Settings
 
-    raw_padded = "  " + "a" * 20 + " \n"
-    padded = Settings(import_commit_secret=raw_padded)  # type: ignore[call-arg]
-    assert padded.import_commit_secret is not None
-    assert padded.import_commit_secret.get_secret_value() == "a" * 20
-    assert "aaaa" not in repr(padded)
-    blank_value = "   "
-    blank = Settings(import_commit_secret=blank_value)  # type: ignore[call-arg]
-    assert blank.import_commit_secret is None
+    monkeypatch.delenv("CORE_JWT_SECRET", raising=False)
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_admin_emails_and_hd_are_split_and_lowercased() -> None:
+    from app.core.config import Settings
+
+    cfg = Settings(admin_emails=" A@X.com, b@y.com ,, ", google_allowed_hd="Corp.COM")  # type: ignore[call-arg]
+    assert cfg.admin_emails == ["a@x.com", "b@y.com"]
+    assert cfg.google_allowed_hd == ["corp.com"]
+    assert "test-core-jwt-secret" not in repr(cfg)
 
 
 def test_normalize_color_rejects_overlong_input() -> None:

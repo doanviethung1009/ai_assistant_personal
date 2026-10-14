@@ -190,6 +190,8 @@ class SettingKey(StrEnum):
 
     CURRENT_USERS = "current_users"
     SYNC_URLS = "sync_urls"
+    # Giá trị là CHUỖI JSON (tên IANA), khác hai khoá trên có value là list.
+    DISPLAY_TIMEZONE = "display_timezone"
 
 
 class IntegrationKind(StrEnum):
@@ -201,3 +203,58 @@ class IntegrationKind(StrEnum):
     """
 
     JIRA = "jira"
+
+
+class UserRole(StrEnum):
+    """Vai trò của người dùng (bảng `users`).
+
+    Ba role cố định, quyền chi tiết khai ở `core/permissions.py` (không có bảng roles).
+    CẠM BẪY: có CHECK `ck_users_role_valid` và `alembic check` KHÔNG so CHECK; thêm giá trị mà
+    quên migration DROP/ADD CONSTRAINT thì INSERT bị DB từ chối.
+    """
+
+    ADMIN = "admin"
+    LEAD = "lead"
+    MEMBER = "member"
+
+
+class UserStatus(StrEnum):
+    """Trạng thái tài khoản. `invited` = đã được mời, chưa đăng nhập lần nào (chưa có google_sub).
+
+    CÓ CHECK `ck_users_status_valid` ở DB (xem cảnh báo ở UserRole).
+    """
+
+    INVITED = "invited"
+    ACTIVE = "active"
+    DISABLED = "disabled"
+
+
+class AliasSource(StrEnum):
+    """Hệ thống nguồn của một alias (tên trong Jira...). CHECK `ck_user_aliases_source_valid`."""
+
+    JIRA = "jira"
+
+
+class AuditAction(StrEnum):
+    """Hành động được ghi vào `audit_log`.
+
+    CỐ Ý không có CHECK ở DB: danh sách sẽ tăng theo tính năng, mỗi lần thêm mà phải DROP/ADD
+    CHECK (và `alembic check` không bắt được nếu quên) thì rủi ro làm hỏng việc ghi nhật ký
+    cao hơn lợi ích. Service chỉ nhận enum này. `details` KHÔNG BAO GIỜ chứa token, cookie,
+    JWT, mã OAuth hay mật khẩu.
+    """
+
+    LOGIN_SUCCESS = "login_success"
+    LOGIN_DENIED = "login_denied"
+    USER_INVITED = "user_invited"
+    USER_UPDATED = "user_updated"
+    USER_ROLE_CHANGED = "user_role_changed"
+    USER_STATUS_CHANGED = "user_status_changed"
+    USER_ALIASES_CHANGED = "user_aliases_changed"
+    SESSIONS_REVOKED = "sessions_revoked"
+    IMPORT_COMMITTED = "import_committed"
+    INTEGRATION_CREATED = "integration_created"
+    INTEGRATION_UPDATED = "integration_updated"
+    INTEGRATION_DELETED = "integration_deleted"
+    INTEGRATION_SYNCED = "integration_synced"
+    BOOTSTRAP_BACKFILL = "bootstrap_backfill"

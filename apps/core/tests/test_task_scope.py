@@ -1,6 +1,9 @@
 """Epic task-scope: cột `tasks.scope`, tham số `view`/`owner`, migration và CHECK.
 
 Dữ liệu thật của User không bao giờ được dùng ở đây; mọi task đều tổng hợp.
+
+"Việc của tôi" (`view=mine`) do server suy từ người đăng nhập và alias Jira của họ; không còn
+tham số `owner`. Phân quyền theo user nằm ở test_isolation.py.
 """
 
 from __future__ import annotations
@@ -20,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.models.enums import TaskScope, TaskSource, default_scope_for
 from app.services.clock import local_today
+from tests.conftest import Persona, add_aliases
 
 pytestmark = pytest.mark.db
 
@@ -93,11 +97,13 @@ async def test_create_rejects_unknown_scope(client: httpx.AsyncClient) -> None:
     assert resp.status_code == 422
 
 
-async def test_orm_insert_without_scope_falls_back_to_personal(session: AsyncSession) -> None:
+async def test_orm_insert_without_scope_falls_back_to_personal(
+    session: AsyncSession, default_user: Persona
+) -> None:
     """Quên đặt scope thì DB rơi về 'personal': task không bị đồng bộ ghi đè."""
     from app.models.task import Task
 
-    task = Task(title="quen scope")
+    task = Task(title="quen scope", owner_id=default_user.id)
     session.add(task)
     await session.commit()
     await session.refresh(task)
@@ -105,7 +111,7 @@ async def test_orm_insert_without_scope_falls_back_to_personal(session: AsyncSes
 
 
 async def test_patch_scope_records_event(client: httpx.AsyncClient) -> None:
-    task = await _create(client, title="t", source="jira", external_id="X-1")
+    task = await _create(client, title="t", source="manual", scope="work")
     assert task["scope"] == "work"
 
     resp = await client.patch(f"/api/v1/tasks/{task['id']}", json={"scope": "personal"})
@@ -115,6 +121,15 @@ async def test_patch_scope_records_event(client: httpx.AsyncClient) -> None:
     updated = [e for e in body["events"] if e["event_type"] == "updated"]
     assert len(updated) == 1
     assert updated[0]["payload"]["changes"]["scope"] == {"from": "work", "to": "personal"}
+
+
+async def test_synced_work_task_cannot_become_personal(client: httpx.AsyncClient) -> None:
+    """Task có external_id là việc chung: chuyển thành cá nhân sẽ giấu nó khỏi cả team."""
+    task = await _create(client, title="t", source="jira", external_id="X-1")
+    resp = await client.patch(f"/api/v1/tasks/{task['id']}", json={"scope": "personal"})
+    assert resp.status_code == 409
+    assert resp.json()["code"] == "shared_task_cannot_be_personal"
+    assert (await client.get(f"/api/v1/tasks/{task['id']}")).json()["scope"] == "work"
 
 
 async def test_patch_scope_invalid_values_are_422(client: httpx.AsyncClient) -> None:
@@ -180,24 +195,28 @@ async def _list(client: httpx.AsyncClient, **params: Any) -> httpx.Response:
     return await client.get("/api/v1/tasks", params={"limit": 200, **params})
 
 
-async def test_view_mine_with_owner(client: httpx.AsyncClient) -> None:
+async def test_view_mine_uses_my_alias(client: httpx.AsyncClient, default_user: Persona) -> None:
     await _dataset(client)
-    page = (await _list(client, view="mine", owner="A")).json()
+    await add_aliases(default_user, "A")
+    page = (await _list(client, view="mine")).json()
     assert _titles(page) == {"p", "wa", "wfo"}
     assert page["total"] == 3
 
 
-async def test_view_mine_without_owner(client: httpx.AsyncClient) -> None:
+async def test_view_mine_without_alias(client: httpx.AsyncClient) -> None:
     await _dataset(client)
     page = (await _list(client, view="mine")).json()
     assert _titles(page) == {"p", "wfo"}
 
 
-async def test_view_mine_owner_match_is_exact(client: httpx.AsyncClient) -> None:
+async def test_view_mine_alias_match_is_exact(
+    client: httpx.AsyncClient, default_user: Persona
+) -> None:
     await _dataset(client)
-    page = (await _list(client, view="mine", owner="a")).json()
-    assert _titles(page) == {"p", "wfo"}
-    page = (await _list(client, view="mine", owner=["A", "B"])).json()
+    await add_aliases(default_user, "a")
+    assert _titles((await _list(client, view="mine")).json()) == {"p", "wfo"}
+    await add_aliases(default_user, "A", "B")
+    page = (await _list(client, view="mine")).json()
     assert _titles(page) == {"p", "wa", "wb", "wfo"}
 
 
@@ -217,10 +236,11 @@ async def test_view_combines_with_other_filters(client: httpx.AsyncClient) -> No
     assert _titles(page) == {"wb"}
 
 
-async def test_agenda_respects_view(client: httpx.AsyncClient) -> None:
+async def test_agenda_respects_view(client: httpx.AsyncClient, default_user: Persona) -> None:
     await _dataset(client)
+    await add_aliases(default_user, "A")
     # /agenda?view=... không bị /{task_id} nuốt (route tĩnh khai báo trước).
-    resp = await client.get("/api/v1/tasks/agenda", params={"view": "mine", "owner": "A"})
+    resp = await client.get("/api/v1/tasks/agenda", params={"view": "mine"})
     assert resp.status_code == 200
     got = {t["title"] for t in resp.json()["scheduled_today"]}
     assert got == {"p", "wa", "wfo"}
@@ -246,10 +266,13 @@ async def test_agenda_filters_in_progress_group_too(client: httpx.AsyncClient) -
     assert [t["title"] for t in body["in_progress"]] == ["p"]
 
 
-async def test_stats_respects_view_but_not_trash_or_minutes(client: httpx.AsyncClient) -> None:
+async def test_stats_respects_view_but_not_trash_or_minutes(
+    client: httpx.AsyncClient, default_user: Persona
+) -> None:
     await _dataset(client)
+    await add_aliases(default_user, "A")
     full = (await client.get("/api/v1/tasks/stats")).json()
-    mine = (await client.get("/api/v1/tasks/stats", params={"view": "mine", "owner": "A"})).json()
+    mine = (await client.get("/api/v1/tasks/stats", params={"view": "mine"})).json()
     personal = (await client.get("/api/v1/tasks/stats", params={"view": "personal"})).json()
     work = (await client.get("/api/v1/tasks/stats", params={"view": "work"})).json()
     explicit_all = (await client.get("/api/v1/tasks/stats", params={"view": "all"})).json()
@@ -265,41 +288,23 @@ async def test_stats_respects_view_but_not_trash_or_minutes(client: httpx.AsyncC
         assert body["minutes_logged_today"] == 15
 
 
-@pytest.mark.parametrize(
-    "params",
-    [
-        {"view": "work", "owner": "A"},
-        {"view": "all", "owner": "A"},
-        {"owner": "A"},
-        {"view": "mine", "owner": [f"n{i}" for i in range(21)]},
-        {"view": "mine", "owner": ""},
-        {"view": "mine", "owner": "   "},
-        {"view": "mine", "owner": "x" * 201},
-        {"view": "xyz"},
-    ],
-)
 @pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/agenda", "/api/v1/tasks/stats"])
-async def test_invalid_view_params_are_422(
-    client: httpx.AsyncClient, path: str, params: dict[str, Any]
-) -> None:
-    resp = await client.get(path, params=params)
+async def test_invalid_view_is_422(client: httpx.AsyncClient, path: str) -> None:
+    resp = await client.get(path, params={"view": "xyz"})
     assert resp.status_code == 422, resp.text
 
 
-async def test_owner_boundaries_are_accepted(client: httpx.AsyncClient) -> None:
-    resp = await client.get(
-        "/api/v1/tasks", params={"view": "mine", "owner": [f"n{i}" for i in range(20)]}
-    )
-    assert resp.status_code == 200
-    resp = await client.get("/api/v1/tasks", params={"view": "mine", "owner": "x" * 200})
-    assert resp.status_code == 200
-
-
-async def test_owner_is_bound_not_interpolated(client: httpx.AsyncClient) -> None:
+@pytest.mark.parametrize("path", ["/api/v1/tasks", "/api/v1/tasks/agenda", "/api/v1/tasks/stats"])
+async def test_owner_param_is_gone_and_ignored(
+    client: httpx.AsyncClient, default_user: Persona, path: str
+) -> None:
+    """Server tự suy "của tôi": gửi `owner=` (kể cả tên người khác) không đổi kết quả."""
     await _dataset(client)
-    resp = await _list(client, view="mine", owner="A') OR 1=1 --")
-    assert resp.status_code == 200
-    assert _titles(resp.json()) == {"p", "wfo"}
+    await add_aliases(default_user, "A")
+    base = await client.get(path, params={"view": "mine"})
+    spoof = await client.get(path, params={"view": "mine", "owner": "B"})
+    assert base.status_code == spoof.status_code == 200
+    assert base.json() == spoof.json()
 
 
 # ═══════════════════════════════════════════════════════════════════════

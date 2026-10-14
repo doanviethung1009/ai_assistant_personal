@@ -43,6 +43,9 @@ export async function importBulkTasksAction(rows: any[]) {
   let updated = 0;
   let skippedPersonal = 0;
 
+  // sheet_to_json bỏ khoá của ô rỗng, nên "sheet có cột Reporter" suy từ hợp khoá mọi dòng.
+  const hasReporterColumn = rows.some((r) => r && typeof r === 'object' && 'Reporter' in r);
+
   for (const ticket of rows) {
     const summary = ticket['Summary'] || ticket['Title'];
     if (!summary) continue;
@@ -123,6 +126,8 @@ export async function importBulkTasksAction(rows: any[]) {
     }
     
     const assignee = ticket['Assignee'] ? String(ticket['Assignee']) : null;
+    // Reporter chỉ đụng khi sheet CÓ cột này (Jira export): sheet không có cột thì giữ giá trị đang có.
+    const reporter = ticket['Reporter'] ? String(ticket['Reporter']).trim().slice(0, 200) || null : null;
     const createdAt = parseJiraDate(ticket['Created Date']) || nowIso();
     const dueAt = parseJiraDate(ticket['Due Date']);
     const completedAt = status === 'done' ? (parseJiraDate(ticket['Closed Date']) || nowIso()) : null;
@@ -148,9 +153,12 @@ export async function importBulkTasksAction(rows: any[]) {
       task.project_id = projectId;
       task.project = projectObj as any;
       task.due_at = dueAt;
+      // Excel không mang cờ cả ngày (ngoài phạm vi epic user-timezone, rủi ro R6): hạn có giờ.
+      task.due_all_day = false;
       task.completed_at = completedAt;
       task.tags = Array.from(new Set([...task.tags.map((t: string) => t.toLowerCase()), ...validTags]));
       task.assignee = assignee;
+      if (hasReporterColumn) task.reporter = reporter;
       task.created_at = createdAt;
       task.updated_at = nowIso();
       updated++;
@@ -164,6 +172,7 @@ export async function importBulkTasksAction(rows: any[]) {
         project_id: projectId,
         project: projectObj as any,
         due_at: dueAt,
+        due_all_day: false,
         scheduled_for: null,
         estimate_minutes: null,
         spent_minutes: 0,
@@ -173,6 +182,7 @@ export async function importBulkTasksAction(rows: any[]) {
         external_id: issueKey,
         external_url: issueKey ? `https://onemount.atlassian.net/browse/${issueKey}` : null,
         assignee,
+        reporter,
         scope: 'work',
         created_at: createdAt,
         updated_at: nowIso(),

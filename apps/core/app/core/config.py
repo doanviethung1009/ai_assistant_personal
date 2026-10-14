@@ -8,6 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+from app.core.timezones import normalize_timezone
 from app.core.url_allowlist import parse_extra_hosts
 
 
@@ -41,12 +42,18 @@ class Settings(BaseSettings):
     # chuỗi comma-separated bình thường (vd CORS_ORIGINS=a,b) mà sẽ crash
     # vì không parse được JSON. NoDecode tắt bước đó, để validator dưới xử lý.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:3000"]
-    # Mật khẩu cho thao tác nhập dữ liệu THẬT (ghi đè hàng loạt). Web không có đăng
-    # nhập, nên API key một mình không đủ để cho phép ghi đè: người gửi phải biết
-    # thêm bí mật này (header X-Import-Secret). Để trống = tắt hẳn nhập thật; dry-run
-    # không cần. Tối thiểu 16 ký tự khi có đặt.
+    # Khoá ký JWT người dùng do web phát cho core (HS256, sống 60 giây). PHẢI khác API_KEY và
+    # AUTH_SECRET của web. Bắt buộc (không có default): thiếu thì core KHÔNG khởi động, thay vì
+    # chạy mà không xác thực được người dùng (fail closed). Tối thiểu 32 ký tự.
     # SecretStr: repr/log/dump không in giá trị.
-    import_commit_secret: SecretStr | None = Field(default=None, min_length=16)
+    core_jwt_secret: SecretStr = Field(..., min_length=32)
+    # Email luôn là admin. Lúc khởi động core upsert (chưa có thì tạo `invited` role admin, có rồi
+    # thì ép role=admin) và UI không hạ/khoá được: đường "phá kính" khi lỡ khoá hết admin.
+    # NoDecode như cors_origins: chuỗi phân cách dấu phẩy từ .env.
+    admin_emails: Annotated[list[str], NoDecode] = []
+    # Google Workspace domain được phép đăng nhập; rỗng = mọi tài khoản đã được mời. Web cũng
+    # kiểm, core kiểm lại vì web không phải ranh giới bảo mật duy nhất.
+    google_allowed_hd: Annotated[list[str], NoDecode] = []
 
     # Khoá mã hoá token của integration (Jira...) khi lưu DB: chuỗi Fernet (32 byte
     # base64 url-safe, sinh bằng `Fernet.generate_key()`). Khác API_KEY và khác
@@ -71,7 +78,8 @@ class Settings(BaseSettings):
     litellm_master_key: str | None = None
 
     # ── Hiển thị ────────────────────────────────────────────────────
-    # Chỉ dùng để quy đổi "hôm nay" cho view agenda. DB luôn lưu UTC.
+    # MẶC ĐỊNH khi chưa có dòng app_settings 'display_timezone'. Giá trị hiệu lực đọc qua
+    # services/clock.py (User đổi được lúc chạy). DB luôn lưu UTC.
     display_timezone: str = "Asia/Ho_Chi_Minh"
 
     # ── Thùng rác ───────────────────────────────────────────────────
@@ -83,7 +91,13 @@ class Settings(BaseSettings):
     # Đếm theo cửa sổ 60s ở Redis, xem core/rate_limit.py. Bật mặc định vì
     # một API key tĩnh không có gì ngăn một client lỗi gọi lặp vô hạn.
     rate_limit_enabled: bool = True
-    rate_limit_requests_per_minute: int = Field(default=120, ge=1)
+    rate_limit_requests_per_minute: int = Field(default=900, ge=1)
+
+    @field_validator("display_timezone")
+    @classmethod
+    def _check_display_timezone(cls, value: str) -> str:
+        # Fail fast: tên sai thì app không lên, thay vì vỡ ở request đầu tiên tính "hôm nay".
+        return normalize_timezone(value)
 
     @field_validator("cors_origins", mode="before")
     @classmethod
@@ -104,15 +118,14 @@ class Settings(BaseSettings):
             return [str(item).strip().lower() for item in value if str(item).strip()]
         return value
 
-    @field_validator("import_commit_secret", mode="before")
+    @field_validator("admin_emails", "google_allowed_hd", mode="before")
     @classmethod
-    def _blank_secret_is_unset(cls, value: object) -> object:
-        # compose hay truyền biến rỗng (`IMPORT_COMMIT_SECRET=`): coi là chưa cấu hình
-        # thay vì làm app không khởi động được vì vi phạm min_length. Cắt khoảng trắng
-        # hai đầu vì header HTTP bị cắt khoảng trắng: secret có khoảng trắng đầu/cuối
-        # sẽ không bao giờ khớp với giá trị client gửi.
+    def _parse_lower_csv(cls, value: object) -> object:
+        # Email và domain so khớp không phân biệt hoa thường: chuẩn hoá một lần ở đây.
         if isinstance(value, str):
-            return value.strip() or None
+            value = value.split(",")
+        if isinstance(value, list):
+            return [str(item).strip().lower() for item in value if str(item).strip()]
         return value
 
     @field_validator("database_url")

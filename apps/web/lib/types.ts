@@ -54,7 +54,13 @@ type WithRequiredDeletedAt<
   project?: ProjectSummary | null;
 };
 
-export type Task = WithRequiredDeletedAt<Schemas["TaskRead"]>;
+/**
+ * `reporter` (tên hiển thị người tạo issue ở Jira) khai bù ở đây cho tới khi `openapi.d.ts` được sinh
+ * lại từ backend. Omit + khai lại nên vẫn đúng sau khi sinh (không xung đột kiểu), và bỏ được khi tiện.
+ */
+export type Task = Omit<WithRequiredDeletedAt<Schemas["TaskRead"]>, "reporter"> & {
+  reporter: string | null;
+};
 export type TaskEvent = Schemas["TaskEventRead"];
 /** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
 export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
@@ -96,6 +102,12 @@ export interface Agenda {
 }
 
 export type Stats = Schemas["TaskStatsResponse"];
+export type ProjectProgress = Schemas["ProjectProgress"];
+
+/** Dashboard tham dự dự án của nhóm (GET /tasks/participation). */
+export type Participation = Schemas["ParticipationResponse"];
+export type ProjectParticipation = Schemas["ProjectParticipation"];
+export type ParticipationMember = Schemas["ParticipationMember"];
 
 export interface TrashResponse {
   items: Task[];
@@ -111,6 +123,11 @@ export type PurgeResponse = Schemas["PurgeResponse"];
 export type ComponentHealth = Schemas["ComponentHealth"];
 export type HealthResponse = Schemas["HealthResponse"];
 export type SystemInfo = Schemas["SystemInfo"];
+
+/** Múi giờ hiển thị (GET/PUT /settings/display-timezone) và danh mục múi giờ IANA. */
+export type DisplayTimezoneRead = Schemas["DisplayTimezoneRead"];
+export type TimezoneOption = Schemas["TimezoneOption"];
+export type TimezoneList = Schemas["TimezoneList"];
 
 /**
  * Page[T] của core API là generic thật (`Page_TaskRead_`, `Page_NoteRead_`),
@@ -202,7 +219,9 @@ export type IntegrationSyncResult = Schemas["SyncResult"];
  * OpenAPI ghi `status`/`priority` là bắt buộc vì có default, nhưng core chỉ ghi các trường
  * client THỰC SỰ gửi (model_fields_set). Làm optional để mapper được phép bỏ `priority`.
  */
-export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority"> & {
+export type TaskUpsertItem = Omit<Schemas["TaskUpsert"], "status" | "priority" | "reporter"> & {
+  /** Vắng khoá = giữ giá trị đang có ở core; null tường minh = xoá. */
+  reporter?: string | null;
   status?: Schemas["TaskUpsert"]["status"];
   priority?: Schemas["TaskUpsert"]["priority"];
 };

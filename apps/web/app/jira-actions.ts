@@ -11,6 +11,7 @@ import {
 } from "@/lib/api";
 import { checkJiraBaseUrl } from "@/lib/jira-url-policy";
 import { isValidIssueKey, jqlQuote } from "@/lib/jira-issue-key";
+import { buildPeopleJql, parsePeopleRole, splitByRole } from "@/lib/jira-jql";
 import type {
   IntegrationConnection,
   IntegrationCreateBody,
@@ -19,6 +20,7 @@ import type {
 } from "@/lib/types";
 import * as engine from "@/lib/store/engine";
 import { uuid, nowIso } from "@/lib/store/engine";
+import type { StoredTask } from "@/lib/store/types";
 import { scopeOf } from "@/lib/task-scope";
 
 // Tên custom field Jira được coi là thông tin phân nhóm dự án
@@ -39,6 +41,42 @@ function customValueToStrings(val: unknown): string[] {
   return [];
 }
 
+/** Jira `duedate` hợp lệ (YYYY-MM-DD) hoặc null. Jira Cloud không gửi giờ cho trường này. */
+function jiraDuedateRaw(raw: unknown): string | null {
+  return typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(Date.parse(raw))
+    ? raw
+    : null;
+}
+
+/** `duedate` -> 00:00:00 UTC của ngày lịch (cách lưu hạn cả ngày, không phụ thuộc múi giờ). */
+function jiraDueIso(raw: unknown): string | null {
+  const day = jiraDuedateRaw(raw);
+  return day ? `${day}T00:00:00.000Z` : null;
+}
+
+/**
+ * Cập nhật hạn từ Jira có điều kiện, khớp backend (task_sync_service, phương án C).
+ *
+ * Chỉ ghi đè khi User CHƯA sửa hạn tay: hạn hiện tại bằng đúng hạn Jira của lần sync trước
+ * (`jira_duedate`), hoặc task chưa có hạn. Task tạo bởi bản cũ chưa có baseline: coi hạn hiện
+ * có là do sync sinh ra (chưa sửa tay) nếu nó cả ngày hoặc đúng 00:00 UTC, nếu không thì giữ
+ * nguyên. Mọi trường hợp đều ghi baseline mới để lần sau so được (tránh kẹt hạn cũ mãi).
+ */
+function applyJiraDue(task: StoredTask, rawDuedate: unknown): void {
+  const prev = task.jira_duedate;
+  const hasBaseline = typeof prev === "string";
+  const untouched =
+    task.due_at === null ||
+    (hasBaseline
+      ? task.due_all_day && task.due_at === jiraDueIso(prev)
+      : task.due_all_day || /T00:00:00(\.000)?Z$/.test(task.due_at));
+  if (untouched) {
+    task.due_at = jiraDueIso(rawDuedate);
+    task.due_all_day = task.due_at !== null;
+  }
+  task.jira_duedate = jiraDuedateRaw(rawDuedate);
+}
+
 /** Trần thời gian và kích thước mỗi trang trả về từ Jira (chế độ file). */
 const JIRA_FETCH_TIMEOUT_MS = 30_000;
 const JIRA_MAX_PAGE_BYTES = 25 * 1024 * 1024;
@@ -46,6 +84,15 @@ const JIRA_MAX_PAGE_BYTES = 25 * 1024 * 1024;
 const JIRA_MAX_TOTAL_BYTES = 100 * 1024 * 1024;
 const JIRA_TOTAL_DEADLINE_MS = 5 * 60_000;
 const MAX_TITLE = 500;
+const MAX_REPORTER = 200;
+
+/** displayName của reporter (chỉ khoá này, KHÔNG đọc emailAddress/accountId: PII), cắt 200 ký tự hoặc null. */
+function reporterName(fields: Record<string, any>): string | null {
+  const raw = fields.reporter && typeof fields.reporter === "object" ? fields.reporter.displayName : null;
+  if (typeof raw !== "string") return null;
+  // eslint-disable-next-line no-control-regex
+  return raw.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, MAX_REPORTER) || null;
+}
 const MAX_DESCRIPTION = 32_000;
 
 /** Cờ chống chạy song song trong process: mỗi baseUrl một lượt tại một thời điểm. Nằm trên globalThis như store. */
@@ -55,6 +102,38 @@ function runningSet(): Set<string> {
 }
 
 class JiraTooLargeError extends Error {}
+
+/**
+ * Danh sách tên người (phân tách bằng dấu phẩy/xuống dòng), tối đa 20 tên x 100 ký tự.
+ * Trả null nếu có tên không hợp lệ: bỏ qua lặng lẽ sẽ biến lượt kéo "theo người" thành lượt
+ * kéo KHÔNG lọc, đúng thứ tính năng này sinh ra để tránh.
+ */
+function parseAssignees(raw: unknown): string[] | null {
+  if (typeof raw !== "string") return [];
+  const out: string[] = [];
+  for (const part of raw.split(/[,\n]/)) {
+    const name = part.trim();
+    if (!name) continue;
+    if (name.length > 100 || /[\u0000-\u001f]/.test(name)) return null;
+    if (!out.includes(name)) out.push(name);
+  }
+  return out.length > 20 ? null : out;
+}
+const ROLE_ERROR = "Vai trò không hợp lệ (chỉ nhận: both, assignee, reporter).";
+const ASSIGNEE_ERROR = "Danh sách người không hợp lệ (tối đa 20 tên, mỗi tên tối đa 100 ký tự, không ký tự điều khiển).";
+
+/**
+ * Field xin từ Jira, khớp BASE_FIELDS của backend (jira_client.py). WHY không dùng `*all`:
+ * mỗi issue kéo theo toàn bộ custom field, changelog-ish payload hàng trăm KB nên 100 issue/trang
+ * vượt trần dung lượng ("Dữ liệu Jira quá lớn") dù chỉ vài trăm task.
+ */
+const JIRA_BASE_FIELDS = [
+  "summary", "description", "status", "priority", "assignee", "reporter", "project", "labels",
+  "components", "fixVersions", "issuetype", "parent", "duedate", "created", "updated", "resolutiondate",
+];
+const MAX_TAG_FIELDS = 60;
+// Field quyết định project của task: xếp trước các field phân nhóm khác khi chọn field xin từ Jira.
+const COMPANY_FIELD = /company|công ty/i;
 
 /** Thông báo TỰ VIẾT theo mã trạng thái: không bao giờ chuyển tiếp body/statusText của Jira. */
 function jiraStatusMessage(status: number): string {
@@ -136,6 +215,17 @@ export async function syncJiraAction(formData: FormData) {
     }
   }
   
+  // Kéo theo người: AND vào JQL hiện có (hoặc dùng riêng nếu không có JQL tuỳ chỉnh).
+  const picked = parseAssignees(formData.get("assignees"));
+  if (picked === null) return { ok: false, error: ASSIGNEE_ERROR };
+  const role = parsePeopleRole(formData.get("people_role"));
+  if (role === null) return { ok: false, error: ROLE_ERROR };
+  if (picked.length > 0) {
+    const base = (customJql && customJql.trim() !== "" ? jql : "").replace(/\s+order\s+by[\s\S]*$/i, "").trim();
+    const who = splitByRole(picked, role);
+    jql = buildPeopleJql(base, who.assignees, who.reporters);
+  }
+
   // Chế độ cập nhật nhanh: chỉ lấy issue thay đổi từ lần đồng bộ trước (JQL tương đối, không lệch múi giờ)
   const since = formData.get("since") as string | null;
   if (since) {
@@ -162,6 +252,44 @@ export async function syncJiraAction(formData: FormData) {
     const authHeader = `Basic ${Buffer.from(`${email.trim()}:${token.trim()}`).toString('base64')}`;
     
     let allIssues: any[] = [];
+    // Custom field Company/Team/... (nhận diện theo tên) để vẫn gắn tag/dự án mà không cần `*all`.
+    const tagFieldIds: string[] = [];
+    const tagFieldLabels: string[] = [];
+    let projectFromField = 0; // số issue có project lấy từ custom field Company/Team
+    // Lấy danh sách field lỗi => quay về `*all` cho lượt này, để không mất tag/dự án từ custom field
+    // (nhánh update sẽ gán lại project_id theo fields.project nếu không thấy custom field).
+    let fieldListOk = false;
+    try {
+      const fres = await fetch(`${baseUrl}/rest/api/3/field`, {
+        headers: { "Authorization": authHeader, "Accept": "application/json" },
+        redirect: "manual",
+        signal: AbortSignal.timeout(JIRA_FETCH_TIMEOUT_MS),
+      });
+      if (fres.ok) {
+        const list = await readJsonCapped(fres, { used: 0 });
+        fieldListOk = true;
+        // Field Company/Công ty đứng ĐẦU: nó quyết định project, không được để bị cắt bởi trần
+        // khi Jira có nhiều field tên chứa "team"/"group"/"customer".
+        const matched: { id: string; name: string }[] = [];
+        for (const f of Array.isArray(list) ? list : []) {
+          if (typeof f?.id === "string" && f.id.startsWith("customfield_") && typeof f?.name === "string" && CUSTOM_TAG_FIELD.test(f.name)) {
+            matched.push({ id: f.id, name: f.name });
+          }
+        }
+        matched.sort((a, b) => Number(COMPANY_FIELD.test(b.name)) - Number(COMPANY_FIELD.test(a.name)));
+        if (matched.length > MAX_TAG_FIELDS) {
+          console.warn(`Jira sync: ${matched.length} custom field phân nhóm, chỉ lấy ${MAX_TAG_FIELDS} đầu.`);
+        }
+        for (const f of matched.slice(0, MAX_TAG_FIELDS)) {
+          tagFieldIds.push(f.id);
+          tagFieldLabels.push(f.name.slice(0, 60));
+        }
+      } else {
+        void fres.body?.cancel().catch(() => undefined);
+      }
+    } catch {
+      // Không lấy được danh sách field thì chỉ mất tag từ custom field, vẫn đồng bộ tiếp.
+    }
     // Không prototype: khoá "__proto__" từ Jira không thể làm bẩn prototype.
     const fieldNames: Record<string, string> = Object.create(null);
     let nextPageToken: string | undefined = undefined;
@@ -175,8 +303,7 @@ export async function syncJiraAction(formData: FormData) {
       const body: any = {
         jql: jql,
         maxResults: 100, // Tối ưu: Lấy 100 kết quả mỗi trang thay vì 50
-        // *all + expand names: lấy cả custom field (Company/Group/Team...) và tên hiển thị của chúng để tự nhận diện
-        fields: ["*all"],
+        fields: fieldListOk ? [...JIRA_BASE_FIELDS, ...tagFieldIds] : ["*all"],
         expand: "names"
       };
       
@@ -297,6 +424,7 @@ export async function syncJiraAction(formData: FormData) {
       }
       
       const validTags = tags.filter(t => t.length > 0);
+      if (extractedProjectKey) projectFromField++;
       
       // Khớp theo (source, external_id) như unique của backend, không chỉ external_id.
       let task = db.tasks.find((t) => t.source === "jira" && t.external_id === issueKey);
@@ -314,23 +442,30 @@ export async function syncJiraAction(formData: FormData) {
         
       if (task) {
         task.title = title;
+        // Reporter luôn theo Jira (không create-only): User không sửa tay được nên không có gì để giữ.
+        task.reporter = reporterName(fields);
         if (!task.description) task.description = description; 
         task.status = status as any;
         task.tags = Array.from(new Set([...task.tags, ...validTags]));
         task.updated_at = nowIso();
-        let issueProjectRef = projectRef;
-        const jKey = (extractedProjectKey || fields.project?.key || issueKey.split('-')[0]).toUpperCase();
-        if (jKey) {
-          let proj = db.projects.find((p: any) => p.key === jKey);
-          if (!proj) {
-            proj = engine.createProject({ key: jKey, name: extractedProjectKey || fields.project?.name || jKey });
+        applyJiraDue(task, fields.duedate);
+        // Project chỉ đổi khi Jira trả giá trị Company/Team, hoặc task chưa có project. WHY: một
+        // lượt thiếu custom field (bị cắt trần, đổi quyền) không được kéo cả loạt task về project
+        // của Jira (vd. DBA). Muốn gán lại hàng loạt thì chạy lại sync "Tất cả" khi field đã có.
+        if (extractedProjectKey || !task.project_id) {
+          let issueProjectRef = projectRef;
+          const jKey = (extractedProjectKey || fields.project?.key || issueKey.split('-')[0]).toUpperCase();
+          if (jKey) {
+            let proj = db.projects.find((p: any) => p.key === jKey);
+            if (!proj) {
+              proj = engine.createProject({ key: jKey, name: extractedProjectKey || fields.project?.name || jKey });
+            }
+            issueProjectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
           }
-          issueProjectRef = { id: proj.id, key: proj.key, name: proj.name, color: proj.color };
-        }
-
-        if (issueProjectRef) {
-          task.project_id = issueProjectRef.id;
-          task.project = issueProjectRef;
+          if (issueProjectRef) {
+            task.project_id = issueProjectRef.id;
+            task.project = issueProjectRef;
+          }
         }
         if (status === 'done' || status === 'cancelled') {
            // Luôn lấy ngày hoàn thành chính xác từ Jira đè lên ngày hiện tại
@@ -348,7 +483,10 @@ export async function syncJiraAction(formData: FormData) {
           priority: 'medium',
           project_id: null,
           project: null,
-          due_at: fields.duedate ? new Date(fields.duedate).toISOString() : null,
+          due_at: jiraDueIso(fields.duedate),
+          // Jira duedate là ngày thuần: hạn cả ngày, quá hạn tính theo ngày (xem engine.ts).
+          due_all_day: jiraDueIso(fields.duedate) !== null,
+          jira_duedate: jiraDuedateRaw(fields.duedate),
           scheduled_for: null,
           estimate_minutes: null,
           spent_minutes: 0,
@@ -358,6 +496,7 @@ export async function syncJiraAction(formData: FormData) {
           external_id: issueKey,
           external_url: `${baseUrl}/browse/${issueKey}`,
           assignee: fields.assignee?.displayName || null,
+          reporter: reporterName(fields),
           scope: 'work',
           created_at: fields.created ? new Date(fields.created).toISOString() : nowIso(),
           updated_at: nowIso(),
@@ -388,7 +527,12 @@ export async function syncJiraAction(formData: FormData) {
     engine.touched();
     revalidatePath('/', 'layout');
     
-    return { ok: true, added, updated, skipped_personal: skippedPersonal, skipped_invalid_key: invalidKeys };
+    // project_fields / project_from_field: để User thấy field nào cấp project; project_from_field
+    // = 0 trong khi có issue nghĩa là Jira không trả Company và mọi task sẽ vào project của Jira.
+    return {
+      ok: true, added, updated, skipped_personal: skippedPersonal, skipped_invalid_key: invalidKeys,
+      project_fields: tagFieldLabels, project_from_field: projectFromField,
+    };
 
   } catch (error: unknown) {
     // Thông báo tự viết: error.message của fetch có thể chứa URL/chi tiết mạng.
@@ -675,7 +819,7 @@ function syncError(error: unknown): SyncActionResult {
  * (YYYY-MM-DD hoặc ISO) để thu hẹp khi JQL quá rộng (chạm trần 100 trang). Có thể kéo dài hàng
  * phút nên UI phải khoá nút khi đang chạy.
  */
-export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown): Promise<SyncActionResult> {
+export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown, assignees?: unknown, role?: unknown): Promise<SyncActionResult> {
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
   if (typeof secret !== "string" || !SECRET_RE.test(secret)) {
@@ -689,7 +833,11 @@ export async function syncIntegrationAction(id: unknown, secret: unknown, since?
     sinceValue = since;
   }
   try {
-    const result = await syncIntegration(id, secret, sinceValue);
+    const picked = parseAssignees(assignees);
+    if (picked === null) return { ok: false, error: ASSIGNEE_ERROR };
+    const parsedRole = parsePeopleRole(role);
+    if (parsedRole === null) return { ok: false, error: ROLE_ERROR };
+    const result = await syncIntegration(id, secret, sinceValue, splitByRole(picked, parsedRole));
     revalidatePath("/data");
     revalidatePath("/", "layout");
     return { ok: true, result };

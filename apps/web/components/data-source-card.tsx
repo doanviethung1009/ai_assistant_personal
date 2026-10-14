@@ -67,7 +67,7 @@ export function DataSourceCard({ taskCount, projectCount, noteCount }: Props) {
             <SourceIcon className="size-5" />
           </div>
           <h2 className="text-lg font-bold tracking-tight">Nguồn dữ liệu: {info.label}</h2>
-          <code className="rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-border)] px-2.5 py-0.5 text-[11px] font-mono tracking-wider shadow-sm">
+          <code className="rounded-full bg-[var(--color-surface-hover)] border border-[var(--color-border)] px-2.5 py-0.5 text-[0.8125rem] font-mono tracking-wider shadow-sm">
             DATA_SOURCE={DATA_SOURCE}
           </code>
         </div>
@@ -89,7 +89,7 @@ export function DataSourceCard({ taskCount, projectCount, noteCount }: Props) {
         ].map(stat => (
           <div key={stat.label} className={`flex flex-col items-center justify-center px-5 py-3 rounded-xl border ${stat.color} transition-transform duration-300 hover:-translate-y-1 hover:shadow-md`}>
             <span className="text-2xl font-black tabular-nums leading-none tracking-tight">{stat.value}</span>
-            <span className="text-[10px] uppercase tracking-widest font-bold opacity-70 mt-1.5">{stat.label}</span>
+            <span className="text-xs uppercase tracking-widest font-bold opacity-70 mt-1.5">{stat.label}</span>
           </div>
         ))}
       </div>

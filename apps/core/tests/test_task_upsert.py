@@ -10,11 +10,9 @@ from typing import Any
 
 import httpx
 import pytest
-import pytest_asyncio
 from sqlalchemy import func, select, text
 
 from app.api import capped
-from app.core.config import settings
 from app.db import locks
 from app.db.session import SessionFactory
 from app.models.project import Project
@@ -29,14 +27,7 @@ from app.services.task_sync_service import (
 
 URL = "/api/v1/tasks/upsert-batch"
 
-from tests.conftest import IMPORT_SECRET  # noqa: E402
-
-
-@pytest_asyncio.fixture
-async def client(client: httpx.AsyncClient) -> httpx.AsyncClient:
-    """Mọi test mặc định gửi mật khẩu nhập; test 403 tự gỡ header."""
-    client.headers["X-Import-Secret"] = IMPORT_SECRET
-    return client
+from tests.conftest import create_persona  # noqa: E402
 
 
 def _item(ext: str, **over: Any) -> dict[str, Any]:
@@ -112,6 +103,7 @@ async def test_idempotent_and_updated_at_untouched(client: httpx.AsyncClient) ->
         "skipped_personal": 0,
         "errors": [],
         "warnings": [],
+        "kept_manual_due": 0,
     }
     stamps = {t.external_id: (t.updated_at, t.created_at) for t in await _tasks()}
 
@@ -145,6 +137,29 @@ async def test_events_synced_then_updated_with_diff(client: httpx.AsyncClient) -
     changes = events[1].payload["changes"]  # type: ignore[index]
     assert changes["title"] == {"from": "Việc J-1", "to": "Mới"}
     assert changes["status"]["to"] == "done" and changes["description"]["to"] == "b"
+
+
+@pytest.mark.db
+async def test_reporter_upsert_keep_clear_and_limit(client: httpx.AsyncClient) -> None:
+    created = (await client.post(URL, json=_batch([_item("J-1", reporter="Lan")]))).json()
+    assert created["added"] == 1
+    (task,) = await _tasks("J-1")
+    assert task.reporter == "Lan"
+
+    # Không gửi khoá reporter: giữ nguyên.
+    await client.post(URL, json=_batch([{"external_id": "J-1", "title": "Việc J-1"}]))
+    assert (await _tasks("J-1"))[0].reporter == "Lan"
+
+    changed = (await client.post(URL, json=_batch([_item("J-1", reporter="Mai")]))).json()
+    assert changed["updated"] == 1
+    assert (await _tasks("J-1"))[0].reporter == "Mai"
+
+    # null tường minh: xoá.
+    await client.post(URL, json=_batch([_item("J-1", reporter=None)]))
+    assert (await _tasks("J-1"))[0].reporter is None
+
+    too_long = await client.post(URL, json=_batch([_item("J-2", reporter="x" * 201)]))
+    assert too_long.status_code == 422
 
 
 @pytest.mark.db
@@ -331,6 +346,7 @@ async def test_empty_batch_is_noop(client: httpx.AsyncClient) -> None:
         "skipped_personal": 0,
         "errors": [],
         "warnings": [],
+        "kept_manual_due": 0,
     }
 
 
@@ -739,15 +755,22 @@ async def test_projects_created_in_one_statement_and_race_safe(
 
 
 @pytest.mark.db
-async def test_personal_roundtrip_through_patch(client: httpx.AsyncClient) -> None:
+async def test_personal_roundtrip_through_patch(client: httpx.AsyncClient, default_user) -> None:  # type: ignore[no-untyped-def]
     sent = _batch([_item("J-1", title="Từ Jira")])
     assert (await client.post(URL, json=sent)).json()["added"] == 1
     (task,) = await _tasks("J-1")
     assert task.scope.value == "work"
 
-    assert (
-        await client.patch(f"/api/v1/tasks/{task.id}", json={"scope": "personal"})
-    ).status_code == 200
+    # API không cho chuyển task đồng bộ (có external_id) thành cá nhân (409), nên dựng task
+    # personal-từ-Jira bằng SQL như dữ liệu cũ trước epic đăng nhập (do `OWNER` sở hữu).
+    refused = await client.patch(f"/api/v1/tasks/{task.id}", json={"scope": "personal"})
+    assert refused.status_code == 409
+    async with SessionFactory() as s:
+        await s.execute(
+            text("UPDATE tasks SET scope = 'personal', owner_id = :o WHERE id = :i"),
+            {"o": default_user.id, "i": task.id},
+        )
+        await s.commit()
     changed = _batch([_item("J-1", title="Jira đổi tên")])
     for _ in range(2):
         res = (await client.post(URL, json=changed)).json()
@@ -792,38 +815,66 @@ async def test_due_at_without_timezone_uses_display_timezone(client: httpx.Async
     ] == 1
 
 
-# ── Mật khẩu nhập (X-Import-Secret) ─────────────────────────────────
+# ── Quyền integration:sync ──────────────────────────────────────────
 
 
 @pytest.mark.db
-async def test_upsert_requires_import_secret(
+async def test_upsert_requires_integration_sync_permission(
     client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
+    from app.models.enums import UserRole
+
     caplog.set_level(logging.WARNING)
     body = _batch([_item("J-1", raw_payload={"token": "LEAKME-123456"})])
-    del client.headers["X-Import-Secret"]
-    missing = await client.post(URL, json=body)
-    wrong = await client.post(URL, json=body, headers={"X-Import-Secret": "sai-mat-khau-WRONG-1"})
-    assert missing.status_code == 403 and wrong.status_code == 403
+    member = await create_persona("member-upsert@test.local", UserRole.MEMBER)
+    denied = await client.post(URL, json=body, headers=member.headers)
+    assert denied.status_code == 403
     # 403 đến trước validate body: body hỏng cũng chỉ thấy 403.
-    assert (await client.post(URL, json={"source": "bogus"})).status_code == 403
-    for resp in (missing, wrong):
-        assert IMPORT_SECRET not in resp.text
-        assert "WRONG" not in resp.text and "LEAKME" not in resp.text
-    # Đối chiếu dương tính (xem test_import_api): log cảnh báo phải tồn tại.
-    assert "nhập thật bị từ chối" in caplog.text
-    assert IMPORT_SECRET not in caplog.text and "WRONG" not in caplog.text
+    assert (
+        await client.post(URL, json={"source": "bogus"}, headers=member.headers)
+    ).status_code == 403
+    assert "LEAKME" not in denied.text and "LEAKME" not in caplog.text
     assert await _tasks() == []
 
-    ok = await client.post(URL, json=body, headers={"X-Import-Secret": IMPORT_SECRET})
+    lead = await create_persona("lead-upsert@test.local", UserRole.LEAD)
+    ok = await client.post(URL, json=body, headers=lead.headers)
     assert ok.status_code == 200 and ok.json()["added"] == 1
 
 
+# ═══════════════════════════════════════════════════════════════════════
+#  due_all_day
+# ═══════════════════════════════════════════════════════════════════════
+
+
 @pytest.mark.db
-async def test_upsert_rejected_when_secret_not_configured(
-    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "due_at", ["2026-10-09T10:00:00Z", "2026-10-09T00:00:01Z", "2026-10-09T00:00:00", None]
+)
+async def test_all_day_requires_midnight_utc(client: httpx.AsyncClient, due_at: str | None) -> None:
+    resp = await client.post(URL, json=_batch([_item("D-1", due_at=due_at, due_all_day=True)]))
+    assert resp.status_code == 422
+    assert await _tasks("D-1") == []
+
+
+@pytest.mark.db
+async def test_all_day_created_and_flag_kept_when_due_resent_without_flag(
+    client: httpx.AsyncClient,
 ) -> None:
-    monkeypatch.setattr(settings, "import_commit_secret", None)
-    resp = await client.post(URL, json=_batch([_item("J-1")]))
-    assert resp.status_code == 403 and "IMPORT_COMMIT_SECRET" in resp.json()["detail"]
-    assert await _tasks() == []
+    midnight = "2026-10-09T00:00:00Z"
+    assert (
+        await client.post(URL, json=_batch([_item("D-1", due_at=midnight, due_all_day=True)]))
+    ).json()["added"] == 1
+    [t] = await _tasks("D-1")
+    assert t.due_all_day is True
+
+    # Client không biết khái niệm cả ngày (vd Excel) gửi lại đúng hạn cũ: cờ giữ nguyên.
+    again = (await client.post(URL, json=_batch([_item("D-1", due_at=midnight)]))).json()
+    assert again["unchanged"] == 1
+    assert (await _tasks("D-1"))[0].due_all_day is True
+
+    # Đổi sang hạn có giờ mà không nói gì về cờ: thành hạn có giờ.
+    moved = (
+        await client.post(URL, json=_batch([_item("D-1", due_at="2026-10-09T10:00:00Z")]))
+    ).json()
+    assert moved["updated"] == 1
+    assert (await _tasks("D-1"))[0].due_all_day is False

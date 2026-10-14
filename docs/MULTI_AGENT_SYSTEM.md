@@ -71,7 +71,7 @@ Chỉ orchestrator được làm các việc sau, subagent không làm:
 
 ### 3.4. Mười skill
 
-`add-entity`, `architecture-design`, `db-migration`, `docker-deploy`, `e2ee-vault`, `git-commit`,
+`add-entity`, `architecture-design`, `nextjs-rendering`, `db-migration`, `docker-deploy`, `e2ee-vault`, `git-commit`,
 `pr-review`, `qc-uat`, `rbac-implementation`, `security-audit`. Skill là checklist từng bước; agent
 tự nạp khi mô tả việc khớp, hoặc bạn gọi đích danh ("dùng skill `db-migration`").
 

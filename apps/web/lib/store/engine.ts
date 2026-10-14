@@ -13,14 +13,16 @@ import "server-only";
  * ═══════════════════════════════════════════════════════════════════════
  */
 
-import { DISPLAY_TZ } from "../format";
+import { dayInTz, isValidTimezone } from "../format";
 import type {
   Agenda,
   Note,
   NoteKind,
   NoteSortField,
   Paged,
+  Participation,
   Project,
+  ProjectProgress,
   ProjectSummary,
   Stats,
   Task,
@@ -52,13 +54,22 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+// Múi giờ dự phòng khi người dùng chưa chọn. lib/api.ts gọi setDefaultTimezone() với giá
+// trị lấy từ biến môi trường; đây chỉ là mặc định cuối cùng nếu chưa ai gọi.
+const BUILTIN_TIMEZONE = "Asia/Ho_Chi_Minh";
+
+/**
+ * Múi giờ hiệu lực của store cục bộ. Đọc thẳng globalThis (không qua state()) vì state()
+ * khi khởi tạo gọi isoDate(), nếu isoDate() gọi lại state() sẽ đệ quy vô hạn.
+ */
+function currentTz(): string {
+  const s = globalState.__builderStoreState;
+  return s?.displayTimezone ?? s?.defaultTimezone ?? BUILTIN_TIMEZONE;
+}
+
 function isoDate(offsetDays = 0): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: DISPLAY_TZ,
-  }).format(new Date(Date.now() + offsetDays * DAY_MS));
+  const shifted = new Date(Date.now() + offsetDays * DAY_MS).toISOString();
+  return dayInTz(shifted, currentTz());
 }
 
 function shiftIso(days: number): string {
@@ -94,6 +105,10 @@ interface StoreState {
   minutesLoggedToday: number;
   minutesLoggedDate: string;
   currentUsers: string[];
+  /** Múi giờ người dùng chọn (meta.display_timezone). null = dùng mặc định. */
+  displayTimezone: string | null;
+  /** Mặc định khi chưa chọn, do lib/api.ts đặt từ biến môi trường. */
+  defaultTimezone: string;
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
   onChange: (() => void) | null;
 }
@@ -110,9 +125,52 @@ export function state(): StoreState {
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
     currentUsers: ["Đoàn Việt Hưng"], // Giá trị mặc định
+    displayTimezone: null,
+    defaultTimezone: BUILTIN_TIMEZONE,
     onChange: null,
   };
   return globalState.__builderStoreState;
+}
+
+/** Đặt múi giờ mặc định (không lưu xuống file). Gọi một lần từ lib/api.ts. */
+export function setDefaultTimezone(tz: string): void {
+  if (isValidTimezone(tz)) state().defaultTimezone = tz;
+}
+
+export interface LocalDisplayTimezone {
+  timezone: string;
+  default: string;
+  source: "setting" | "default";
+}
+
+/** Múi giờ hiển thị ở chế độ file/memory, cùng hình dạng với GET /settings/display-timezone. */
+export function getDisplayTimezone(): LocalDisplayTimezone {
+  const store = state();
+  return {
+    timezone: store.displayTimezone ?? store.defaultTimezone,
+    default: store.defaultTimezone,
+    source: store.displayTimezone ? "setting" : "default",
+  };
+}
+
+/** null = xoá lựa chọn, quay về mặc định. Tên sai thì ném lỗi (api.ts đổi sang CoreApiError). */
+export function setDisplayTimezone(tz: string | null): void {
+  const store = state();
+  if (tz === null) {
+    store.displayTimezone = null;
+  } else {
+    const name = tz.trim();
+    if (!name || name.length > 64 || !isValidTimezone(name)) {
+      throw new Error("Múi giờ không hợp lệ (cần tên IANA, ví dụ Asia/Ho_Chi_Minh)");
+    }
+    store.displayTimezone = name;
+  }
+  // "Hôm nay" dịch theo múi giờ mới: đồng hồ phút của ngày cũ không còn ý nghĩa.
+  if (store.minutesLoggedDate !== isoDate()) {
+    store.minutesLoggedToday = 0;
+    store.minutesLoggedDate = isoDate();
+  }
+  touched();
 }
 
 export function setChangeHandler(handler: (() => void) | null): void {
@@ -154,6 +212,7 @@ export function snapshot(): DataFile {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
       current_users: store.currentUsers,
+      ...(store.displayTimezone ? { display_timezone: store.displayTimezone } : {}),
     },
   };
 }
@@ -181,6 +240,13 @@ export function restore(data: DataFile): void {
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
   store.sync_urls = Array.isArray(data.sync_urls) ? [...data.sync_urls] : [];
+
+  // Đặt múi giờ TRƯỚC khi so ngày bên dưới. Tên rác trong file bị bỏ qua, về mặc định.
+  const savedTz = data.meta?.display_timezone;
+  store.displayTimezone =
+    typeof savedTz === "string" && savedTz.length <= 64 && isValidTimezone(savedTz)
+      ? savedTz
+      : null;
 
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();
@@ -247,6 +313,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     project_id: partial.project_id ?? null,
     project: partial.project ?? null,
     due_at: partial.due_at ?? null,
+    due_all_day: partial.due_all_day ?? false,
     scheduled_for: partial.scheduled_for ?? null,
     estimate_minutes: partial.estimate_minutes ?? null,
     spent_minutes: partial.spent_minutes ?? 0,
@@ -259,6 +326,7 @@ function makeTask(partial: Partial<StoredTask> & { title: string }): StoredTask 
     updated_at: partial.updated_at ?? created,
     deleted_at: partial.deleted_at ?? null,
     assignee: partial.assignee?.trim() || null,
+    reporter: partial.reporter?.trim() || null,
     scope: partial.scope ?? defaultScopeFor(partial.source ?? "manual"),
     events:
       partial.events ??
@@ -502,13 +570,42 @@ function daysUntilPurge(deletedAt: string | null): number | null {
   return Math.max(1, Math.ceil(remaining / DAY_MS));
 }
 
+// ── Quy tắc quá hạn / sắp đến hạn (khớp task_service.py của backend) ──────
+//
+// Task có giờ: so `due_at` với thời điểm hiện tại. Task "cả ngày" (Jira duedate):
+// `due_at` là 00:00 UTC của ngày lịch, nên so với 00:00 UTC của HÔM NAY theo múi giờ
+// người dùng (ngày hạn < hôm nay mới quá hạn). Nếu so với `now`, hạn hôm nay sẽ bị đỏ
+// từ 07:00 sáng giờ VN. Gom về một chỗ để agenda, stats và is_overdue không lệch nhau.
+
+interface DueClock {
+  now: number;
+  /** 00:00 UTC của ngày hôm nay (theo múi giờ hiển thị), mốc so cho hạn cả ngày. */
+  cutoff: number;
+}
+
+function dueClock(): DueClock {
+  return { now: Date.now(), cutoff: Date.parse(`${isoDate()}T00:00:00Z`) };
+}
+
+function isPastDue(task: StoredTask, clock: DueClock): boolean {
+  if (task.due_at === null) return false;
+  const due = Date.parse(task.due_at);
+  return due < (task.due_all_day ? clock.cutoff : clock.now);
+}
+
+function isDueWithinWeek(task: StoredTask, clock: DueClock): boolean {
+  if (task.due_at === null) return false;
+  const due = Date.parse(task.due_at);
+  const from = task.due_all_day ? clock.cutoff : clock.now;
+  return due >= from && due < from + 7 * DAY_MS;
+}
+
 function toTask(task: StoredTask): Task {
   const isClosed = CLOSED.includes(task.status);
   const { events: _drop, ...rest } = task;
   return {
     ...rest,
-    is_overdue:
-      !isClosed && task.due_at !== null && new Date(task.due_at) < new Date(),
+    is_overdue: !isClosed && isPastDue(task, dueClock()),
     days_until_purge: daysUntilPurge(task.deleted_at),
   };
 }
@@ -546,18 +643,14 @@ export interface ViewOptions {
 
 export function getAgenda(opts: ViewOptions): Agenda {
   const today = isoDate();
-  const now = Date.now();
+  const clock = dueClock();
   const tasks = aliveTasks().filter((t) => matchesView(t, opts.view, opts.owners));
 
   const inProgress = tasks.filter((t) => t.status === "in_progress");
   const skip = new Set(inProgress.map((t) => t.id));
 
   const overdue = tasks.filter(
-    (t) =>
-      isOpen(t) &&
-      !skip.has(t.id) &&
-      t.due_at !== null &&
-      new Date(t.due_at).getTime() < now,
+    (t) => isOpen(t) && !skip.has(t.id) && isPastDue(t, clock),
   );
 
   const scheduledToday = tasks.filter(
@@ -565,12 +658,7 @@ export function getAgenda(opts: ViewOptions): Agenda {
   );
 
   const dueSoon = tasks.filter(
-    (t) =>
-      isOpen(t) &&
-      t.scheduled_for === null &&
-      t.due_at !== null &&
-      new Date(t.due_at).getTime() >= now &&
-      new Date(t.due_at).getTime() < now + 7 * DAY_MS,
+    (t) => isOpen(t) && t.scheduled_for === null && isDueWithinWeek(t, clock),
   );
 
   const completedToday = tasks.filter(
@@ -599,12 +687,7 @@ export function getAgenda(opts: ViewOptions): Agenda {
 
 /** Quy đổi timestamp UTC sang ngày địa phương, dạng YYYY-MM-DD. */
 function localDay(iso: string): string {
-  return new Intl.DateTimeFormat("en-CA", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    timeZone: DISPLAY_TZ,
-  }).format(new Date(iso));
+  return dayInTz(iso, currentTz());
 }
 
 /**
@@ -614,7 +697,7 @@ function localDay(iso: string): string {
  */
 export function getStats(opts: ViewOptions): Stats {
   const today = isoDate();
-  const now = Date.now();
+  const clock = dueClock();
   const windowStart = Date.now() - 6 * DAY_MS;
   const store = state();
   const tasks = aliveTasks().filter((t) => matchesView(t, opts.view, opts.owners));
@@ -648,12 +731,140 @@ export function getStats(opts: ViewOptions): Stats {
     by_priority: byPriority,
     completed_last_7_days: completedLast7,
     open_total: tasks.filter(isOpen).length,
-    overdue_total: tasks.filter(
-      (t) => isOpen(t) && t.due_at !== null && new Date(t.due_at).getTime() < now,
-    ).length,
+    overdue_total: tasks.filter((t) => isOpen(t) && isPastDue(t, clock)).length,
     minutes_logged_today: store.minutesLoggedToday,
     trash_total: store.tasks.filter((t) => t.deleted_at !== null).length,
+    by_project: projectProgress(tasks, store.projects),
   };
+}
+
+/**
+ * Tỉ lệ tham dự dự án (chế độ file), cùng quy tắc với backend `get_participation`:
+ * task công việc chưa huỷ; mẫu số là TỔNG task của project (kể cả người không được chọn
+ * và task chưa giao) để % không nhảy theo danh sách chọn. `people` rỗng = tất cả.
+ */
+export function getParticipation(
+  people: string[],
+  period: { from?: string; to?: string } = {},
+): Participation {
+  const worked = aliveTasks().filter((t) => matchesView(t, "work", []) && t.status !== "cancelled");
+  // Ô chọn người luôn lấy từ TOÀN BỘ thời gian, để đổi khoảng không làm mất lựa chọn.
+  const everyone = new Map<string, number>();
+  for (const task of worked) {
+    if (task.assignee) everyone.set(task.assignee, (everyone.get(task.assignee) ?? 0) + 1);
+  }
+  // Ngày hoạt động: xong -> completed_at, còn lại -> updated_at (như backend). So sánh chuỗi
+  // YYYY-MM-DD theo múi giờ hiển thị, nên `to` tự gồm cả ngày cuối.
+  const activityDay = (t: StoredTask): string =>
+    localDay(t.status === "done" && t.completed_at ? t.completed_at : t.updated_at);
+  const tasks = worked.filter((t) => {
+    if (!period.from && !period.to) return true;
+    const day = activityDay(t);
+    return (!period.from || day >= period.from) && (!period.to || day <= period.to);
+  });
+  const byId = new Map(state().projects.map((p) => [p.id, p]));
+  const perPerson = new Map<string, number>();
+  const projects = new Map<
+    string | null,
+    { total: number; counts: Map<string, number>; done: Map<string, number> }
+  >();
+  for (const task of tasks) {
+    const key = task.project_id ?? null;
+    const proj = projects.get(key) ?? {
+      total: 0,
+      counts: new Map<string, number>(),
+      done: new Map<string, number>(),
+    };
+    proj.total += 1;
+    if (task.assignee) {
+      perPerson.set(task.assignee, (perPerson.get(task.assignee) ?? 0) + 1);
+      proj.counts.set(task.assignee, (proj.counts.get(task.assignee) ?? 0) + 1);
+      if (task.status === "done") {
+        proj.done.set(task.assignee, (proj.done.get(task.assignee) ?? 0) + 1);
+      }
+    }
+    projects.set(key, proj);
+  }
+  const chosen = people.length > 0 ? people : [...perPerson.keys()].sort();
+  const rows = [...projects.entries()]
+    .map(([id, proj]) => {
+      const meta = id ? byId.get(id) : undefined;
+      const members = chosen
+        .filter((name) => proj.counts.has(name))
+        .map((name) => {
+          const count = proj.counts.get(name) ?? 0;
+          const done = proj.done.get(name) ?? 0;
+          // Task huỷ đã bị loại ở trên nên phần còn lại là chưa xong.
+          return {
+            assignee: name,
+            count,
+            done,
+            open: count - done,
+            percent: Math.round((count * 100) / proj.total),
+          };
+        })
+        .sort((a, b) => b.count - a.count || a.assignee.localeCompare(b.assignee));
+      return {
+        project_id: id,
+        key: meta?.key ?? null,
+        name: meta?.name ?? "Không có project",
+        color: meta?.color ?? null,
+        total: proj.total,
+        members,
+      };
+    })
+    .filter((p) => p.members.length > 0)
+    .sort(
+      (a, b) =>
+        b.members.reduce((n, m) => n + m.count, 0) - a.members.reduce((n, m) => n + m.count, 0) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, MAX_PROJECT_ROWS);
+  return {
+    assignees: [...everyone.entries()]
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+    selected: chosen,
+    date_from: period.from ?? null,
+    date_to: period.to ?? null,
+    projects: rows,
+  };
+}
+
+/** Trần số dòng project trong thống kê, khớp MAX_PROJECT_ROWS ở backend. */
+const MAX_PROJECT_ROWS = 50;
+
+/**
+ * Tiến độ theo project (chế độ file), cùng quy tắc với backend `_project_progress`:
+ * mẫu số là task chưa huỷ, nhiều việc đang mở nhất lên trước, task không có project
+ * gom vào một dòng `project_id = null`.
+ */
+function projectProgress(tasks: StoredTask[], projects: Project[]): ProjectProgress[] {
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const groups = new Map<string | null, { total: number; done: number; open: number }>();
+  for (const task of tasks) {
+    if (task.status === "cancelled") continue;
+    const key = task.project_id ?? null;
+    const g = groups.get(key) ?? { total: 0, done: 0, open: 0 };
+    g.total += 1;
+    if (task.status === "done") g.done += 1;
+    if (isOpen(task)) g.open += 1;
+    groups.set(key, g);
+  }
+  return [...groups.entries()]
+    .map(([id, g]) => {
+      const project = id ? byId.get(id) : undefined;
+      return {
+        project_id: id,
+        key: project?.key ?? null,
+        name: project?.name ?? "Không có project",
+        color: project?.color ?? null,
+        ...g,
+        percent_done: g.total ? Math.round((g.done * 100) / g.total) : 0,
+      };
+    })
+    .sort((a, b) => b.open - a.open || b.total - a.total || a.name.localeCompare(b.name))
+    .slice(0, MAX_PROJECT_ROWS);
 }
 
 export interface ListOptions {
@@ -661,6 +872,8 @@ export interface ListOptions {
   projectId?: string;
   query?: string;
   includeClosed?: boolean;
+  /** ISO datetime: chỉ task tạo từ thời điểm này trở đi. */
+  createdAfter?: string;
   limit?: number;
   offset?: number;
   assignee?: string | null;
@@ -691,6 +904,11 @@ export function listTasks(options: ListOptions = {}): Paged<Task> {
   }
   if (options.assignee) {
     result = result.filter((t) => t.assignee === options.assignee);
+  }
+
+  if (options.createdAfter) {
+    const since = Date.parse(options.createdAfter);
+    result = result.filter((t) => Date.parse(t.created_at) >= since);
   }
 
   if (options.query) {
@@ -756,11 +974,20 @@ export interface CreateInput {
   priority?: string;
   project_id?: string | null;
   due_at?: string | null;
+  /** Hạn cả ngày (Jira duedate). Chỉ hợp lệ khi due_at là 00:00:00 UTC. */
+  due_all_day?: boolean;
   scheduled_for?: string | null;
   estimate_minutes?: number | null;
   tags?: string[];
   /** Vắng thì suy từ source; task tạo tay có source=manual nên là `personal`. */
   scope?: TaskScope;
+}
+
+/** `due_all_day` chỉ có nghĩa khi `due_at` đúng 00:00:00 UTC (khớp CHECK ở backend). */
+export function isMidnightUtc(iso: string | null): boolean {
+  if (!iso) return false;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) && ms % DAY_MS === 0;
 }
 
 /** Chặn giá trị lạ đi vào store: file là nguồn sự thật nên không có CHECK nào cứu được. */
@@ -788,6 +1015,7 @@ export function createTask(input: CreateInput): TaskDetail {
     project_id: input.project_id ?? null,
     project: summary(store.projects.find((p) => p.id === input.project_id)),
     due_at: input.due_at ?? null,
+    due_all_day: input.due_all_day === true && isMidnightUtc(input.due_at ?? null),
     scheduled_for: input.scheduled_for ?? null,
     estimate_minutes: input.estimate_minutes ?? null,
     tags: normalizeTags(input.tags),
@@ -821,7 +1049,13 @@ export function patchTask(id: string, input: Record<string, unknown>): TaskDetai
   if ("assignee" in input) {
     task.assignee = ((input.assignee as string | null) ?? "").trim() || null;
   }
-  if ("due_at" in input) task.due_at = (input.due_at as string | null) ?? null;
+  if ("due_at" in input) {
+    const nextDue = (input.due_at as string | null) ?? null;
+    // Chỉ khi hạn THỰC SỰ đổi mới thành hạn có giờ (khớp backend update_task); gửi lại đúng
+    // giá trị cũ không được làm mất cờ cả ngày của hạn do Jira sinh ra.
+    if (nextDue !== task.due_at) task.due_all_day = false;
+    task.due_at = nextDue;
+  }
   if ("scheduled_for" in input) {
     task.scheduled_for = (input.scheduled_for as string | null) ?? null;
   }

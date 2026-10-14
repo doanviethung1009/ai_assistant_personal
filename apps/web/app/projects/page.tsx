@@ -21,7 +21,7 @@ export default async function ProjectsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+    <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
       <div className="flex items-start justify-between relative">
         <div className="absolute -inset-1 bg-gradient-to-r from-purple-500 to-pink-500 rounded-lg blur opacity-10 pointer-events-none"></div>
         <div className="relative">

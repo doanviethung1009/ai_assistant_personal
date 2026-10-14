@@ -1,9 +1,9 @@
 import { ApiErrorPanel } from "@/components/api-error";
-import { JiraQuickSync } from "@/components/jira-quick-sync";
+import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
 import { QuickAddForm } from "@/components/quick-add-form";
 import { StatsStrip } from "@/components/stats-strip";
 import { TaskSection } from "@/components/task-section";
-import { getAgenda, getStats, listProjects, IS_LOCAL } from "@/lib/api";
+import { getAgenda, getDisplayTimezoneApi, getStats, listProjects, IS_LOCAL } from "@/lib/api";
 import { formatFullPlainDate } from "@/lib/format";
 import type { Agenda, Project, Stats } from "@/lib/types";
 import { CalendarDays } from "lucide-react";
@@ -14,6 +14,8 @@ export default async function TodayPage() {
   let agenda: Agenda;
   let stats: Stats;
   let projects: Project[];
+  // Không ném lỗi (có dự phòng), nên đặt ngoài try của dữ liệu.
+  const { timezone: tz } = await getDisplayTimezoneApi();
 
   try {
     [agenda, stats, projects] = await Promise.all([
@@ -35,7 +37,7 @@ export default async function TodayPage() {
     agenda.in_progress.length === 0;
 
   return (
-    <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+    <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
       <div className="flex items-start justify-between relative">
         <div className="absolute -inset-1 bg-gradient-to-r from-blue-500 to-emerald-500 rounded-lg blur opacity-10 pointer-events-none"></div>
         <div className="relative">
@@ -46,12 +48,12 @@ export default async function TodayPage() {
             Hôm nay
           </h1>
           <p className="mt-2 text-sm text-[var(--color-ink-muted)] font-medium tracking-wide">
-            {formatFullPlainDate(agenda.reference_date)}
+            {formatFullPlainDate(agenda.reference_date, tz)}
           </p>
         </div>
         <div className="relative z-10">
-          {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
-          {IS_LOCAL && <JiraQuickSync />}
+          {/* Chế độ file: đồng bộ tại chỗ; chế độ api: liên kết sang trang Dữ liệu (nút Cào ngay). */}
+          {IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}
         </div>
       </div>
 

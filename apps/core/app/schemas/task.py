@@ -12,14 +12,15 @@ from app.core.config import settings
 from app.models.enums import TaskEventType, TaskPriority, TaskScope, TaskSource, TaskStatus
 from app.schemas.common import normalize_tags as _normalize_tags
 from app.schemas.project import ProjectSummary
+from app.services import clock
 
-# Giới hạn tham số `owner` của view=mine (spec task-scope 3.1): chặn đầu vào
-# không đáng tin làm phình mệnh đề IN.
-MAX_OWNERS = 20
+# Độ dài tối đa một tên người (assignee/person) nhận từ query.
 MAX_OWNER_LEN = 200
 
 
 MAX_ASSIGNEE_LEN = 200
+# Cùng độ dài với cột tasks.reporter (String(200)).
+MAX_REPORTER_LEN = MAX_ASSIGNEE_LEN
 
 
 def clean_assignee(value: str | None) -> str | None:
@@ -39,7 +40,7 @@ class TaskView(StrEnum):
     """Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
 
     `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
-    scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+    scope, assignee và người gọi (không phải cột): xem `access.task_view_clause`.
     """
 
     ALL = "all"
@@ -167,11 +168,14 @@ class TaskRead(BaseModel):
     title: str
     description: str | None
     assignee: str | None
+    reporter: str | None
     status: TaskStatus
     priority: TaskPriority
     project_id: uuid.UUID | None
     project: ProjectSummary | None = None
     due_at: datetime | None
+    # Bắt buộc, không default. Hạn cả ngày: `due_at` là 00:00 UTC của ngày lịch.
+    due_all_day: bool
     scheduled_for: date | None
     estimate_minutes: int | None
     spent_minutes: int
@@ -182,17 +186,27 @@ class TaskRead(BaseModel):
     scope: TaskScope
     external_id: str | None
     external_url: str | None
+    # Chủ task. personal: người sở hữu; work: người tạo tay, hoặc null (thuộc team: sync/nhập).
+    owner_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
     deleted_at: datetime | None = Field(
         default=None, description="Khác null nghĩa là đang ở trong thùng rác"
     )
+    # Quyền ghi CỦA NGƯỜI GỌI trên task này, API tính bằng access.task_permissions để web ẩn
+    # nút mà không phải chép lại quy tắc. Core vẫn kiểm lại khi ghi (403), đây chỉ là gợi ý UI.
+    can_edit: bool = False
+    can_delete: bool = False
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def is_overdue(self) -> bool:
         if self.due_at is None or self.status.is_closed:
             return False
+        if self.due_all_day:
+            # Hạn cả ngày: so NGÀY hạn (ngày UTC chính là ngày lịch) với hôm nay theo múi giờ
+            # hiển thị. Khớp `_overdue_clause` trong task_service.
+            return self.due_at.astimezone(UTC).date() < clock.local_today()
         return self.due_at < datetime.now(UTC)
 
     @computed_field  # type: ignore[prop-decorator]
@@ -239,6 +253,72 @@ class AgendaResponse(BaseModel):
         }
 
 
+class ProjectProgress(BaseModel):
+    """Tiến độ một project: tỉ lệ task đã xong trên tổng task (không tính task đã huỷ).
+
+    Task không thuộc project nào gom vào một dòng với `project_id = null`. Task đã huỷ bị loại
+    khỏi mẫu số vì việc huỷ không phải "chưa xong", nếu không project dọn backlog sẽ trông kém.
+    """
+
+    project_id: uuid.UUID | None
+    key: str | None
+    name: str
+    color: str | None
+    total: int
+    done: int
+    open: int
+    percent_done: int = Field(ge=0, le=100, description="done / total, làm tròn, 0 nếu total = 0")
+
+
+class ParticipationMember(BaseModel):
+    """Phần việc của một người trong một project."""
+
+    assignee: str
+    count: int = Field(description="Số task (chưa huỷ) của người này trong project")
+    done: int = Field(description="Trong `count`: số task đã xong")
+    open: int = Field(description="Trong `count`: số task chưa xong (count - done)")
+    percent: int = Field(ge=0, le=100, description="count / tổng task của project, làm tròn")
+
+
+class ProjectParticipation(BaseModel):
+    """Một project và phần việc của từng người được chọn.
+
+    `total` là TỔNG task chưa huỷ của project trong khoảng thời gian đã chọn (kể cả task chưa
+    giao và của người không được chọn), nên % của một người không đổi khi bạn chọn thêm hay
+    bớt người khác.
+    """
+
+    project_id: uuid.UUID | None
+    key: str | None
+    name: str
+    color: str | None
+    total: int
+    members: list[ParticipationMember]
+
+
+class AssigneeOption(BaseModel):
+    name: str
+    total: int = Field(
+        description="Tổng task công việc chưa huỷ của người này, mọi thời gian (không theo khoảng)"
+    )
+
+
+class ParticipationResponse(BaseModel):
+    """Dashboard tham dự dự án của nhóm (task công việc, chưa huỷ)."""
+
+    assignees: list[AssigneeOption] = Field(
+        description="Mọi người có task, để dựng ô chọn; ít việc nhất xếp cuối"
+    )
+    selected: list[str] = Field(description="Những người được phân tích (rỗng đầu vào = tất cả)")
+    date_from: date | None = Field(
+        default=None, description="Đầu khoảng đã áp (ngày địa phương), null = không giới hạn"
+    )
+    date_to: date | None = Field(
+        default=None, description="Cuối khoảng đã áp (gồm cả ngày này), null = không giới hạn"
+    )
+    projects: list[ProjectParticipation]
+
+
 class TaskStatsResponse(BaseModel):
     reference_date: date
     by_status: dict[str, int]
@@ -250,6 +330,10 @@ class TaskStatsResponse(BaseModel):
     overdue_total: int
     minutes_logged_today: int
     trash_total: int = Field(default=0, description="Số task đang ở trong thùng rác")
+    by_project: list[ProjectProgress] = Field(
+        default_factory=list,
+        description="Tiến độ theo project, nhiều việc đang mở nhất lên trước (tối đa 50)",
+    )
 
 
 class TrashResponse(BaseModel):
@@ -259,9 +343,7 @@ class TrashResponse(BaseModel):
     total: int
     limit: int
     offset: int
-    retention_days: int = Field(
-        description="Số ngày giữ task đã xoá trước khi xoá vĩnh viễn"
-    )
+    retention_days: int = Field(description="Số ngày giữ task đã xoá trước khi xoá vĩnh viễn")
     purged_now: int = Field(
         default=0,
         description="Số task quá hạn vừa bị dọn trong lần gọi này",

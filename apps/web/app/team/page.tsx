@@ -1,7 +1,9 @@
 import { listTasks, IS_LOCAL } from "@/lib/api";
-import { JiraQuickSync } from "@/components/jira-quick-sync";
+import { TeamOpenList } from "@/components/team-open-list";
+import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
 import { TaskItem } from "@/components/task-item";
 import { ApiErrorPanel } from "@/components/api-error";
+import { TeamTabs } from "@/components/team-tabs";
 import Link from "next/link";
 import { OPEN_STATUSES, type Task } from "@/lib/types";
 
@@ -53,6 +55,45 @@ async function listAllWorkTasks(): Promise<Task[]> {
   }
   return all;
 }
+/**
+ * Ngưỡng task đang mở được giao xuống browser để lọc tại chỗ (components/team-open-list.tsx).
+ * Vượt ngưỡng thì rơi về chế độ server bên dưới: giao quá nhiều dòng xuống client làm nặng trang.
+ */
+const CLIENT_MODE_MAX = 1000;
+/** Độ dài tối đa description gửi xuống client ở chế độ lọc tại chỗ. */
+const DESCRIPTION_MAX = 300;
+
+/** Tải task công việc đang mở, hoặc null nếu quá ngưỡng CLIENT_MODE_MAX. */
+async function loadOpenWorkTasks(): Promise<Task[] | null> {
+  const out: Task[] = [];
+  const seen = new Set<string>();
+  let fetched = 0;
+  for (let i = 0; i < Math.ceil(CLIENT_MODE_MAX / FETCH_PAGE) + 1; i++) {
+    const res = await listTasks({
+      view: "work",
+      includeClosed: false,
+      limit: FETCH_PAGE,
+      offset: fetched,
+      sortBy: "created_at",
+      sortDesc: true,
+    });
+    if (res.total > CLIENT_MODE_MAX) return null;
+    fetched += res.items.length;
+    for (const t of res.items) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        out.push(t);
+      }
+    }
+    if (res.items.length === 0 || fetched >= res.total) break;
+  }
+  // Chỉ gửi xuống client phần cần hiển thị: description Jira có thể rất dài, 1000 task thành vài MB.
+  return out.map((t) => ({
+    ...t,
+    description: t.description && t.description.length > DESCRIPTION_MAX ? `${t.description.slice(0, DESCRIPTION_MAX)}…` : t.description,
+  }));
+}
+
 export default async function TeamPage({
   searchParams,
 }: {
@@ -72,6 +113,42 @@ export default async function TeamPage({
   const PAGE_SIZE = Math.max(10, Math.min(1000, Number.parseInt(sp.size ?? "50", 10) || 50));
 
   try {
+    // Chế độ client: task đang mở ít nên giao hết xuống browser, mọi filter chạy tức thì ở đó.
+    if (currentStatus === "open") {
+      const openTasks = await loadOpenWorkTasks();
+      if (openTasks !== null) {
+        const size = [50, 100, 200].includes(PAGE_SIZE) ? PAGE_SIZE : 50;
+        return (
+          <div className="mx-auto flex w-full max-w-none flex-col gap-8 pb-12">
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-3xl font-extrabold tracking-tight">Giao việc / Team</h1>
+                <p className="mt-2 text-sm font-medium text-[var(--color-ink-muted)]">
+                  Tổng hợp task công việc (Jira) của cả team. Task cá nhân không hiện ở đây.
+                </p>
+              </div>
+              <div>{IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}</div>
+            </div>
+            <TeamTabs active="list" />
+            <TeamOpenList
+              tasks={openTasks}
+              nowMs={Date.now()}
+              initial={{
+                assignee: currentAssignee ?? "",
+                sort: ["newest", "oldest"].includes(currentSort) ? currentSort : "all",
+                q: currentQ,
+                time: ["1d", "3d", "7d", "30d"].includes(currentTime) ? currentTime : "all",
+                from: currentFrom,
+                to: currentTo,
+                size,
+                page,
+              }}
+            />
+          </div>
+        );
+      }
+    }
+
     const allTasks = await listAllWorkTasks();
 
     // 1. Danh sách cơ bản: mọi task công việc (scope=work), kể cả task giao cho
@@ -161,7 +238,7 @@ export default async function TeamPage({
     
     // 3. Theo thời gian (sort)
     if (currentSort !== "all") {
-      teamTasks.sort((a, b) => {
+      teamTasks = [...teamTasks].sort((a, b) => {
         const dateA = new Date(a.created_at).getTime();
         const dateB = new Date(b.created_at).getTime();
         return currentSort === "newest" ? dateB - dateA : dateA - dateB;
@@ -190,7 +267,7 @@ export default async function TeamPage({
     };
 
     return (
-      <div className="flex flex-col gap-8 pb-12 max-w-6xl mx-auto w-full">
+      <div className="flex flex-col gap-8 pb-12 max-w-none mx-auto w-full">
         <div className="flex items-start justify-between relative">
           <div className="absolute -inset-1 bg-gradient-to-r from-orange-500 to-amber-500 rounded-lg blur opacity-10 pointer-events-none"></div>
           <div className="relative">
@@ -205,10 +282,12 @@ export default async function TeamPage({
             </p>
           </div>
           <div className="relative z-10">
-            {/* Chế độ api: sync Jira từ kết nối đã lưu nằm ở trang Dữ liệu (nút Cào ngay). */}
-            {IS_LOCAL && <JiraQuickSync />}
+            {/* Chế độ file: đồng bộ tại chỗ; chế độ api: liên kết sang trang Dữ liệu (nút Cào ngay). */}
+          {IS_LOCAL ? <JiraQuickSync /> : <JiraSyncLink />}
           </div>
         </div>
+
+        <TeamTabs active="list" />
 
         <div className="flex flex-col gap-5 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-sm">
           

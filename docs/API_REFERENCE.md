@@ -12,7 +12,8 @@ Các API này hỗ trợ việc quản lý công việc (Task), theo dõi tiến
 | Phương thức | Endpoint | Chức năng | Ghi chú |
 |-------------|----------|-----------|---------|
 | `GET` | `/agenda` | Lấy danh sách task cần làm hôm nay | Tự động tính toán deadline, ghim, v.v. |
-| `GET` | `/stats` | Thống kê nhanh | Trả về tổng số task, đã hoàn thành, quá hạn |
+| `GET` | `/stats` | Thống kê nhanh | Trả về tổng số task, đã hoàn thành, quá hạn, và `by_project`: tiến độ từng project (`total`, `done`, `open`, `percent_done` = done / task chưa huỷ; tối đa 50 dòng, nhiều việc đang mở nhất lên trước; task không có project gom vào một dòng `project_id = null`) |
+| `GET` | `/participation` | Tỉ lệ tham dự dự án của nhóm | Task công việc chưa huỷ (gồm cả đã xong). Tham số `person` lặp lại để chọn người (tối đa 50, mỗi tên 1 đến 200 ký tự; bỏ trống = tất cả). Trả `assignees` (để dựng ô chọn), `selected`, và `projects[]` với `members[]` = `{assignee, count, done, open, percent}` (`count` = `done` + `open`). `percent` = count / **tổng task của project** (kể cả người không được chọn và task chưa giao) nên không đổi theo danh sách chọn. Tên không có task nào không gây lỗi, chỉ không sinh dòng. Lọc thời gian bằng `date_from` / `date_to` (ngày địa phương theo múi giờ hiển thị, **gồm cả ngày cuối**, bỏ trống một đầu = không giới hạn; đảo đầu cuối trả `422`), theo **ngày hoạt động**: `completed_at` với task đã xong, `updated_at` với task còn lại. Bộ lọc áp cho cả tử lẫn mẫu số; danh sách `assignees` vẫn là mọi thời gian để ô chọn người không biến mất |
 | `GET` | `/trash` | Thùng rác | Các task đã xoá mềm (Soft delete) |
 | `POST` | `/sync` | Đồng bộ dữ liệu | Đồng bộ task từ nguồn ngoài (Jira, CSV...) |
 | `POST` | `/wipe` | Dọn dẹp dữ liệu | Xoá vĩnh viễn (Hard delete) dựa theo cờ |
@@ -96,7 +97,7 @@ Tham số của cả hai endpoint:
 | `include_personal` | query, bool, mặc định `false` (chỉ `/datafile`) | Mặc định nhập **bỏ qua** task `personal` đang có trong Postgres (đếm `skipped_personal`, không ghi đè). `true` cho phép ghi đè cả task cá nhân |
 | `X-Import-Secret` | header | **Bắt buộc khi nhập thật.** Giá trị biến `IMPORT_COMMIT_SECRET` của core (tối thiểu 16 ký tự). Chưa cấu hình hoặc sai: `403`. Dry-run không cần |
 
-Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`. File phiên bản 5 hoặc 6 đều được nhận; `meta.current_users` và `sync_urls` trong file cũng được nhập (thực thể `setting` trong báo cáo, `counts.settings`).
+Mã lỗi: `401/403` thiếu hoặc sai khoá, `409` đang có lần nhập khác hoặc hết thời gian khoá dòng, `413` body trên 10 MB, `422` JSON sai hoặc thiếu tham số bắt buộc. Một request là một transaction (all-or-nothing); nhập thật trả `committed=true` kèm `import_id`. File phiên bản 5, 6 hoặc 7 đều được nhận; `meta.current_users` và `sync_urls` trong file cũng được nhập (thực thể `setting` trong báo cáo, `counts.settings`).
 
 ## 6. API Cài đặt (Settings) và danh sách người giao việc
 Base path: `/api/v1`. Cài đặt **không bí mật** của người dùng, lưu ở bảng `app_settings` (khoá khai báo cứng, khoá lạ bị từ chối).
@@ -105,6 +106,8 @@ Base path: `/api/v1`. Cài đặt **không bí mật** của người dùng, lư
 |-------------|----------|---------------|-----------|
 | `GET`, `PUT` | `/settings/current-users` | `{"names": [...]}` | Tối đa 20 tên, mỗi tên 1 đến 200 ký tự (cắt khoảng trắng, loại trùng). Web truyền danh sách này làm `owner` cho `view=mine` |
 | `GET`, `PUT` | `/settings/sync-urls` | `{"urls": [...]}` | Tối đa 50 URL, **chỉ `https`**, host thuộc allowlist: `docs.google.com`, `drive.google.com`, `drive.usercontent.google.com`, `*.googleusercontent.com`, `*.sharepoint.com`, `onedrive.live.com`, `1drv.ms`; thêm host qua biến `SYNC_URL_EXTRA_HOSTS` (host phải có dấu chấm; wildcard `*.X` bị từ chối nếu X là hậu tố dùng chung như `github.io`, `nip.io`, `herokuapp.com`, `co.uk`). Từ chối `user:pass@`, cổng lạ, IP, scheme khác |
+| `GET`, `PUT` | `/settings/display-timezone` | `{"timezone": "Asia/Tokyo"}` hoặc `{"timezone": null}` | Múi giờ hiển thị (tên IANA). `null` = về mặc định từ env `DISPLAY_TIMEZONE`. Tên sai trả `422`; `409` nếu đang có lần nhập giữ khoá. Có hiệu lực tối đa 10 giây sau trên mọi worker |
+| `GET` | `/settings/timezones` | | Danh mục múi giờ IANA hợp lệ kèm độ lệch UTC hiện tại, không phân trang |
 | `GET` | `/tasks/assignees` | `["Tên", ...]` | Chỉ task còn sống và `scope=work`, tối đa 500 tên, sắp theo chữ cái |
 
 Allowlist được kiểm **hai lần**: backend khi lưu, web khi fetch (kiểm lại URL ở mỗi bước chuyển hướng, tối đa 5 bước). `GET /settings/sync-urls` trả nguyên dữ liệu đã lưu, không kiểm lại. Chạy đồng bộ từ URL ở chế độ api cần pha B4.
@@ -125,7 +128,7 @@ Lưu kết nối Jira ở server (token mã hoá Fernet bằng `INTEGRATION_SECR
 | `DELETE` | `/integrations/{id}` | Xoá kết nối |
 | `POST` | `/tasks/upsert-batch` | **Cần `X-Import-Secret`.** `{source, items[] <= 1000}`, trần body 20 MB. `source` khác `manual`. Upsert theo `(source, external_id)` trên task còn sống. Trả `{added, updated, unchanged, skipped_personal, errors[], warnings[]}` |
 | `POST` | `/import/verify-secret` | Chỉ kiểm `X-Import-Secret`, trả 204 hoặc 403. Web dùng để xác minh mật khẩu thật trước khi tải URL hay parse Excel |
-| `POST` | `/integrations/{id}/sync?since=` | **Cần `X-Import-Secret`.** Chạy sync Jira Cloud ngay (polling, không webhook). `since` là ngày ISO tuỳ chọn (đồng bộ gia tăng). Trả `{fetched, pages, added, updated, unchanged, skipped_personal, errors[], warnings[], truncated}`. 409: đang có sync khác của kết nối này, hoặc thiếu token. 422: `since`/JQL/host bị chặn. 502/504: lỗi mạng hoặc Jira (thông báo cố định, không kèm body Jira). 503: giải mã token thất bại, cần nhập lại token |
+| `POST` | `/integrations/{id}/sync?since=&assignee=&reporter=` | **Cần `X-Import-Secret`.** Chạy sync Jira Cloud ngay (polling, không webhook). `since` là ngày ISO tuỳ chọn (đồng bộ gia tăng). `assignee` và `reporter` (đều lặp được, tối đa 20 tên, mỗi tên 1 đến 100 ký tự) chỉ kéo issue của những người đó: có cả hai thì nối `OR` và bọc ngoặc, rồi AND vào JQL của kết nối, giúp lượt kéo nhỏ. Lượt có `assignee`/`reporter` không cập nhật `last_sync_at`. `TaskRead` có thêm `reporter` (tên hiển thị Jira, nullable, luôn theo Jira, không có email); `POST/PATCH /tasks` không nhận `reporter`. Trả `{fetched, pages, added, updated, unchanged, skipped_personal, errors[], warnings[], truncated}`. 409: đang có sync khác của kết nối này, hoặc thiếu token. 422: `since`/JQL/host bị chặn. 502/504: lỗi mạng hoặc Jira (thông báo cố định, không kèm body Jira). 503: giải mã token thất bại, cần nhập lại token |
 
 Sync Jira (B4b) chạy **trong core** bằng connector Python (ngoại lệ D-B4a, xem `.agents/rules/project.md`):
 - Chỉ Jira Cloud. `base_url` phải là `https://<tên>.atlassian.net`; core phân giải DNS, **chặn mọi IP riêng/loopback/metadata**, ghim đúng IP đã kiểm khi kết nối (chống DNS rebinding), không theo redirect, không gửi `Authorization` sang host khác.

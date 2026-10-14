@@ -3,6 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 
 import { createTaskAction, type NewTaskInput } from "@/app/actions";
+import { todayInDisplayTz, zonedLocalToUtcIso } from "@/lib/format";
+import { useDisplayTz } from "@/lib/timezone-context";
 import {
   PRIORITY_LABELS,
   SCOPE_LABELS,
@@ -17,12 +19,6 @@ const INPUT_CLASS =
   "w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm text-[var(--color-ink)] placeholder:text-[var(--color-ink-muted)]";
 const LABEL_CLASS = "mb-1 block text-xs font-medium text-[var(--color-ink-muted)]";
 
-function todayLocalIso(): string {
-  const now = new Date();
-  const offsetMs = now.getTimezoneOffset() * 60_000;
-  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
-}
-
 export function QuickAddForm({
   projects,
   defaultScheduleToday = false,
@@ -33,6 +29,7 @@ export function QuickAddForm({
   /** Task tạo tay mặc định là việc riêng; tab Công việc ở /tasks đổi thành `work`. */
   defaultScope?: TaskScope;
 }) {
+  const tz = useDisplayTz();
   const [scope, setScope] = useState<TaskScope>(defaultScope);
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,10 +49,14 @@ export function QuickAddForm({
       return;
     }
 
-    // datetime-local không mang timezone. Quy đổi bằng Date của browser để
-    // gửi lên ISO có offset đúng, backend lưu UTC.
+    // datetime-local không mang timezone. Hiểu nó theo múi giờ HIỂN THỊ đã chọn (không phải
+    // múi giờ browser, có thể khác), rồi gửi ISO UTC. Sai thì báo lỗi thay vì lưu hạn lệch.
     const dueLocal = String(form.get("due_at") ?? "");
-    const dueAt = dueLocal ? new Date(dueLocal).toISOString() : undefined;
+    const dueAt = dueLocal ? zonedLocalToUtcIso(dueLocal, tz) : undefined;
+    if (dueLocal && !dueAt) {
+      setError("Hạn không hợp lệ");
+      return;
+    }
 
     const estimateRaw = String(form.get("estimate_minutes") ?? "");
     const estimate = estimateRaw ? Number.parseInt(estimateRaw, 10) : undefined;
@@ -253,7 +254,7 @@ export function QuickAddForm({
               id="task-scheduled"
               name="scheduled_for"
               type="date"
-              defaultValue={defaultScheduleToday ? todayLocalIso() : undefined}
+              defaultValue={defaultScheduleToday ? todayInDisplayTz(tz) : undefined}
               className={INPUT_CLASS}
             />
           </div>

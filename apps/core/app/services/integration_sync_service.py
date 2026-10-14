@@ -9,7 +9,7 @@
 Thiết kế giao dịch (WHY): gọi Jira có thể mất hàng phút. Giữ một transaction DB mở suốt
 thời gian đó sẽ giữ khoá hàng/advisory lock và một connection pool, chặn nhập dữ liệu và
 sửa task của User. Vì vậy:
-  1. Transaction NGẮN để đọc kết nối + current_users, rồi đóng.
+  1. Transaction NGẮN để đọc kết nối, rồi đóng. (JQL dự phòng lấy alias của người gọi.)
   2. Khoá "một sync mỗi kết nối" là advisory lock cấp SESSION trên một connection riêng
      chế độ AUTOCOMMIT (không nằm trong transaction nào). Process chết thì connection đóng
      và Postgres tự nhả khoá. Connection này bị HUỶ (invalidate) thay vì trả về pool để
@@ -36,6 +36,7 @@ import anyio
 import httpx
 from sqlalchemy import select, text, update
 
+from app.core.auth import CurrentUser
 from app.core.secrets import decrypt_token
 from app.db.session import SessionFactory, engine
 from app.models.enums import IntegrationKind, TaskSource
@@ -43,7 +44,7 @@ from app.models.integration import IntegrationConnection
 from app.models.project import Project
 from app.schemas.integration import SyncMessage, SyncResult
 from app.schemas.task_upsert import MAX_BATCH_ITEMS, TaskUpsert, TaskUpsertResult
-from app.services import clock, jira_client, jira_mapping, settings_service, task_sync_service
+from app.services import clock, jira_client, jira_mapping, task_sync_service
 from app.services.errors import ConflictError, DomainError, NotFoundError
 from app.services.import_service import normalize_project_key
 from app.services.jira_client import JiraSyncError
@@ -54,7 +55,7 @@ logger = logging.getLogger(__name__)
 _LOCK_NAMESPACE = "builder:integration-sync:"
 # Trường chỉ ghi khi TẠO task (không đè task đã có): giữ giá trị User sửa tay, và task cũ
 # không bị chuyển project. Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
-CREATE_ONLY = frozenset({"priority", "due_at", "assignee", "project_key"})
+CREATE_ONLY = frozenset({"priority", "assignee", "project_key"})
 # Tên project do Jira điều khiển; trần số project MỚI mỗi lần sync để dữ liệu Jira (hoặc kẻ
 # giả Jira) không tràn danh sách project cục bộ.
 MAX_NEW_PROJECTS = 50
@@ -97,14 +98,13 @@ def _audit(action: str, connection_id: uuid.UUID, **fields: Any) -> None:
     )
 
 
-async def _load(connection_id: uuid.UUID) -> tuple[_ConnectionSnapshot, list[str]]:
+async def _load(connection_id: uuid.UUID) -> _ConnectionSnapshot:
     async with SessionFactory() as session:
         conn = await session.get(IntegrationConnection, connection_id)
         if conn is None:
             raise NotFoundError(f"Không tìm thấy kết nối {connection_id}")
         if conn.kind is not IntegrationKind.JIRA:
             raise ConflictError("Loại kết nối này chưa hỗ trợ đồng bộ.")
-        users = await settings_service.get_current_users(session)
         config = conn.config or {}
         snapshot = _ConnectionSnapshot(
             id=conn.id,
@@ -117,7 +117,7 @@ async def _load(connection_id: uuid.UUID) -> tuple[_ConnectionSnapshot, list[str
             project_name=config.get("project_name"),
         )
         await session.rollback()  # chỉ đọc: kết thúc transaction ngay
-        return snapshot, users
+        return snapshot
 
 
 @asynccontextmanager
@@ -153,7 +153,9 @@ async def _exclusive(connection_id: uuid.UUID) -> AsyncIterator[None]:
                     await conn.invalidate()
 
 
-async def _write_batch(items: list[TaskUpsert], actor: str, owner_host: str) -> TaskUpsertResult:
+async def _write_batch(
+    items: list[TaskUpsert], actor: str, owner_host: str, actor_user_id: uuid.UUID | None = None
+) -> TaskUpsertResult:
     async with SessionFactory() as session:
         try:
             result = await task_sync_service.upsert_batch(
@@ -161,8 +163,10 @@ async def _write_batch(items: list[TaskUpsert], actor: str, owner_host: str) -> 
                 TaskSource.JIRA,
                 items,
                 actor=actor,
+                actor_user_id=actor_user_id,
                 create_only=CREATE_ONLY,
                 owner_host=owner_host,
+                due_baseline=jira_mapping.previous_due,
             )
             await session.commit()
         except BaseException:
@@ -202,6 +206,7 @@ class _Progress:
     updated: int = 0
     unchanged: int = 0
     skipped_personal: int = 0
+    kept_manual_due: int = 0
     errors: list[SyncMessage] = field(default_factory=list)
     warnings: list[SyncMessage] = field(default_factory=list)
     error_overflow: int = 0
@@ -281,16 +286,18 @@ async def _flush(
     progress: _Progress,
     snapshot: _ConnectionSnapshot,
     owner_host: str,
+    actor_user_id: uuid.UUID | None = None,
 ) -> None:
     """Ghi một lô (<= 1000) trong một transaction ngắn, cộng dồn số liệu vào `progress`."""
     if not items:
         return
     chunk = await _cap_new_projects(items, origin, progress, snapshot)
-    result = await _write_batch(chunk, f"integration:{snapshot.name}", owner_host)
+    result = await _write_batch(chunk, f"integration:{snapshot.name}", owner_host, actor_user_id)
     progress.added += result.added
     progress.updated += result.updated
     progress.unchanged += result.unchanged
     progress.skipped_personal += result.skipped_personal
+    progress.kept_manual_due += result.kept_manual_due
     for err in result.errors:
         progress.error(
             SyncMessage(
@@ -315,7 +322,13 @@ def _ordered(messages: list[SyncMessage], overflow: int, what: str) -> list[Sync
 
 
 async def run_sync(
-    connection_id: uuid.UUID, since: str | None = None, *, client_ip: str | None = None
+    connection_id: uuid.UUID,
+    since: str | None = None,
+    *,
+    user: CurrentUser,
+    client_ip: str | None = None,
+    assignees: list[str] | None = None,
+    reporters: list[str] | None = None,
 ) -> SyncResult:
     """Đồng bộ một kết nối Jira. Xem docstring module về giao dịch và khoá.
 
@@ -323,7 +336,8 @@ async def run_sync(
     trước khi lấy khoá (404, thiếu token, since sai): kèm IP client và `since` đã parse.
 
     Raises:
-        ValidationError: `since` sai định dạng, hoặc không có JQL lẫn current_users (422).
+        ValidationError: `since` sai định dạng, hoặc không có JQL lẫn alias Jira của người
+            gọi (422).
         NotFoundError: kết nối không tồn tại (404).
         ConflictError: thiếu token (409) hoặc đang có sync khác của kết nối (409).
         SecretsUnavailableError: không giải mã được token (503, bảo nhập lại token).
@@ -334,7 +348,7 @@ async def run_sync(
     since_minutes: int | None = None
     try:
         since_minutes = jira_client.parse_since(since)
-        return await _run(connection_id, since_minutes, client, started)
+        return await _run(connection_id, since_minutes, client, started, user, assignees, reporters)
     except asyncio.CancelledError:
         _audit(
             "cancelled",
@@ -358,20 +372,37 @@ async def run_sync(
 
 
 async def _run(
-    connection_id: uuid.UUID, since_minutes: int | None, client_ip: str, started: float
+    connection_id: uuid.UUID,
+    since_minutes: int | None,
+    client_ip: str,
+    started: float,
+    user: CurrentUser,
+    assignees: list[str] | None = None,
+    reporters: list[str] | None = None,
 ) -> SyncResult:
-    snapshot, users = await _load(connection_id)
+    snapshot = await _load(connection_id)
     if snapshot.ciphertext is None:
         raise ConflictError(
             "Kết nối chưa có API token. Mở kết nối, nhập token (PATCH /integrations/{id}) "
             "rồi đồng bộ lại."
         )
-    jql = jira_client.build_jql(snapshot.jql, users, since_minutes)
+    # JQL dự phòng dùng alias Jira của NGƯỜI GỌI (không còn danh sách tên toàn cục).
+    jql = jira_client.build_jql(
+        snapshot.jql, sorted(user.aliases), since_minutes, assignees, reporters
+    )
     host = snapshot.base_url.removeprefix("https://").rstrip("/")
     progress = _Progress()
 
     async with _exclusive(connection_id):
-        _audit("start", connection_id, client=client_ip, since_minutes=since_minutes)
+        _audit(
+            "start",
+            connection_id,
+            client=client_ip,
+            since_minutes=since_minutes,
+            assignee_count=len(assignees or []),
+            # Chỉ đếm, không log tên (PII).
+            reporter_count=len(reporters or []),
+        )
         # Giải mã ngay trước khi dùng; lỗi khoá thì 503 "nhập lại token", không crash.
         token = decrypt_token(
             snapshot.ciphertext, connection_id=snapshot.id, base_url=snapshot.base_url
@@ -415,9 +446,9 @@ async def _run(
                         items.append(item)
                         origin.append(index)
                         if len(items) >= MAX_BATCH_ITEMS:
-                            await _flush(items, origin, progress, snapshot, host)
+                            await _flush(items, origin, progress, snapshot, host, user.id)
                             items, origin = [], []
-            await _flush(items, origin, progress, snapshot, host)
+            await _flush(items, origin, progress, snapshot, host, user.id)
         except DomainError as exc:
             if progress.written:
                 # Báo rõ phần đã ghi để người dùng biết trạng thái dở dang (last_sync_at
@@ -429,6 +460,16 @@ async def _run(
                 ) from None
             raise
 
+        if progress.kept_manual_due:
+            # Đếm gộp, không liệt kê nội dung Jira.
+            progress.warn(
+                SyncMessage(
+                    reason=(
+                        f"Giữ hạn đã sửa tay ở {progress.kept_manual_due} task "
+                        "(hạn trên Jira khác nhưng không ghi đè)."
+                    )
+                )
+            )
         if duplicates:
             progress.warn(SyncMessage(reason=f"{duplicates} issue lặp giữa các trang đã bỏ qua"))
         for note in jira.notes:
@@ -446,6 +487,11 @@ async def _run(
                         "mốc last_sync_at KHÔNG được cập nhật."
                     )
                 )
+            )
+        elif assignees or reporters:
+            # Lượt lọc theo người chỉ phủ một phần: không được coi là mốc "đã đồng bộ hết".
+            progress.warn(
+                SyncMessage(reason="Lượt kéo theo người: last_sync_at KHÔNG được cập nhật.")
             )
         else:
             await _mark_synced(connection_id)

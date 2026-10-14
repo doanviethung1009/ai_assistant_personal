@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -21,6 +23,14 @@ class Project(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Mã hex để UI tô màu, ví dụ #2563eb
     color: Mapped[str | None] = mapped_column(String(7), default=None)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    # Người tạo, chỉ để biết ai được sửa/xoá. Project dùng chung cho mọi user nhìn thấy; NULL =
+    # project dùng chung từ Jira/nhập file (chỉ lead/admin sửa).
+    owner_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        default=None,
+        index=True,
+    )
 
     tasks: Mapped[list[Task]] = relationship(
         back_populates="project",

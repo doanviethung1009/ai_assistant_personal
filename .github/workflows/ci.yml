@@ -52,6 +52,9 @@ jobs:
       DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci_test
       # Khoá giả chỉ dùng trong CI, đủ dài để qua validate min_length=16.
       API_KEY: ci-only-api-key-0123456789
+      # Khoá ký JWT giả chỉ dùng trong CI (>= 32 ký tự); thiếu thì Settings() không khởi tạo được.
+      CORE_JWT_SECRET: ci-only-jwt-secret-0123456789-abcdefghij
+      ADMIN_EMAILS: admin@example.test
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5

@@ -82,6 +82,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
   },
   {
+    slug: "work-tracking",
+    title: "Quản lý công việc: đang làm / đã xong / treo",
+    description: "Mô hình trạng thái, cách dùng agent work-tracker và skill work-tracking, kèm ảnh chụp tiến độ hiện tại.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "WORK_TRACKING.md"),
+  },
+  {
     slug: "multi-agent-trial",
     title: "Ví dụ thực chiến: chạy trọn luồng multi-agent",
     description: "Bản ghi một lần chạy thật 7 bước với tính năng Lưu trữ note: prompt, kết quả từng agent, lỗi bắt được, chỗ chưa trơn tru và checklist cho orchestrator.",
@@ -211,6 +218,14 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "skills", "qc-uat", "SKILL.md"),
   },
   {
+    slug: "skill-nextjs-rendering",
+    title: "Skill: Next.js server/client render",
+    description:
+      "Chọn nơi lọc theo kích thước dữ liệu, giảm request vào core, làm click filter mượt.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "nextjs-rendering", "SKILL.md"),
+  },
+  {
     slug: "project-review",
     title: "Bản đồ Hệ thống (Master Blueprint)",
     description: "Tài liệu nén (token-optimized) chứa toàn cảnh kiến trúc, chức năng, UI/UX để AI đọc nhanh.",
@@ -299,6 +314,20 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "task-scope.md"),
   },
   {
+    slug: "spec-auth-web-p2",
+    title: "Spec: Đăng nhập ở web (P2)",
+    description: "Auth.js Google, web ký JWT từng người, rào cache theo user, guard Server Action, gỡ endpoint cũ, hạ rate limit (DRAFT, chờ User chốt Q1-Q9).",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "auth-web-p2.md"),
+  },
+  {
+    slug: "spec-jira-reporter",
+    title: "Spec: Kéo và hiển thị reporter của Jira",
+    description: "Lọc sync theo assignee hoặc reporter (OR, bọc ngoặc, AND với JQL kết nối), thêm tasks.reporter, chế độ file v8 (CHỐT, User duyệt R1-R9).",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "jira-reporter.md"),
+  },
+  {
     slug: "spec-import-json-to-postgres",
     title: "Spec (DRAFT): Nhập JSON vào Postgres",
     description: "Đường nhập an toàn, lặp lại được từ file JSON của web vào Postgres qua core API, kèm 14 quyết định chờ User chốt.",
@@ -383,6 +412,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "PROXMOX_OPERATIONS.md"),
   },
   {
+    slug: "vm-layout-recovery",
+    title: "Bản đồ thư mục trên VM và khởi động lại sau reset",
+    description:
+      "Root folder /srv/builder-ai/<env>, container, volume, checklist sau khi VM reset/down, mở lại tunnel, chạy test không làm sập VM, mật khẩu cào Jira.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "VM_LAYOUT_AND_RECOVERY.md"),
+  },
+  {
     slug: "systems-inventory",
     title: "Hồ sơ các hệ thống",
     description:
@@ -421,6 +458,38 @@ export const DOCS: DocEntry[] = [
       "Thiết kế và quyết định: 3 môi trường, runner CI, phương án image, tab Hạ tầng trên web, câu hỏi chờ chốt.",
     category: "8. Proxmox & Server",
     file: path.join("docs", "specs", "proxmox-deploy.md"),
+  },
+  {
+    slug: "google-oauth-setup",
+    title: "Cấu hình Google OAuth Client",
+    description:
+      "Tạo OAuth client trên Google Cloud, redirect URI cho local/staging/prod, biến môi trường Auth.js, lỗi thường gặp khi đăng nhập Google.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "GOOGLE_OAUTH_SETUP.md"),
+  },
+  {
+    slug: "staging-domain-https",
+    title: "Domain và HTTPS cho đăng nhập Google",
+    description:
+      "Vì sao Google từ chối IP/http, các phương án cá nhân (mua domain, Tailscale, SSH tunnel) và cách dùng domain công ty, chứng chỉ DNS-01, mẫu Caddy.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "STAGING_DOMAIN_HTTPS.md"),
+  },
+  {
+    slug: "spec-auth-multiuser",
+    title: "Spec (DRAFT): Đăng nhập Google và đa người dùng",
+    description:
+      "Google OIDC, bảng users, role admin/lead/member, dữ liệu task theo user đăng nhập, quản trị user, flow dev/staging, threat model và câu hỏi chờ chốt.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "auth-multiuser.md"),
+  },
+  {
+    slug: "spec-user-timezone",
+    title: "Spec: Múi giờ chọn được và sửa quá hạn Jira",
+    description:
+      "Chọn múi giờ trên UI, lưu trong app_settings, hạn cả ngày (due_all_day), quy tắc quá hạn theo ngày địa phương, sync Jira cập nhật hạn.",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "user-timezone.md"),
   },
 ];
 
