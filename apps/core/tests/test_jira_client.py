@@ -607,7 +607,8 @@ async def test_requests_explicit_fields_plus_matching_custom_fields() -> None:
 
 
 async def test_company_field_is_requested_even_when_many_team_fields_come_first() -> None:
-    # Jira có > MAX_TAG_FIELDS field tên chứa "team": Company vẫn phải được xin (nó quyết định project).
+    # Jira có > MAX_TAG_FIELDS field tên chứa "team": Company vẫn phải được xin
+    # (nó quyết định project).
     posted: list[dict[str, Any]] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
