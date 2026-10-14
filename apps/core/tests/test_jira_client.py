@@ -606,6 +606,43 @@ async def test_requests_explicit_fields_plus_matching_custom_fields() -> None:
     assert client.field_names["customfield_1"] == "Công ty"
 
 
+async def test_company_field_is_requested_even_when_many_team_fields_come_first() -> None:
+    # Jira có > MAX_TAG_FIELDS field tên chứa "team": Company vẫn phải được xin (nó quyết định project).
+    posted: list[dict[str, Any]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            posted.append(json.loads(request.content))
+        return _page("DBA-1")
+
+    fields = [{"id": f"customfield_{i}", "name": f"Team {i}"} for i in range(1, 80)]
+    fields.append({"id": "customfield_999", "name": "Company"})
+    client = _client(handler, fields)
+    await _collect(client)
+    assert "customfield_999" in posted[0]["fields"]
+    assert any("custom field phân nhóm" in n for n in client.notes)
+
+
+def test_company_value_wins_over_team_regardless_of_response_order() -> None:
+    issue = _issue(customfield_1={"value": "TeamX"}, customfield_2={"value": "MAG"})
+    item = map_issue(
+        issue,
+        base_url=BASE,
+        field_names={"customfield_1": "Team", "customfield_2": "Company"},
+    )
+    assert item.project_key == "MAG"
+    assert {"teamx", "mag"} <= set(item.tags)  # thứ tự tag không đổi, cả hai vẫn là tag
+
+
+def test_team_value_is_used_for_project_only_when_no_company_value() -> None:
+    item = map_issue(
+        _issue(customfield_1={"value": "TeamX"}),
+        base_url=BASE,
+        field_names={"customfield_1": "Team"},
+    )
+    assert item.project_key == "TEAMX"
+
+
 async def test_custom_field_lookup_failure_is_a_note_not_fatal() -> None:
     async def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "GET":
