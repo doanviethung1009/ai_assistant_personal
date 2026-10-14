@@ -36,6 +36,10 @@ CUSTOM_TAG_FIELD = re.compile(
     r"company|group|customer|client|team|squad|tribe|department|công ty|nhóm|khách|dự án",
     re.IGNORECASE,
 )
+# Trong các field trên, field Company/Công ty quyết định PROJECT của task: được ưu tiên cả khi chọn
+# field xin từ Jira (không bị cắt bởi trần) lẫn khi chọn giá trị làm project (Team đứng trước
+# Company trong response cũng không được thắng). Cùng regex với bản TS (jira-actions.ts).
+COMPANY_FIELD = re.compile(r"company|công ty", re.IGNORECASE)
 # Khoá issue Jira: PROJ-123. Chặn mọi thứ khác trước khi ghép vào URL/external_id.
 _ISSUE_KEY_RE = re.compile(
     r"[A-Z][A-Z0-9_]{1,254}-[0-9]{1,9}"
@@ -253,17 +257,25 @@ def map_issue(
     # (label là thứ nhiều và ít quan trọng nhất; không để chúng đẩy tag định danh ra ngoài).
     identity = ["jira", _slug(jira_project_key), _slug(_obj(fields.get("issuetype")).get("name"))]
     grouping: list[str] = []
-    extracted = ""
+    # Hai lượt ưu tiên: giá trị đầu tiên của field Company thắng; không có thì giá trị đầu tiên
+    # của field phân nhóm khác (Team, Group...). Thứ tự tag giữ nguyên theo response.
+    extracted_company = ""
+    extracted_other = ""
     for field_id, value in fields.items():
         if not field_id.startswith("customfield_") or value is None:
             continue
-        if not CUSTOM_TAG_FIELD.search(field_names.get(field_id, "")):
+        field_name = field_names.get(field_id, "")
+        if not CUSTOM_TAG_FIELD.search(field_name):
             continue
+        is_company = bool(COMPANY_FIELD.search(field_name))
         for text in _custom_value_to_strings(value):
             cleaned = clean_text(text)
-            if cleaned and not extracted:
-                extracted = cleaned
+            if cleaned and is_company and not extracted_company:
+                extracted_company = cleaned
+            elif cleaned and not is_company and not extracted_other:
+                extracted_other = cleaned
             grouping.append(_slug(cleaned))
+    extracted = extracted_company or extracted_other
     secondary = [_slug(_obj(fields.get("parent")).get("key"))]
     for field in ("components", "fixVersions"):
         values = fields.get(field)

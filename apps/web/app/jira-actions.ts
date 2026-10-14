@@ -271,7 +271,7 @@ export async function syncJiraAction(formData: FormData) {
       if (fres.ok) {
         const list = await readJsonCapped(fres, { used: 0 });
         fieldListOk = true;
-        // Field Company/Công ty đứng ĐẦU: nó quyết định project, không được để bị cắt bởi trần
+        // Field Company/Công ty đứng ĐẦU (và giá trị của nó thắng khi chọn project): nó quyết định project, không được để bị cắt bởi trần
         // khi Jira có nhiều field tên chứa "team"/"group"/"customer".
         const matched: { id: string; name: string }[] = [];
         for (const f of Array.isArray(list) ? list : []) {
@@ -414,18 +414,25 @@ export async function syncJiraAction(formData: FormData) {
       (fields.fixVersions || []).forEach((v: any) => tags.push(slug(v?.name)));
       if (fields.issuetype?.name) tags.push(slug(fields.issuetype.name));
       if (fields.parent?.key) tags.push(slug(fields.parent.key));
-      let extractedProjectKey = "";
-      // Custom field có tên kiểu Company/Group/Customer/Team...
+      // Custom field có tên kiểu Company/Group/Customer/Team... Project lấy theo hai lượt ưu tiên:
+      // giá trị đầu của field Company/Công ty, không có thì giá trị đầu của field phân nhóm khác
+      // (khớp jira_mapping.py: Team đứng trước Company trong response không được thắng).
+      let companyProjectKey = "";
+      let otherProjectKey = "";
       for (const [fid, val] of Object.entries(fields)) {
         if (!fid.startsWith("customfield_") || val == null) continue;
-        if (!CUSTOM_TAG_FIELD.test(fieldNames[fid] || "")) continue;
+        const fieldName = fieldNames[fid] || "";
+        if (!CUSTOM_TAG_FIELD.test(fieldName)) continue;
+        const isCompany = COMPANY_FIELD.test(fieldName);
         const vals = customValueToStrings(val);
         for (const t of vals) {
-          if (!extractedProjectKey) extractedProjectKey = t.trim();
+          if (isCompany && !companyProjectKey) companyProjectKey = t.trim();
+          else if (!isCompany && !otherProjectKey) otherProjectKey = t.trim();
           tags.push(slug(t));
         }
       }
       
+      const extractedProjectKey = companyProjectKey || otherProjectKey;
       const validTags = tags.filter(t => t.length > 0);
       if (extractedProjectKey) projectFromField++;
       

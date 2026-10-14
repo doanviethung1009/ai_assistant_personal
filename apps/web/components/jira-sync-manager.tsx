@@ -465,7 +465,7 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
                     (result.skipped_personal
                       ? ` Bỏ qua ${result.skipped_personal} task cá nhân (đã tách khỏi đồng bộ).`
                       : "") +
-                    (result.project_from_field === 0
+                    ((result.added ?? 0) + (result.updated ?? 0) > 0 && result.project_from_field === 0
                       ? " CẢNH BÁO: Jira không trả giá trị Company/Team nào nên task giữ project cũ (hoặc project của Jira nếu mới tạo)."
                       : result.project_from_field
                         ? ` Project theo custom field cho ${result.project_from_field} issue.`

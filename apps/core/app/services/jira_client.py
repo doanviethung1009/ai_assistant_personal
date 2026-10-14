@@ -34,7 +34,7 @@ from typing import Any, Final
 import httpx
 
 from app.services.errors import DomainError, ValidationError
-from app.services.jira_mapping import CUSTOM_TAG_FIELD
+from app.services.jira_mapping import COMPANY_FIELD, CUSTOM_TAG_FIELD
 from app.services.ssrf_guard import NetworkUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ MAX_RESPONSE_BYTES: Final = 10 * 1024 * 1024
 # Trần tổng số byte đã đọc cho cả lần sync: 100 trang x 10 MB là 1 GB băng thông/CPU parse
 # do Jira (hoặc kẻ giả Jira) điều khiển. Vượt thì dừng như chạm trần trang (truncated).
 MAX_TOTAL_BYTES: Final = 50 * 1024 * 1024
-MAX_TAG_FIELDS: Final = 20
+MAX_TAG_FIELDS: Final = 60
 MAX_JQL_LEN: Final = 4000
 SEARCH_PATH: Final = "/rest/api/3/search/jql"
 FIELD_PATH: Final = "/rest/api/3/field"
@@ -354,7 +354,7 @@ class JiraClient:
                 f"({exc.message})"
             )
             return {}
-        found: dict[str, str] = {}
+        matched: list[tuple[str, str]] = []
         for field in data if isinstance(data, list) else []:
             if not isinstance(field, dict):
                 continue
@@ -365,10 +365,16 @@ class JiraClient:
                 and isinstance(name, str)
                 and CUSTOM_TAG_FIELD.search(name)
             ):
-                found[field_id] = name
-            if len(found) >= MAX_TAG_FIELDS:
-                break
-        return found
+                matched.append((field_id, name))
+        # Company/Công ty đứng ĐẦU (sort ổn định): nó quyết định project nên không được để bị
+        # cắt bởi trần khi Jira có nhiều field tên chứa "team"/"group"/"customer".
+        matched.sort(key=lambda item: not COMPANY_FIELD.search(item[1]))
+        if len(matched) > MAX_TAG_FIELDS:
+            self.notes.append(
+                f"Có {len(matched)} custom field phân nhóm, chỉ lấy {MAX_TAG_FIELDS} field đầu "
+                "(Company/Công ty xếp trước)."
+            )
+        return dict(matched[:MAX_TAG_FIELDS])
 
     async def search(self, jql: str) -> AsyncIterator[JiraPage]:
         """Lần lượt từng trang (theo nextPageToken). Chạm trần thì `truncated`.
