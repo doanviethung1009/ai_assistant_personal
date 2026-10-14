@@ -38,6 +38,8 @@ class AuditLog(UUIDPrimaryKeyMixin, Base):
     __table_args__ = (
         Index("ix_audit_log_created_at", "created_at"),
         Index("ix_audit_log_actor_created", "actor_user_id", "created_at"),
+        # Lọc nhật ký theo user bị tác động (/admin/audit-log?target_id=).
+        Index("ix_audit_log_target_created", "target_type", "target_id", "created_at"),
     )
 
     def __repr__(self) -> str:

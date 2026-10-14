@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     # kiểm, core kiểm lại vì web không phải ranh giới bảo mật duy nhất.
     google_allowed_hd: Annotated[list[str], NoDecode] = []
 
+    # Công tắc đăng nhập bằng mật khẩu (tài khoản nội bộ). false = `/auth/login/password` trả 403
+    # `password_login_disabled`: dùng khi có sự cố brute-force. Không ảnh hưởng đăng nhập Google,
+    # CLI hay API admin.
+    password_login_enabled: bool = True
+
     # Khoá mã hoá token của integration (Jira...) khi lưu DB: chuỗi Fernet (32 byte
     # base64 url-safe, sinh bằng `Fernet.generate_key()`). Khác API_KEY và khác
     # IMPORT_COMMIT_SECRET. Để trống = tắt lưu token (endpoint trả 503), app VẪN khởi

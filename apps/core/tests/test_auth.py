@@ -195,7 +195,8 @@ async def test_every_user_route_requires_a_jwt(anon_client: httpx.AsyncClient) -
 
     checked = 0
     for path, methods in app.openapi()["paths"].items():
-        if not path.startswith("/api/v1") or path == LOGIN:
+        # Chỉ hai route đăng nhập là công khai (không có JWT lúc đăng nhập).
+        if not path.startswith("/api/v1") or path in (LOGIN, f"{LOGIN}/password"):
             continue
         url = path
         for name in ("task_id", "note_id", "project_id", "connection_id"):

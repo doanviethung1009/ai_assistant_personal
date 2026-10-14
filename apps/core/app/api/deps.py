@@ -5,7 +5,13 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import CurrentUser, CurrentUserDep, current_user, require_permission
+from app.core.auth import (
+    CurrentUser,
+    CurrentUserDep,
+    current_user,
+    require_password_current,
+    require_permission,
+)
 from app.core.permissions import Permission
 from app.core.security import require_api_key
 from app.db.session import get_session
@@ -17,6 +23,7 @@ __all__ = [
     "Permission",
     "SessionDep",
     "current_user",
+    "require_password_current",
     "require_permission",
 ]
 

@@ -16,6 +16,8 @@
 #      ADMIN và đã đăng nhập Google ít nhất một lần (status active).
 #    - SMOKE_EMAIL_2 (tuỳ chọn): user thứ hai; có thì kiểm cô lập task cá nhân.
 #    - SMOKE_TOKEN (tuỳ chọn): JWT dựng sẵn, bỏ qua bước lấy token (hết hạn sau 120 giây).
+#  Nhóm "tài khoản nội bộ" tự tạo một user mật khẩu bằng `docker compose exec api python -m
+#  app.cli.auth create-local`, đi hết luồng đăng nhập/đổi mật khẩu rồi xoá user (cần admin smoke).
 # ═══════════════════════════════════════════════════════════════════════
 
 set -uo pipefail
@@ -49,6 +51,7 @@ NOTE_ID=""
 NOTE_DUP_ID=""
 TZ_UPSERT_ID=""
 OTHER_TASK_ID=""
+LOCAL_USER_ID=""
 SMOKE_EMAIL="${SMOKE_EMAIL:-${ADMIN_EMAILS%%,*}}"
 SMOKE_EMAIL_2="${SMOKE_EMAIL_2:-}"
 TOKEN="${SMOKE_TOKEN:-}"
@@ -153,6 +156,8 @@ cleanup() {
   [[ -n "$NOTE_DUP_ID" ]] && req DELETE "/api/v1/notes/$NOTE_DUP_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$TZ_UPSERT_ID" ]] && req DELETE "/api/v1/tasks/$TZ_UPSERT_ID?permanent=true" >/dev/null 2>&1
   [[ -n "$OTHER_TASK_ID" ]] && req DELETE "/api/v1/tasks/$OTHER_TASK_ID?permanent=true" >/dev/null 2>&1
+  # User nội bộ tạm của nhóm "tài khoản nội bộ" (không có dữ liệu nên xoá cứng được)
+  [[ -n "$LOCAL_USER_ID" ]] && req DELETE "/api/v1/admin/users/$LOCAL_USER_ID" >/dev/null 2>&1
   # Project xoá sau cùng: task và note tham chiếu tới nó qua FK
   [[ -n "$PROJECT_ID" ]] && req DELETE "/api/v1/projects/$PROJECT_ID" >/dev/null 2>&1
   return 0
@@ -673,6 +678,54 @@ if [[ "$STATUS" == "404" || "$STATUS" == "405" ]]; then
 else
   expect "/import/verify-secret đã gỡ" "yes" "no ($STATUS)"
 fi
+
+# ── Nhóm: tài khoản nội bộ (mật khẩu) ──────────────────────────────────
+# Tạo user bằng CLI trong container api (mật khẩu tạm in ra dòng cuối), rồi đi hết luồng:
+# đăng nhập -> bị chặn mọi route -> đổi mật khẩu -> dùng được. Dọn user ở cuối nhóm (và trong
+# cleanup nếu giữa chừng lỗi). Mật khẩu tạm/mới chỉ nằm trong biến shell, không in ra màn hình.
+
+echo ""
+echo "${DIM}tài khoản nội bộ${RESET}"
+
+LOCAL_NAME="smoke.${STAMP}"
+LOCAL_EMAIL="${LOCAL_NAME}@smoke.invalid"
+LOCAL_OUT="$(docker compose exec -T api python -m app.cli.auth create-local \
+  --username "$LOCAL_NAME" --email "$LOCAL_EMAIL" 2>/dev/null)"
+LOCAL_TEMP="$(tail -n1 <<<"$LOCAL_OUT")"
+expect "CLI create-local in mật khẩu tạm 16 ký tự" "16" "${#LOCAL_TEMP}"
+
+req_nojwt POST /api/v1/auth/login/password "{\"identifier\":\"$LOCAL_NAME\",\"password\":\"sai-mat-khau-smoke\"}"
+expect "đăng nhập mật khẩu sai trả 403" "403" "$STATUS"
+expect "đăng nhập sai báo invalid_credentials" "invalid_credentials" "$(jget "$BODY" code)"
+
+req_nojwt POST /api/v1/auth/login/password "{\"identifier\":\"$LOCAL_NAME\",\"password\":\"$LOCAL_TEMP\"}"
+expect "đăng nhập bằng mật khẩu tạm trả 200" "200" "$STATUS"
+LOCAL_USER_ID="$(jget "$BODY" user_id)"
+LOCAL_TOKEN="$(mint_token "$LOCAL_EMAIL")"
+
+req_as "$LOCAL_TOKEN" GET /api/v1/me
+expect "GET /me khi còn phải đổi mật khẩu trả 200" "200" "$STATUS"
+expect "/me báo must_change_password" "True" "$(jget "$BODY" must_change_password)"
+
+req_as "$LOCAL_TOKEN" GET /api/v1/tasks
+expect "route khác khi chưa đổi mật khẩu trả 403" "403" "$STATUS"
+expect "báo password_change_required" "password_change_required" "$(jget "$BODY" code)"
+
+LOCAL_NEW="smoke-${STAMP}-Zq9xLmWv"
+req_as "$LOCAL_TOKEN" POST /api/v1/me/password "{\"current_password\":\"$LOCAL_TEMP\",\"new_password\":\"$LOCAL_NEW\"}"
+expect "đổi mật khẩu trả 200" "200" "$STATUS"
+expect "đổi mật khẩu tăng session_version" "1" "$(jget "$BODY" session_version)"
+
+req_as "$LOCAL_TOKEN" GET /api/v1/me
+expect "token cũ sau khi đổi mật khẩu trả 401" "401" "$STATUS"
+
+LOCAL_TOKEN="$(mint_token "$LOCAL_EMAIL")"
+req_as "$LOCAL_TOKEN" GET /api/v1/tasks
+expect "sau khi đổi mật khẩu route dùng được (200)" "200" "$STATUS"
+
+req DELETE "/api/v1/admin/users/$LOCAL_USER_ID"
+expect "admin xoá user nội bộ tạm trả 204" "204" "$STATUS"
+[[ "$STATUS" == "204" ]] && LOCAL_USER_ID=""
 
 # ── Tổng kết ───────────────────────────────────────────────────────────
 

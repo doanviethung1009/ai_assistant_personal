@@ -230,6 +230,16 @@ class UserStatus(StrEnum):
     DISABLED = "disabled"
 
 
+class AuthProvider(StrEnum):
+    """Cách một tài khoản đăng nhập (bảng `users`). Một tài khoản chỉ có MỘT cách.
+
+    CÓ CHECK `ck_users_auth_provider_valid` ở DB (xem cảnh báo ở UserRole).
+    """
+
+    GOOGLE = "google"
+    LOCAL = "local"
+
+
 class AliasSource(StrEnum):
     """Hệ thống nguồn của một alias (tên trong Jira...). CHECK `ck_user_aliases_source_valid`."""
 
@@ -259,3 +269,10 @@ class AuditAction(StrEnum):
     INTEGRATION_DELETED = "integration_deleted"
     INTEGRATION_SYNCED = "integration_synced"
     BOOTSTRAP_BACKFILL = "bootstrap_backfill"
+    # Tài khoản nội bộ (mật khẩu): tạo, admin đặt lại, tự đổi, bị khoá tạm, mở khoá; xoá cứng.
+    USER_CREATED = "user_created"
+    PASSWORD_RESET = "password_reset"  # noqa: S105 - tên hành động, không phải mật khẩu
+    PASSWORD_CHANGED = "password_changed"  # noqa: S105
+    LOGIN_LOCKED = "login_locked"
+    USER_UNLOCKED = "user_unlocked"
+    USER_DELETED = "user_deleted"
