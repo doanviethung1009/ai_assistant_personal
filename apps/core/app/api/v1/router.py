@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.api.deps import bind_display_tz, current_user
+from app.api.deps import current_user
 from app.api.v1 import (
     auth,
     imports,
@@ -25,7 +25,7 @@ api_router.include_router(auth.router)
 
 # Mọi router còn lại đòi thêm JWT người dùng (user `active`, session_version khớp). Quyền chi tiết
 # theo ma trận spec auth-multiuser mục 3.4 khai ở từng route bằng `require_permission`.
-user_router = APIRouter(dependencies=[Depends(current_user), Depends(bind_display_tz)])
+user_router = APIRouter(dependencies=[Depends(current_user)])
 user_router.include_router(me.router)
 user_router.include_router(tasks.router)
 user_router.include_router(projects.router)

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import AliasChoices, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 from app.core.timezones import normalize_timezone
@@ -17,6 +18,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
+        populate_by_name=True,
         case_sensitive=False,
         # ValidationError mặc định in cả giá trị đầu vào. Với secret ngắn hơn
         # min_length, giá trị đó sẽ lọt vào log khởi động; ẩn đi cho mọi setting.
@@ -78,9 +80,13 @@ class Settings(BaseSettings):
     litellm_master_key: str | None = None
 
     # ── Hiển thị ────────────────────────────────────────────────────
-    # MẶC ĐỊNH khi chưa có dòng app_settings 'display_timezone'. Giá trị hiệu lực đọc qua
-    # services/clock.py (User đổi được lúc chạy). DB luôn lưu UTC.
-    display_timezone: str = "Asia/Ho_Chi_Minh"
+    # Múi giờ của server: nguồn DUY NHẤT (không có múi giờ theo user hay ghi đè trong DB).
+    # Thứ tự đọc env: DISPLAY_TIMEZONE, rồi TZ (docker-compose truyền cho mọi service nên web
+    # và core cùng một giá trị), rồi mặc định. Đọc qua services/clock.py. DB luôn lưu UTC.
+    display_timezone: str = Field(
+        default="Asia/Ho_Chi_Minh",
+        validation_alias=AliasChoices("DISPLAY_TIMEZONE", "TZ"),
+    )
 
     # ── Thùng rác ───────────────────────────────────────────────────
     # Task xoá mềm được giữ bao nhiêu ngày trước khi xoá vĩnh viễn.
@@ -90,8 +96,20 @@ class Settings(BaseSettings):
     # ── Rate limit ──────────────────────────────────────────────────
     # Đếm theo cửa sổ 60s ở Redis, xem core/rate_limit.py. Bật mặc định vì
     # một API key tĩnh không có gì ngăn một client lỗi gọi lặp vô hạn.
+    # 300/phút theo user (Q11 spec web-authjs-login); chưa có JWT thì tính theo IP.
     rate_limit_enabled: bool = True
-    rate_limit_requests_per_minute: int = Field(default=900, ge=1)
+    rate_limit_requests_per_minute: int = Field(default=300, ge=1)
+
+    @field_validator("display_timezone", mode="before")
+    @classmethod
+    def _blank_timezone_means_unset(cls, value: object) -> object:
+        # Biến rỗng (compose `TZ: ${TZ:-}`, `TZ=` trong .env) = chưa đặt, không phải lỗi.
+        # Không dùng env_ignore_empty toàn cục: nó đổi nghĩa CORS_ORIGINS="" (từ [] sang
+        # mặc định localhost). DISPLAY_TIMEZONE rỗng thì thử TZ trước khi về mặc định.
+        if isinstance(value, str) and not value.strip():
+            fallback = os.environ.get("TZ", "").strip()
+            return fallback or "Asia/Ho_Chi_Minh"
+        return value
 
     @field_validator("display_timezone")
     @classmethod

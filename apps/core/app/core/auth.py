@@ -60,7 +60,6 @@ class CurrentUser:
     email: str
     name: str | None
     role: UserRole
-    timezone: str | None
     # Alias nguồn Jira của user, so khớp chính xác (phân biệt hoa thường) với Task.assignee.
     aliases: frozenset[str]
 
@@ -179,7 +178,6 @@ async def current_user(
             email=user.email,
             name=user.name,
             role=user.role,
-            timezone=user.timezone,
             aliases=frozenset(a.alias for a in user.aliases if a.source is AliasSource.JIRA),
         )
 
