@@ -6,6 +6,7 @@ hasher bằng bản rẻ; test cấu hình thật dùng `PRODUCTION_HASHER`.
 
 from __future__ import annotations
 
+import hashlib
 import re
 from datetime import timedelta
 from pathlib import Path
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 from app.core import passwords
+from app.core.identifier_hash import identifier_digest
 from app.services.clock import now_utc
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
@@ -143,3 +145,15 @@ def test_no_log_call_mentions_secrets() -> None:
         if pattern.search(line)
     ]
     assert offenders == []
+
+
+def test_identifier_digest_is_keyed_and_stable() -> None:
+    secret_a = "a" * 32
+    secret_b = "b" * 32
+    first = identifier_digest("Ai.Do ", secret_a)
+    assert first == identifier_digest("ai.do", secret_a)  # chuẩn hoá hoa/thường, khoảng trắng
+    assert first != identifier_digest("ai.do", secret_b)
+    assert first != identifier_digest("khac", secret_a)
+    assert len(first) == 64 and "ai.do" not in first
+    # Khác sha256 trần: không dò ngược bằng từ điển khi không có khoá.
+    assert first != hashlib.sha256(b"ai.do").hexdigest()

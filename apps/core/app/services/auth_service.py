@@ -8,7 +8,6 @@ chỉ nằm ở `audit_log` cho admin.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 
 from sqlalchemy import select
@@ -16,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import passwords
 from app.core.config import settings
+from app.core.identifier_hash import identifier_digest
 from app.models.enums import AuditAction, AuthProvider, UserStatus
 from app.models.user import User
 from app.schemas.auth import LoginRequest, LoginResult, PasswordLoginRequest
@@ -180,8 +180,7 @@ async def _deny_password(
     """
     details: dict[str, str] = {"reason": reason, "method": "password"}
     if user is None:
-        digest = hashlib.sha256(req.identifier.strip().lower().encode("utf-8", "replace"))
-        details["identifier_sha256"] = digest.hexdigest()[:16]
+        details["identifier_sha256"] = identifier_digest(req.identifier)[:16]
     audit_service.record(
         session,
         AuditAction.LOGIN_DENIED,

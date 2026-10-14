@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import passwords
 from app.core.config import settings
-from app.db.locks import constraint_name
+from app.db.locks import constraint_name, sqlstate
 from app.models.enums import AliasSource, AuditAction, AuthProvider, UserRole, UserStatus
 from app.models.note import Note
 from app.models.task import Task
@@ -30,7 +30,7 @@ from app.models.user import User, UserAlias
 from app.schemas.settings import MAX_NAME_LEN
 from app.services import audit_service
 from app.services.clock import now_utc
-from app.services.errors import ConflictError, NotFoundError, ValidationError
+from app.services.errors import ConflictError, ForbiddenError, NotFoundError, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +39,8 @@ _CONTROL_OR_SPACE = re.compile(r"[\s\x00-\x1f\x7f]")
 _USERNAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,63}$")
 # Khoá advisory serialize mọi thao tác làm GIẢM số admin hoạt động.
 _ADMIN_GUARD_LOCK = "builder:admin-guard"
+# SQLSTATE của foreign_key_violation (FK RESTRICT chặn xoá).
+_FK_VIOLATION = "23503"
 
 
 def normalize_email(raw: str) -> str:
@@ -98,7 +100,8 @@ async def invite(
         invited_by=invited_by,
     )
     session.add(user)
-    await session.flush()
+    # Hai lời mời cùng email đua nhau: người thua nhận 409 thay vì 500.
+    await _flush_unique(session)
     return user
 
 
@@ -108,6 +111,9 @@ async def sync_admin_emails(session: AsyncSession, emails: Iterable[str]) -> int
 
     Đây là đường "phá kính" khi lỡ khoá hết admin: chỉ cần sửa env rồi khởi động lại core.
     Email sai định dạng bị bỏ qua kèm cảnh báo (không để một dòng env hỏng chặn khởi động).
+
+    Tài khoản `local` BỊ BỎ QUA: email của nó do admin gõ và chưa từng được xác minh, nên không
+    được dùng làm căn cứ nâng quyền (kẻ đặt được email trùng ADMIN_EMAILS sẽ thành admin).
     """
     changed = 0
     for raw in emails:
@@ -120,6 +126,9 @@ async def sync_admin_emails(session: AsyncSession, emails: Iterable[str]) -> int
         if user is None:
             session.add(User(email=email, role=UserRole.ADMIN, status=UserStatus.INVITED))
             changed += 1
+        elif user.auth_provider is AuthProvider.LOCAL:
+            # Cố ý không ghi email vào log (PII).
+            logger.warning("ADMIN_EMAILS trùng một tài khoản nội bộ, bỏ qua (không nâng quyền)")
         elif user.role is not UserRole.ADMIN:
             user.role = UserRole.ADMIN
             changed += 1
@@ -361,6 +370,23 @@ async def _take_admin_guard(session: AsyncSession) -> None:
     )
 
 
+async def _require_active_admin_actor(
+    session: AsyncSession, actor_user_id: uuid.UUID | None
+) -> None:
+    """Đọc lại actor SAU khi có advisory lock; không còn là admin hoạt động thì 403.
+
+    Quyền của actor đã được kiểm lúc xác thực request, nhưng giữa lúc đó và lúc lấy khoá, admin
+    khác có thể vừa hạ quyền hay khoá actor. Không đọc lại thì actor "cũ" vẫn hạ được người khác.
+    """
+    if actor_user_id is None:
+        return
+    # Chọn cột (không phải entity) nên luôn là giá trị mới nhất trong DB, không từ identity map.
+    stmt = select(User.role, User.status).where(User.id == actor_user_id)
+    row = (await session.execute(stmt)).one_or_none()
+    if row is None or row.role is not UserRole.ADMIN or row.status is not UserStatus.ACTIVE:
+        raise ForbiddenError("Bạn không còn quyền quản trị")
+
+
 async def _guard_demotion(
     session: AsyncSession,
     user: User,
@@ -521,6 +547,7 @@ async def update_user(
     """
     if enforce:
         await _take_admin_guard(session)
+        await _require_active_admin_actor(session, actor_user_id)
     user = await _load_locked(session, user_id)
     is_local = user.auth_provider is AuthProvider.LOCAL
 
@@ -695,6 +722,17 @@ async def change_own_password(
         raise ConflictError("Tài khoản Google đổi mật khẩu ở Google", code="not_local_account")
     result = await passwords.verify_password(user.password_hash, current_password)
     if not result.ok:
+        # COMMIT trước khi raise (như _deny_password): get_session sẽ rollback khi có lỗi và
+        # dòng audit sẽ mất. details để trống: không đưa mật khẩu nào vào đây.
+        audit_service.record(
+            session,
+            AuditAction.PASSWORD_CHANGE_FAILED,
+            actor_user_id=user.id,
+            target_type="user",
+            target_id=user.id,
+            client_ip=client_ip,
+        )
+        await session.commit()
         raise ValidationError("Mật khẩu hiện tại không đúng", code="current_password_invalid")
     reasons = passwords.policy_violations(
         new_password,
@@ -738,6 +776,7 @@ async def delete_user(
     """
     if enforce:
         await _take_admin_guard(session)
+        await _require_active_admin_actor(session, actor_user_id)
     user = await _load_locked(session, user_id)
     await _guard_demotion(
         session, user, actor_user_id=actor_user_id, enforce=enforce, demoting=True
@@ -758,7 +797,15 @@ async def delete_user(
         details={"provider": user.auth_provider.value, "role": user.role.value, "via": via},
     )
     await session.delete(user)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # FK RESTRICT từ bảng mà kiểm tra ở trên chưa biết (hoặc dữ liệu vừa chen vào).
+        if sqlstate(exc) != _FK_VIOLATION:
+            raise
+        raise ConflictError(
+            "User còn dữ liệu liên quan: hãy khoá thay vì xoá", code="has_data"
+        ) from exc
 
 
 async def replace_aliases(

@@ -6,11 +6,14 @@ Spec: docs/specs/admin-users-local-login.md mục 4.2 và 7.1. Cần Postgres (`
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 import httpx
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.db.session import SessionFactory
@@ -20,7 +23,7 @@ from app.models.task import Task
 from app.models.user import User
 from app.services import user_service
 from app.services.clock import now_utc
-from app.services.errors import ConflictError
+from app.services.errors import ConflictError, ForbiddenError
 from tests.conftest import Persona, create_local_persona, create_persona
 
 pytestmark = pytest.mark.db
@@ -260,9 +263,19 @@ async def test_cannot_demote_or_disable_or_delete_self(anon_client: httpx.AsyncC
     assert resp.status_code == 409 and resp.json()["code"] == "self_lockout"
 
 
-async def test_last_active_admin_cannot_be_removed(anon_client: httpx.AsyncClient) -> None:
+async def test_last_active_admin_cannot_be_removed(
+    anon_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """Qua API chỉ đụng `last_admin` khi hai admin đua nhau (test bên dưới); ở đây gọi service
-    thẳng với một actor khác để kiểm quy tắc đếm, gồm cả việc admin bị khoá không được tính."""
+    thẳng với một actor giả để kiểm quy tắc đếm, gồm cả việc admin bị khoá không được tính.
+
+    Tắt kiểm tra actor (`_require_active_admin_actor`) vì actor giả không phải admin thật; việc
+    actor bị hạ quyền được kiểm riêng ở test khác."""
+
+    async def _no_actor_check(*_: object) -> None:
+        return None
+
+    monkeypatch.setattr(user_service, "_require_active_admin_actor", _no_actor_check)
     admin = await _admin()
     await create_persona("old@test.local", UserRole.ADMIN, status=UserStatus.DISABLED)
     actor = uuid.uuid4()
@@ -515,3 +528,89 @@ async def test_admin_route_requires_current_password_for_admin_too(
     admin = await create_local_persona("quan.tri", role=UserRole.ADMIN, must_change_password=True)
     resp = await anon_client.get(USERS, headers=admin.headers)
     assert resp.status_code == 403 and resp.json()["code"] == "password_change_required"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Sửa gói review: ADMIN_EMAILS, actor cũ, IntegrityError
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def test_sync_admin_emails_skips_local_accounts(
+    anon_client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    local = await create_local_persona("c.nguyen")
+    google = await create_persona("gg@test.local")
+    with caplog.at_level(logging.WARNING, logger="app.services.user_service"):
+        async with SessionFactory() as s:
+            changed = await user_service.sync_admin_emails(s, [local.email, google.email])
+            await s.commit()
+    assert changed == 1
+    assert (await _user(local.id)).role is UserRole.MEMBER
+    assert (await _user(google.id)).role is UserRole.ADMIN
+    assert "nội bộ" in caplog.text
+    assert local.email not in caplog.text
+
+
+@pytest.mark.parametrize("how", ["demoted", "disabled"])
+async def test_stale_actor_is_rejected_after_advisory_lock(
+    anon_client: httpx.AsyncClient, how: str
+) -> None:
+    """Actor vừa bị hạ quyền/khoá sau khi qua xác thực: thao tác huỷ quyền phải 403."""
+    actor = await create_persona("old.admin@test.local", UserRole.ADMIN)
+    target = await create_persona("target@test.local", UserRole.ADMIN)
+    await create_persona("keep@test.local", UserRole.ADMIN)
+    async with SessionFactory() as s:
+        row = await s.get(User, actor.id)
+        assert row is not None
+        if how == "demoted":
+            row.role = UserRole.MEMBER
+        else:
+            row.status = UserStatus.DISABLED
+        await s.commit()
+    async with SessionFactory() as s:
+        with pytest.raises(ForbiddenError):
+            await user_service.update_user(
+                s, target.id, {"role": UserRole.MEMBER}, actor_user_id=actor.id
+            )
+    async with SessionFactory() as s:
+        with pytest.raises(ForbiddenError):
+            await user_service.delete_user(s, target.id, actor_user_id=actor.id)
+    assert (await _user(target.id)).role is UserRole.ADMIN
+
+
+class _FakeDriverError(Exception):
+    """Giả lỗi asyncpg: chỉ cần `sqlstate` / `constraint_name` như `app.db.locks` đọc."""
+
+    def __init__(self, sqlstate: str | None, constraint_name: str | None) -> None:
+        super().__init__("fake")
+        self.sqlstate = sqlstate
+        self.constraint_name = constraint_name
+
+
+async def test_delete_user_fk_violation_maps_to_has_data(
+    anon_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    admin = await _admin()
+    victim = await create_persona("trong@test.local")
+
+    async def boom(self: AsyncSession, *args: object, **kwargs: object) -> None:
+        raise IntegrityError("DELETE", {}, _FakeDriverError("23503", "fk_something"))
+
+    monkeypatch.setattr(AsyncSession, "flush", boom)
+    async with SessionFactory() as s:
+        with pytest.raises(ConflictError) as err:
+            await user_service.delete_user(s, victim.id, actor_user_id=admin.id)
+        assert err.value.code == "has_data"
+
+
+async def test_invite_unique_violation_maps_to_email_exists(
+    anon_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def boom(self: AsyncSession, *args: object, **kwargs: object) -> None:
+        raise IntegrityError("INSERT", {}, _FakeDriverError("23505", "uq_users_email"))
+
+    monkeypatch.setattr(AsyncSession, "flush", boom)
+    async with SessionFactory() as s:
+        with pytest.raises(ConflictError) as err:
+            await user_service.invite_user(s, "moi@test.local")
+        assert err.value.code == "email_exists"

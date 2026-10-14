@@ -16,7 +16,6 @@ Chủ động fail-open khi Redis lỗi: readiness probe đã giám sát Redis r
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import time
 import uuid
@@ -28,6 +27,7 @@ from starlette.responses import JSONResponse
 
 from app.core.auth import peek_subject
 from app.core.config import settings
+from app.core.identifier_hash import identifier_digest
 from app.db.redis import get_redis
 from app.services.errors import TooManyRequestsError
 
@@ -47,7 +47,8 @@ LOGIN_LIMIT_GLOBAL = 60
 # và toàn cục. Lớp chính chống đoán mật khẩu vẫn là khoá theo tài khoản ở DB.
 PASSWORD_LOGIN_LIMIT_PER_IP = 10
 PASSWORD_LOGIN_LIMIT_PER_IDENTIFIER = 10
-PASSWORD_LOGIN_LIMIT_GLOBAL = 60
+# Toàn cục chỉ là cầu chì chống flood; nới rộng để một kẻ spam không dễ khoá cả người dùng thật.
+PASSWORD_LOGIN_LIMIT_GLOBAL = 300
 # Tự đổi mật khẩu: 5 lần mỗi 15 phút theo user (chặn đoán mật khẩu hiện tại bằng JWT đã có).
 PASSWORD_CHANGE_LIMIT = 5
 PASSWORD_CHANGE_WINDOW_SECONDS = 15 * 60
@@ -114,12 +115,12 @@ async def enforce_login_limits(client_ip: str | None) -> None:
 async def enforce_password_login_limits(client_ip: str | None, identifier: str) -> None:
     """Giới hạn riêng cho `/auth/login/password`, chạy TRƯỚC khi chạm DB hay băm (429).
 
-    Khoá Redis chứa sha256 của identifier chuẩn hoá, không chứa tên đăng nhập hay email. Khi web
-    chạy qua tunnel `client_ip` là null nên bucket IP thành bucket chung: chấp nhận (Q13).
+    Khoá Redis chứa HMAC-SHA256 của identifier chuẩn hoá, không chứa tên đăng nhập hay email.
+    Khi web chạy qua tunnel `client_ip` là null nên bucket IP thành bucket chung: chấp nhận (Q13).
     """
     if not settings.rate_limit_enabled:
         return
-    digest = hashlib.sha256(identifier.strip().lower().encode("utf-8", "replace")).hexdigest()
+    digest = identifier_digest(identifier)
     for key, limit in (
         (f"login-pw-ip:{client_ip or 'unknown'}", PASSWORD_LOGIN_LIMIT_PER_IP),
         (f"login-pw-id:{digest}", PASSWORD_LOGIN_LIMIT_PER_IDENTIFIER),
@@ -127,6 +128,9 @@ async def enforce_password_login_limits(client_ip: str | None, identifier: str) 
     ):
         count = await _hit(key)
         if count is not None and count > limit:
+            if key == "login-pw-global":
+                # Không log identifier hay IP: chỉ cần biết cầu chì đã nhảy.
+                logger.warning("login_global_limit_hit")
             raise TooManyRequestsError("Quá nhiều lần đăng nhập, thử lại sau")
 
 

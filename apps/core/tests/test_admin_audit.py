@@ -132,3 +132,19 @@ async def test_admin_actions_show_up_in_the_log(anon_client: httpx.AsyncClient) 
     assert [i["action"] for i in body["items"]] == ["user_created"]
     assert body["items"][0]["actor_email"] == "admin@test.local"
     assert temp not in str(body)
+
+
+async def test_target_id_filter_also_filters_target_type(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    """Lọc target_id kèm target_type="user" (để dùng index); id trùng ở loại khác không lẫn vào."""
+    admin = await create_persona("admin@test.local", UserRole.ADMIN)
+    shared = uuid.uuid4()
+    await _seed(
+        [
+            _row("user_updated", 0, actor=admin.id, target=shared),
+            AuditLog(action="integration_updated", target_type="integration", target_id=shared),
+        ]
+    )
+    body = (await anon_client.get(f"{AUDIT}?target_id={shared}", headers=admin.headers)).json()
+    assert [i["action"] for i in body["items"]] == ["user_updated"]

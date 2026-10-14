@@ -6,6 +6,7 @@ Spec: docs/specs/admin-users-local-login.md mục 3, 4.1, 7.1. Cần Postgres (`
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import uuid
@@ -24,6 +25,7 @@ from app.models.audit_log import AuditLog
 from app.models.enums import AuditAction, UserRole, UserStatus
 from app.models.user import User
 from app.services.clock import now_utc
+from app.services.errors import TooManyRequestsError
 from tests.conftest import API_KEY, LocalPersona, create_local_persona, create_persona
 from tests.test_task_scope import _alembic, _sql
 
@@ -229,6 +231,45 @@ async def test_password_login_rate_limit_per_identifier(
     # Identifier khác không bị ảnh hưởng bởi bucket theo identifier.
     other = await _login(anon_client, "nguoi.khac", "sai-mat-khau-sai-sai")
     assert other.status_code in (403, 429)
+
+
+async def test_password_login_global_limit_is_a_loose_fuse_and_logs(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert rate_limit.PASSWORD_LOGIN_LIMIT_GLOBAL == 300
+    monkeypatch.setattr(settings, "rate_limit_enabled", True)
+
+    async def fake_hit(key: str) -> int:
+        return rate_limit.PASSWORD_LOGIN_LIMIT_GLOBAL + 1 if key == "login-pw-global" else 1
+
+    monkeypatch.setattr(rate_limit, "_hit", fake_hit)
+    with (
+        caplog.at_level(logging.WARNING, logger="app.core.rate_limit"),
+        pytest.raises(TooManyRequestsError),
+    ):
+        await rate_limit.enforce_password_login_limits("198.51.100.7", "ai.do@test.local")
+    assert "login_global_limit_hit" in caplog.text
+    assert "ai.do" not in caplog.text and "198.51.100.7" not in caplog.text
+
+
+async def test_change_password_wrong_current_is_audited_without_secret(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    who = await create_local_persona("c.nguyen")
+    wrong = "sai-mat-khau-hien-tai"
+    resp = await anon_client.post(
+        CHANGE, headers=who.headers, json={"current_password": wrong, "new_password": "x" * 12}
+    )
+    assert resp.status_code == 422
+    async with SessionFactory() as s:
+        rows = (
+            await s.scalars(
+                select(AuditLog).where(AuditLog.action == AuditAction.PASSWORD_CHANGE_FAILED.value)
+            )
+        ).all()
+    assert len(rows) == 1
+    assert rows[0].actor_user_id == who.id and rows[0].target_id == who.id
+    assert wrong not in str(rows[0].details) and "x" * 12 not in str(rows[0].details)
 
 
 async def test_login_422_does_not_echo_password(anon_client: httpx.AsyncClient) -> None:

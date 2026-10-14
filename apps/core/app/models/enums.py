@@ -273,6 +273,7 @@ class AuditAction(StrEnum):
     USER_CREATED = "user_created"
     PASSWORD_RESET = "password_reset"  # noqa: S105 - tên hành động, không phải mật khẩu
     PASSWORD_CHANGED = "password_changed"  # noqa: S105
+    PASSWORD_CHANGE_FAILED = "password_change_failed"  # noqa: S105
     LOGIN_LOCKED = "login_locked"
     USER_UNLOCKED = "user_unlocked"
     USER_DELETED = "user_deleted"
