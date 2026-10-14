@@ -62,7 +62,7 @@ from app.models.import_audit import ImportAudit, ImportRun
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
-from app.models.user import User, UserAlias
+from app.models.user import UserAlias
 from app.schemas.common import normalize_tags
 from app.schemas.imports import (
     DataFileEnvelope,
