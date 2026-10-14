@@ -6,6 +6,8 @@ import {
   buildProjectsCsv,
   buildTasksCsv,
 } from "@/lib/store/transfer";
+import { authEnabled } from "@/lib/auth-config";
+import { requireSession } from "@/lib/auth-guard";
 import { readVaultRaw } from "@/lib/vault/store";
 
 /**
@@ -16,9 +18,10 @@ import { readVaultRaw } from "@/lib/vault/store";
  *   GET /api/export?format=csv&entity=projects  project
  *   GET /api/export?format=csv&entity=notes     sổ tay
  *
- * Route này không có xác thực riêng, giống mọi trang khác của web app. Nó an
- * toàn vì cả app chỉ bind vào localhost. Nếu sau này đưa web ra mạng thì
- * phải thêm auth trước, vì đây là đường tải toàn bộ dữ liệu.
+ * Chế độ api: BẮT BUỘC có phiên (không phiên → 401 JSON, middleware không bảo vệ được vì đây là
+ * tải file). `entity=vault` trả két của chính người đăng nhập (ciphertext); các entity khác ở api
+ * trả 501 vì store cục bộ không phải dữ liệu thật (dùng trang Dữ liệu). Chế độ file/memory không có
+ * đăng nhập: chỉ dùng trên máy dev, không mở cho người khác truy cập.
  */
 
 export const dynamic = "force-dynamic";
@@ -32,6 +35,14 @@ export async function GET(request: Request): Promise<Response> {
   const format = params.get("format") ?? "json";
   const entity = params.get("entity") ?? "all";
 
+  const auth = await requireSession();
+  if (!auth.ok) {
+    return NextResponse.json({ detail: "Chưa đăng nhập" }, { status: 401, headers: { "Cache-Control": "no-store" } });
+  }
+  if (authEnabled() && !(format === "json" && entity === "vault")) {
+    return NextResponse.json({ detail: "Dùng trang Dữ liệu" }, { status: 501 });
+  }
+
   try {
     let body: string;
     let filename: string;
@@ -43,7 +54,7 @@ export async function GET(request: Request): Promise<Response> {
       contentType = "application/json; charset=utf-8";
     } else if (format === "json" && entity === "vault") {
       // Chỉ ciphertext, không có plaintext hay mật khẩu nên an toàn để sao lưu
-      const raw = await readVaultRaw();
+      const raw = await readVaultRaw(auth.user.local ? null : auth.user.uid);
       if (!raw) {
         return NextResponse.json({ detail: "Két chưa được tạo." }, { status: 404 });
       }
@@ -78,12 +89,8 @@ export async function GET(request: Request): Promise<Response> {
       },
     });
   } catch (error) {
-    return NextResponse.json(
-      {
-        detail:
-          error instanceof Error ? error.message : "Xuất dữ liệu thất bại",
-      },
-      { status: 500 },
-    );
+    // Câu chung: message lỗi có thể chứa đường dẫn file hay chi tiết nội bộ. Chỉ log tên lỗi.
+    console.error("xuất dữ liệu thất bại", error instanceof Error ? error.name : "unknown");
+    return NextResponse.json({ detail: "Xuất dữ liệu thất bại" }, { status: 500 });
   }
 }

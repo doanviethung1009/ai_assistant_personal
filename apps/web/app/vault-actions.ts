@@ -1,5 +1,6 @@
 "use server";
 
+import { requireSession, type ActionAuthCode } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
 
 import { isVaultBlob, type VaultBlob } from "@/lib/vault/crypto";
@@ -15,13 +16,21 @@ import {
  * nhận mật khẩu hay plaintext. Không log nội dung blob.
  */
 
+/** Két của người dùng hiện tại: uid lấy từ phiên (không từ client); local dùng `vault.json`. */
+function ownerOf(auth: { user: { uid: string; local: boolean } }): string | null {
+  return auth.user.local ? null : auth.user.uid;
+}
+
 export async function getVaultBlobAction(): Promise<{
   ok: boolean;
   blob: VaultBlob | null;
   error?: string;
+  code?: ActionAuthCode;
 }> {
+  const auth = await requireSession();
+  if (!auth.ok) return { ok: false, blob: null, error: auth.error, code: auth.code };
   try {
-    return { ok: true, blob: await readVaultBlob() };
+    return { ok: true, blob: await readVaultBlob(ownerOf(auth)) };
   } catch (error) {
     console.error("vault: đọc thất bại", error instanceof Error ? error.message : "");
     return { ok: false, blob: null, error: "Không đọc được file két." };
@@ -31,12 +40,14 @@ export async function getVaultBlobAction(): Promise<{
 export async function saveVaultBlobAction(
   blob: unknown,
   expectedUpdatedAt: string | null,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; code?: ActionAuthCode }> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!isVaultBlob(blob)) {
     return { ok: false, error: "Dữ liệu két không hợp lệ." };
   }
   try {
-    await writeVaultBlob(blob, expectedUpdatedAt);
+    await writeVaultBlob(ownerOf(auth), blob, expectedUpdatedAt);
     return { ok: true };
   } catch (error) {
     if (error instanceof VaultConflictError) {
@@ -47,9 +58,11 @@ export async function saveVaultBlobAction(
   }
 }
 
-export async function deleteVaultAction(): Promise<{ ok: boolean; error?: string }> {
+export async function deleteVaultAction(): Promise<{ ok: boolean; error?: string; code?: ActionAuthCode }> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
-    await deleteVaultBlob();
+    await deleteVaultBlob(ownerOf(auth));
     revalidatePath("/vault");
     revalidatePath("/data");
     return { ok: true };
@@ -70,7 +83,9 @@ const MAX_VAULT_UPLOAD_BYTES = 5 * 1024 * 1024;
  */
 export async function importVaultAction(
   formData: FormData,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; code?: ActionAuthCode }> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) {
     return { ok: false, error: "Chưa chọn file" };
@@ -90,14 +105,14 @@ export async function importVaultAction(
   }
 
   try {
-    const current = await readVaultBlob();
+    const current = await readVaultBlob(ownerOf(auth));
     if (current && formData.get("confirm") !== "yes") {
       return {
         ok: false,
         error: "Đã có két. Tick xác nhận ghi đè để tiếp tục.",
       };
     }
-    await writeVaultBlob(parsed, current?.updated_at ?? null);
+    await writeVaultBlob(ownerOf(auth), parsed, current?.updated_at ?? null);
     revalidatePath("/data");
     revalidatePath("/vault");
     return { ok: true };

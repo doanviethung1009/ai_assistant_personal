@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { AlertCircle, CheckCircle2, Clock, Edit2, KeySquare, Loader2, Plus, RefreshCw, Save, ServerCog, Trash2, UploadCloud, X } from "lucide-react";
@@ -33,11 +34,11 @@ interface Notice {
   text: string;
 }
 
-/** Panel "Cào ngay" của MỘT kết nối: tự giữ mật khẩu, ngày bắt đầu, trạng thái chạy và kết quả. */
+/** Panel "Cào ngay" của MỘT kết nối: tự giữ ngày bắt đầu, trạng thái chạy và kết quả. */
 function SyncPanel({ connection, disabled }: { connection: IntegrationConnection; disabled: boolean }) {
   const router = useRouter();
+  const gate = useActionAuth();
   const [open, setOpen] = useState(false);
-  const [secret, setSecret] = useState("");
   const [since, setSince] = useState("");
   const [assignees, setAssignees] = useState("");
   const [peopleRole, setPeopleRole] = useState<"both" | "assignee" | "reporter">("both");
@@ -49,15 +50,13 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
   async function run(e: React.FormEvent) {
     e.preventDefault();
     if (running) return;
-    const sent = secret;
-    // Xoá mật khẩu khỏi state TRƯỚC khi await.
-    setSecret("");
     setError(null);
     setResult(null);
     setNeedToken(false);
     setRunning(true);
     try {
-      const res = await syncIntegrationAction(connection.id, sent, since || undefined, assignees, peopleRole);
+      const res = await syncIntegrationAction(connection.id, since || undefined, assignees, peopleRole);
+      if (gate(res)) return;
       if (res.ok) {
         setResult(res.result);
         router.refresh(); // cập nhật last_sync_at hiển thị
@@ -88,19 +87,6 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
       {blocked && <p className="mt-1 text-[0.8125rem] text-amber-600">Chưa có token. Bấm biểu tượng Sửa và nhập token để cào.</p>}
       {open && !blocked && (
         <form onSubmit={run} className="mt-3 flex flex-wrap items-end gap-3 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-3">
-          <label className="text-[0.8125rem] font-bold">
-            Mật khẩu nhập/đồng bộ
-            <input
-              className={`${INPUT} mt-1 w-56 font-normal`}
-              type="password"
-              autoComplete="new-password"
-              required
-              maxLength={256}
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              disabled={running}
-            />
-          </label>
           <label className="text-[0.8125rem] font-bold">
             Từ ngày (tuỳ chọn)
             <input className={`${INPUT} mt-1 w-44 font-normal`} type="date" value={since} onChange={(e) => setSince(e.target.value)} disabled={running} />
@@ -133,7 +119,7 @@ function SyncPanel({ connection, disabled }: { connection: IntegrationConnection
           <p className="basis-full text-[0.8125rem] text-[var(--color-ink-muted)]">
             Tên hiển thị trên Jira, cách nhau bằng dấu phẩy. Lọc theo người KẾT HỢP (AND) với JQL của kết nối.
           </p>
-          <button type="submit" disabled={running || secret.length === 0} className="rounded-lg bg-[var(--color-ink)] px-4 py-2 text-xs font-bold text-[var(--color-surface)] hover:opacity-90 disabled:opacity-50">
+          <button type="submit" disabled={running} className="rounded-lg bg-[var(--color-ink)] px-4 py-2 text-xs font-bold text-[var(--color-surface)] hover:opacity-90 disabled:opacity-50">
             {running ? "Đang chạy..." : "Bắt đầu"}
           </button>
           <p className="basis-full text-[0.8125rem] text-[var(--color-ink-muted)]">
@@ -228,16 +214,27 @@ function readLeftovers(): LocalLeftover[] {
  * ══════════════════════════════════════════════════════════════════════
  *  TOKEN LÀ WRITE-ONLY. Ô token là password, autoComplete="new-password", và state
  *  của nó bị xoá NGAY khi gửi (không đợi kết quả). Danh sách chỉ hiện `****last4`.
- *  "Cào ngay" (B4b) gọi core sync: mật khẩu nhập/đồng bộ cũng là password và bị xoá ngay
- *  khi gửi; token Jira không bao giờ rời core.
+ *  "Cào ngay" (B4b) gọi core sync (quyền do core kiểm theo role); token Jira không bao giờ
+ *  rời core.
  * ══════════════════════════════════════════════════════════════════════
  *
  * localStorage chỉ còn được đọc ở đường chuyển một lần (D-B4c): sau khi core xác nhận tạo
  * thành công thì từng mục mới bị xoá khỏi trình duyệt; mục lỗi được giữ lại để sửa tay.
  */
-export function JiraConnectionsManager({ connections }: { connections: IntegrationConnection[] }) {
+/**
+ * `canManage` (quyền integration:manage): thiếu thì chỉ xem và cào (lead chỉ có integration:sync);
+ * ẩn nút lưu, sửa, xoá, di chuyển. Core vẫn từ chối ghi nếu client bị sửa.
+ */
+export function JiraConnectionsManager({
+  connections,
+  canManage = true,
+}: {
+  connections: IntegrationConnection[];
+  canManage?: boolean;
+}) {
   const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [editing, setEditing] = useState<IntegrationConnection | null>(null);
   const [name, setName] = useState("");
   const [baseUrl, setBaseUrl] = useState("");
@@ -304,6 +301,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
     setToken("");
     startTransition(async () => {
       const res = await saveIntegrationAction(payload);
+      if (gate(res)) return;
       if (res.ok) {
         setNotice({ ok: true, text: editing ? "Đã cập nhật kết nối." : "Đã tạo kết nối. Token đã được mã hoá ở server." });
         resetForm();
@@ -318,6 +316,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
     setNotice(null);
     startTransition(async () => {
       const res = await clearIntegrationTokenAction(c.id);
+      if (gate(res)) return;
       setNotice(res.ok ? { ok: true, text: "Đã xoá token." } : { ok: false, text: res.error ?? "Không xoá được token." });
     });
   }
@@ -327,6 +326,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
     setNotice(null);
     startTransition(async () => {
       const res = await deleteIntegrationAction(c.id);
+      if (gate(res)) return;
       if (res.ok && editing?.id === c.id) resetForm();
       setNotice(res.ok ? { ok: true, text: "Đã xoá kết nối." } : { ok: false, text: res.error ?? "Không xoá được." });
     });
@@ -361,6 +361,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
     }
     startTransition(async () => {
       const res = await migrateLocalIntegrationsAction(items);
+      if (gate(res)) return;
       items = undefined; // thả tham chiếu tới bản có token
       if (res.results.length === 0) {
         setNotice({ ok: false, text: res.error ?? "Không chuyển được." });
@@ -408,10 +409,10 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
       </div>
 
       <p className="mt-3 text-xs text-[var(--color-ink-muted)]">
-        {JIRA_URL_HINT} &ldquo;Cào ngay&rdquo; cần mật khẩu nhập/đồng bộ (IMPORT_COMMIT_SECRET) mỗi lần chạy.
+        {JIRA_URL_HINT} &ldquo;Cào ngay&rdquo; do core kiểm quyền (cần quyền đồng bộ).
       </p>
 
-      {leftovers.length > 0 && (
+      {canManage && leftovers.length > 0 && (
         <div className="mt-4 rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
           <p className="text-sm font-semibold text-[var(--color-ink)]">
             Trình duyệt còn {leftovers.length} cấu hình Jira cũ (token đang nằm ở dạng chữ rõ trong localStorage)
@@ -461,17 +462,21 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
                 </div>
                 <div className="flex flex-wrap items-start gap-2">
                   <SyncPanel connection={c} disabled={pending} />
+                  {canManage && (
                   <button type="button" onClick={() => startEdit(c)} disabled={pending} aria-label={`Sửa ${c.name}`} className="rounded-lg p-2 text-[var(--color-ink-muted)] hover:bg-blue-500/10 hover:text-blue-500 disabled:opacity-50">
                     <Edit2 className="size-4" />
                   </button>
-                  {c.has_secret && (
+                  )}
+                  {canManage && c.has_secret && (
                     <button type="button" onClick={() => handleClearToken(c)} disabled={pending} className="rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs font-medium hover:bg-[var(--color-surface-hover)] disabled:opacity-50">
                       Xoá token
                     </button>
                   )}
+                  {canManage && (
                   <button type="button" onClick={() => handleDelete(c)} disabled={pending} aria-label={`Xoá ${c.name}`} className="rounded-lg p-2 text-[var(--color-ink-muted)] hover:bg-red-500/10 hover:text-red-500 disabled:opacity-50">
                     <Trash2 className="size-4" />
                   </button>
+                  )}
                 </div>
               </div>
             ))}
@@ -479,6 +484,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
         </div>
       )}
 
+      {canManage && (
       <details open={connections.length === 0 || editing !== null} className="mt-4">
         <summary className="flex w-max cursor-pointer select-none items-center gap-2 text-sm font-bold text-blue-500 hover:text-blue-600">
           {editing ? <><Edit2 className="size-4" /> Sửa kết nối</> : <><Plus className="size-4" /> Thêm kết nối Jira mới</>}
@@ -540,6 +546,7 @@ export function JiraConnectionsManager({ connections }: { connections: Integrati
           </div>
         </form>
       </details>
+      )}
 
       {notice && (
         <div

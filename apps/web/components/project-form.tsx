@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useRef, useState, useTransition } from "react";
 
 import { createProjectAction } from "@/app/actions";
@@ -11,6 +12,7 @@ const LABEL_CLASS = "mb-1 block text-xs font-medium text-[var(--color-ink-muted)
 export function ProjectForm() {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const formRef = useRef<HTMLFormElement>(null);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -24,6 +26,7 @@ export function ProjectForm() {
 
     startTransition(async () => {
       const result = await createProjectAction(key, name, color || undefined);
+      if (gate(result)) return;
       if (result.ok) {
         formRef.current?.reset();
       } else {

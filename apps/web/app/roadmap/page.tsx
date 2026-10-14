@@ -1,3 +1,4 @@
+import { loadDocAccess } from "@/components/doc-access";
 import Link from "next/link";
 
 import {
@@ -47,7 +48,9 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 }
 
 export default async function RoadmapPage() {
-  const snapshot = await loadSnapshot();
+  // Song song: kiểm phiên ở core (getMe dùng chung, không thêm request) và nạp số liệu.
+  const [access, snapshot] = await Promise.all([loadDocAccess(), loadSnapshot()]);
+  if (access.error) return access.error;
 
   const allItems = [...PHASES.flatMap((phase) => phase.items), ...FOUNDATION];
   const overall = progressPercent(allItems);

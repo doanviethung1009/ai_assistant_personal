@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { Suspense } from "react";
 import { Menu } from "lucide-react";
 
 import { MainNav } from "@/components/main-nav";
-import { DATA_SOURCE, getDisplayTimezoneApi } from "@/lib/api";
+import { UserMenu, UserMenuSkeleton } from "@/components/user-menu";
+import { DATA_SOURCE, DISPLAY_TZ, getMe } from "@/lib/api";
+import { authEnabled } from "@/lib/auth-config";
+import { classifyCoreError } from "@/lib/core-errors";
+import { getSessionUser } from "@/lib/session";
 import { TimezoneProvider } from "@/lib/timezone-context";
 import { ChatAssistant } from "@/components/chat-assistant";
 
@@ -14,20 +20,62 @@ export const metadata: Metadata = {
   description: "Quản lý công việc cá nhân, theo dõi task hàng ngày",
 };
 
-// Layout đọc múi giờ từ backend lúc chạy; không để Next prerender lúc build (build không có api).
+// DISPLAY_TZ đọc biến TZ lúc chạy; không để Next prerender lúc build kẻo bake múi giờ của máy build.
 export const dynamic = "force-dynamic";
+
+/**
+ * Khối người dùng ở sidebar. Nằm trong <Suspense> nên khung trang (nav, tiêu đề) hiện ngay, không
+ * chờ GET /me. getMe bọc React.cache nên trang con dùng chung kết quả, không gọi core lần hai.
+ * Chỉ token_invalid/user_inactive mới đăng xuất; core sập chỉ hiện dòng cảnh báo nhỏ.
+ */
+async function UserMenuLoader() {
+  try {
+    return <UserMenu me={await getMe()} />;
+  } catch (error) {
+    const kind = classifyCoreError(error);
+    if (kind === "session_expired") redirect("/auth/expired");
+    if (kind === "unauthenticated") redirect("/login");
+    return (
+      <p role="status" className="border-t border-[var(--color-border)] px-4 py-3 text-xs text-[var(--color-warn)]">
+        Không kết nối được core
+      </p>
+    );
+  }
+}
+
+/**
+ * Nav lọc theo quyền. Fallback (trong lúc chờ /me hoặc khi core lỗi) là nav không có mục cần quyền,
+ * nên khung hiện ngay. getMe dùng chung React.cache với UserMenuLoader và trang con: một lời gọi.
+ */
+async function NavLoader() {
+  try {
+    return <MainNav permissions={(await getMe()).permissions} />;
+  } catch (error) {
+    const kind = classifyCoreError(error);
+    if (kind === "session_expired") redirect("/auth/expired");
+    if (kind === "unauthenticated") redirect("/login");
+    return <MainNav />;
+  }
+}
 
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  // Múi giờ lấy ở server rồi chuyển xuống client qua context, để server render và hydrate
-  // dùng cùng một chuỗi. Hàm này có dự phòng nên layout không vỡ khi API sập.
-  const { timezone } = await getDisplayTimezoneApi();
+  // Chỉ giải mã cookie, không gọi core. api mà chưa có phiên (/login, /config-error): không nav, không gọi core.
+  const loggedIn = authEnabled() ? (await getSessionUser()) !== null : false;
+  const bare = authEnabled() && !loggedIn;
+  if (bare) {
+    return (
+      <html lang="vi">
+        <body className="h-screen overflow-y-auto bg-[var(--color-surface)] antialiased">{children}</body>
+      </html>
+    );
+  }
 
   return (
     <html lang="vi">
       <body className="flex h-screen overflow-hidden bg-[var(--color-surface)] antialiased">
-        <TimezoneProvider tz={timezone}>
+        <TimezoneProvider tz={DISPLAY_TZ}>
         <a
           href="#main"
           className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded focus:bg-[var(--color-accent)] focus:px-3 focus:py-2 focus:text-white"
@@ -48,8 +96,19 @@ export default async function RootLayout({
             </div>
           </div>
           <div className="flex-1 overflow-y-auto">
-            <MainNav />
+            {loggedIn ? (
+              <Suspense fallback={<MainNav />}>
+                <NavLoader />
+              </Suspense>
+            ) : (
+              <MainNav permissions="all" />
+            )}
           </div>
+          {loggedIn ? (
+            <Suspense fallback={<UserMenuSkeleton />}>
+              <UserMenuLoader />
+            </Suspense>
+          ) : null}
         </aside>
 
         {/* ── Main Content Area ──────────────────────────────────────── */}
@@ -89,6 +148,7 @@ export default async function RootLayout({
                 >
                   Đang lưu vào file JSON cục bộ, chưa dùng Postgres. Xem và backup
                   ở trang <Link href="/data" className="text-[var(--color-accent)] underline">Dữ liệu</Link>.
+                  Chế độ này không có đăng nhập, không mở cho người khác truy cập.
                 </p>
               ) : null}
 

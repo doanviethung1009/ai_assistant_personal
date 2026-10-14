@@ -39,8 +39,13 @@ const EXPORTS = [
 ];
 
 
-/** Lưới thẻ tải về. Mỗi thẻ là một link `download` tới /api/export. */
-export function DataExportGrid() {
+/**
+ * Lưới thẻ tải về. Mỗi thẻ là một link `download` tới /api/export.
+ * `vaultOnly` (chế độ api): store cục bộ không phải dữ liệu thật nên các entity khác trả 501; chỉ
+ * giữ link Két (file của chính người đăng nhập).
+ */
+export function DataExportGrid({ vaultOnly = false }: { vaultOnly?: boolean }) {
+  const items = vaultOnly ? EXPORTS.filter((item) => item.href.includes("entity=vault")) : EXPORTS;
   return (
     <section>
       <div className="mb-5 flex items-center gap-3">
@@ -50,7 +55,7 @@ export function DataExportGrid() {
         <h2 className="text-xl font-bold tracking-tight">Xuất dữ liệu (Backup)</h2>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {EXPORTS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <a

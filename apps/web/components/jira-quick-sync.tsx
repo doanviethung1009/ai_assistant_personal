@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { syncJiraAction } from "@/app/jira-actions";
@@ -22,6 +23,7 @@ interface JiraLocalConfig {
 }
 
 export function JiraQuickSync() {
+  const gate = useActionAuth();
   const router = useRouter();
   const [configs, setConfigs] = useState<JiraLocalConfig[]>([]);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -72,6 +74,7 @@ export function JiraQuickSync() {
       }
 
       const response = await syncJiraAction(fd);
+      if (gate(response)) return;
       if (response.ok) {
         syncedCount++;
         if ("skipped_personal" in response) skippedPersonal += response.skipped_personal ?? 0;

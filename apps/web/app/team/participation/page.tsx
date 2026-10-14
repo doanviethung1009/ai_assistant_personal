@@ -1,7 +1,9 @@
+import { ForbiddenPanel } from "@/components/forbidden-panel";
+import { canView } from "@/lib/auth-guard";
 import { ApiErrorPanel } from "@/components/api-error";
 import { TeamParticipation } from "@/components/team-participation";
 import { TeamTabs } from "@/components/team-tabs";
-import { getDisplayTimezoneApi, getParticipation } from "@/lib/api";
+import { DISPLAY_TZ, getParticipation } from "@/lib/api";
 import { todayInDisplayTz } from "@/lib/format";
 import { resolvePeriod } from "@/lib/period";
 
@@ -23,6 +25,7 @@ export default async function TeamParticipationPage({
 }: {
   searchParams: Promise<{ people?: string | string[]; range?: string; from?: string; to?: string }>;
 }) {
+  if (!(await canView("team:read"))) return <ForbiddenPanel />;
   const sp = await searchParams;
   // Lọc ở đây để URL dài hoặc có tên rỗng không biến thành lỗi 422 từ API.
   const people = [
@@ -34,9 +37,8 @@ export default async function TeamParticipationPage({
     ),
   ].slice(0, MAX_PEOPLE);
 
-  // "Hôm nay" theo múi giờ người dùng đã chọn, cùng múi giờ backend dùng để đổi ngày sang UTC.
-  const { timezone } = await getDisplayTimezoneApi();
-  const period = resolvePeriod(sp.range, sp.from, sp.to, todayInDisplayTz(timezone));
+  // "Hôm nay" theo múi giờ server, cùng múi giờ backend dùng để đổi ngày sang UTC.
+  const period = resolvePeriod(sp.range, sp.from, sp.to, todayInDisplayTz(DISPLAY_TZ));
 
   let data;
   try {
@@ -45,7 +47,7 @@ export default async function TeamParticipationPage({
     return (
       <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
         <TeamTabs active="participation" />
-        <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />
+        <ApiErrorPanel error={error} />
       </div>
     );
   }

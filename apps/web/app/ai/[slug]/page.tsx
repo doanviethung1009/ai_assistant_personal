@@ -1,3 +1,6 @@
+import { ForbiddenPanel } from "@/components/forbidden-panel";
+import { loadDocAccess } from "@/components/doc-access";
+import { isInfraDoc } from "@/lib/doc-access";
 import { notFound } from "next/navigation";
 import { Markdown } from "@/components/markdown";
 import { DOCS, readDoc, stripFrontMatter } from "@/lib/docs";
@@ -15,6 +18,10 @@ export default async function AiDocPage({
   if (!entry) {
     notFound();
   }
+
+  const access = await loadDocAccess();
+  if (access.error) return access.error;
+  if (isInfraDoc(entry.slug) && !access.canInfra) return <ForbiddenPanel />;
 
   const content = await readDoc(entry);
 

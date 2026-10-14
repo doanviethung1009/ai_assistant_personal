@@ -98,8 +98,6 @@ export interface DataFile {
     minutes_logged_date: string;
     /** Danh sách người dùng (để lọc task của mình) */
     current_users?: string[];
-    /** Múi giờ hiển thị người dùng chọn (từ v7). Vắng = dùng mặc định. */
-    display_timezone?: string;
   };
 }
 
@@ -111,7 +109,7 @@ export interface DataFile {
  *   4 → phiên bản dọn dẹp (bỏ ai_logs khỏi file)
  *   5 → thêm scope cho task (work | personal)
  *   6 → lưu `sync_urls` (trước đó snapshot() bỏ sót, nên mất sau mỗi lần khởi động)
- *   7 → thêm `due_all_day` cho task (hạn cả ngày của Jira), `meta.display_timezone`
+ *   7 → thêm `due_all_day` cho task (hạn cả ngày của Jira), `meta.display_timezone` (nay đã gỡ: múi giờ theo server, file cũ có field này vẫn đọc được và bị bỏ qua)
  *   8 → thêm `reporter` cho task (tên hiển thị người tạo issue Jira, chỉ để xem)
  */
 export const SCHEMA_VERSION = 8;

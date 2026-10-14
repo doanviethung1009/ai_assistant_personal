@@ -129,7 +129,7 @@ export default async function NotesPage({
   } catch (error) {
     return (
       <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
+        error={error}
       />
     );
   }

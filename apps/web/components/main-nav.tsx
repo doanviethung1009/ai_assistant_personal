@@ -2,18 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { hasPermission, type PermissionSet } from "@/lib/permissions";
 import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, isItemActive, type NavItem } from "@/lib/nav";
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
-export function MainNav() {
+/**
+ * `permissions` quyết định mục nào hiện: `"all"` ở chế độ cục bộ (không đăng nhập). Mặc định `[]`
+ * (ẩn mục có yêu cầu quyền) dùng làm fallback khi chưa có /me, để khung nav hiện ngay.
+ */
+export function MainNav({ permissions = [] }: { permissions?: PermissionSet }) {
   const pathname = usePathname();
+  const allowed = (item: NavItem) => !item.permission || hasPermission(permissions, item.permission);
 
   return (
     <nav aria-label="Điều hướng chính" className="flex flex-col gap-7 px-4 py-6">
       <CollapsibleSection title="Hàng ngày" defaultOpen={true}>
-        {PRIMARY_NAV.map((item) => (
+        {PRIMARY_NAV.filter(allowed).map((item) => (
           <li key={item.href}>
             <PrimaryLink item={item} pathname={pathname} />
           </li>
@@ -29,7 +35,7 @@ export function MainNav() {
       </CollapsibleSection>
 
       <CollapsibleSection title="Tài liệu & Hệ thống" defaultOpen={false}>
-        {SECONDARY_NAV.map((item) => (
+        {SECONDARY_NAV.filter(allowed).map((item) => (
           <li key={item.href}>
             <SecondaryLink item={item} pathname={pathname} />
           </li>

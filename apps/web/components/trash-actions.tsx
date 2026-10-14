@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition } from "react";
 
 import { emptyTrashAction, purgeExpiredAction } from "@/app/actions";
@@ -9,6 +10,7 @@ const BUTTON =
 
 export function TrashActions({ total }: { total: number }) {
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmingEmpty, setConfirmingEmpty] = useState(false);
@@ -21,6 +23,7 @@ export function TrashActions({ total }: { total: number }) {
     setMessage(null);
     startTransition(async () => {
       const result = await action();
+      if (gate(result)) return;
       if (result.ok) {
         setMessage(
           result.purged === 0

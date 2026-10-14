@@ -1,5 +1,6 @@
 "use server";
 
+import { requirePermission, requireSession, type ActionAuthCode } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
 import { IS_LOCAL } from "@/lib/api";
 import * as engine from "@/lib/store/engine";
@@ -11,7 +12,7 @@ import { migrate } from "@/lib/store/json-file";
 import type { DataFile } from "@/lib/store/types";
 import { syncUrlError } from "@/lib/sync-url-policy";
 import { scopeOf } from "@/lib/task-scope";
-import { authorizeImport, pushRowsToCore } from "@/lib/excel-upsert";
+import { pushRowsToCore } from "@/lib/excel-upsert";
 import type { UpsertSummary } from "@/lib/types";
 import * as XLSX from "xlsx";
 
@@ -36,6 +37,8 @@ function parseJiraDate(val: any): string | null {
 }
 
 export async function importBulkTasksAction(rows: any[]) {
+  const auth = await requirePermission("integration:sync");
+  if (!auth.ok) return auth;
   if (!IS_LOCAL) throw new Error("Chỉ hỗ trợ chế độ Local File");
 
   const db = engine.state();
@@ -202,30 +205,23 @@ export async function importBulkTasksAction(rows: any[]) {
 /** Kết quả nhập Excel: chế độ file trả đếm đơn giản, chế độ api trả `summary` đầy đủ từ core. */
 export type BulkFileResult =
   | { ok: true; added: number; updated: number; skipped_personal: number; summary?: UpsertSummary }
-  | { ok: false; error: string };
+  | { ok: false; error: string; code?: ActionAuthCode };
 
 /**
  * Đọc file Excel/CSV người dùng tải lên rồi nhập task.
  *
  * Chế độ file: engine như cũ. Chế độ api: web vẫn đọc file, ánh xạ dòng sang TaskUpsert và
  * đẩy qua `upsert-batch` của core với `source` CỐ ĐỊNH `jira` (khớp chế độ file, KHÔNG nhận
- * từ client). Cần mật khẩu `import_secret` vì đây là thao tác ghi đè hàng loạt.
+ * từ client). Quyền ghi do core kiểm theo role (không còn mật khẩu nhập).
  */
 export async function importBulkFileAction(formData: FormData): Promise<BulkFileResult> {
+  const auth = await requirePermission("integration:sync");
+  if (!auth.ok) return auth;
   try {
     const file = formData.get("file");
     if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Không tìm thấy file" };
     // Cùng trần 20 MB với đường URL (B2) và body tối đa của upsert-batch.
     if (file.size > 20 * 1024 * 1024) return { ok: false, error: "File vượt quá 20 MB" };
-
-    // Chế độ api: xác thực mật khẩu với core NGAY, trước khi đọc file hay XLSX.read (tốn
-    // CPU/RAM), để request sai mật khẩu bị từ chối sớm.
-    let secret = "";
-    if (!IS_LOCAL) {
-      const auth = await authorizeImport(formData.get("import_secret"));
-      if (!auth.ok) return { ok: false, error: auth.error };
-      secret = auth.secret;
-    }
 
     const buffer = await file.arrayBuffer();
     // sheetRows chặn sheet khổng lồ làm phình RAM khi parse, như đường URL (MAX_SYNC_ROWS).
@@ -240,8 +236,8 @@ export async function importBulkFileAction(formData: FormData): Promise<BulkFile
     if (!rows || rows.length === 0) return { ok: false, error: "Sheet rỗng" };
 
     if (!IS_LOCAL) {
-      const out = await pushRowsToCore(rows, secret);
-      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại" };
+      const out = await pushRowsToCore(rows);
+      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại", code: out.code };
       revalidatePath("/", "layout");
       return {
         ok: true,
@@ -253,6 +249,7 @@ export async function importBulkFileAction(formData: FormData): Promise<BulkFile
     }
 
     const res = await importBulkTasksAction(rows);
+    if (!("added" in res)) return { ok: false, error: res.error };
     return { ok: true, added: res.added, updated: res.updated, skipped_personal: res.skipped_personal };
   } catch (error) {
     // Lỗi parse XLSX có thể chứa chi tiết nội dung file; chỉ báo chung.
@@ -272,6 +269,8 @@ function cleanList(value: unknown, requiredStrings: string[]): Record<string, un
 }
 
 export async function restoreFromJsonAction(jsonData: any) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
 
   try {
@@ -378,6 +377,8 @@ export async function restoreFromJsonAction(jsonData: any) {
 }
 
 export async function processJsonUploadAction(formData: FormData) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!IS_LOCAL) return { ok: false, error: "Chỉ hỗ trợ chế độ Local File" };
 
   try {

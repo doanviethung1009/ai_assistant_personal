@@ -1,10 +1,12 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition, useRef } from "react";
 import { processJsonUploadAction } from "@/app/actions-import";
 
 export function RestoreJsonManager() {
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -22,6 +24,7 @@ export function RestoreJsonManager() {
     startTransition(async () => {
       try {
         const res = await processJsonUploadAction(formData);
+        if (gate(res)) return;
         if (res.ok) {
           setResult({ ok: true, message: res.message || "Thành công!" });
           formRef.current?.reset();

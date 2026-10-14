@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition } from "react";
 import { updateProjectAction, deleteProjectAction } from "@/app/actions";
 import type { Project } from "@/lib/types";
@@ -12,6 +13,7 @@ export function ProjectItem({ project }: { project: Project }) {
   const [isEditing, setIsEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
 
   function handleUpdate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -32,6 +34,7 @@ export function ProjectItem({ project }: { project: Project }) {
         color: color || null,
         is_archived
       });
+      if (gate(result)) return;
       if (result.ok) {
         setIsEditing(false);
       } else {
@@ -44,6 +47,7 @@ export function ProjectItem({ project }: { project: Project }) {
     if (!window.confirm(`Bạn có chắc muốn xoá dự án ${project.key}? Task thuộc dự án này sẽ bị gỡ liên kết.`)) return;
     startTransition(async () => {
       const result = await deleteProjectAction(project.id);
+      if (gate(result)) return;
       if (!result.ok) {
         alert(result.error ?? "Xoá project thất bại");
       }
@@ -149,6 +153,7 @@ export function ProjectItem({ project }: { project: Project }) {
           đã lưu trữ
         </span>
       ) : null}
+      {project.can_edit === false ? null : (
       <div className="flex items-center gap-2 ml-4">
         <button
           onClick={() => setIsEditing(true)}
@@ -164,6 +169,7 @@ export function ProjectItem({ project }: { project: Project }) {
           {pending ? "..." : "Xoá"}
         </button>
       </div>
+      )}
     </li>
   );
 }

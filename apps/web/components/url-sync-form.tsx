@@ -1,11 +1,13 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition } from "react";
 import { syncFromUrlAction } from "@/app/actions";
 
 export function UrlSyncForm() {
   const [url, setUrl] = useState("");
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   function handleSync(e: React.FormEvent) {
@@ -15,6 +17,7 @@ export function UrlSyncForm() {
     setResult(null);
     startTransition(async () => {
       const res = await syncFromUrlAction(url.trim());
+      if (gate(res)) return;
       if (res.ok) {
         setResult({ ok: true, message: `Thành công! Đã cào thêm ${res.count} task mới.` });
         setUrl("");

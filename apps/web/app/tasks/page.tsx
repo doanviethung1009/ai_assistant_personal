@@ -91,7 +91,7 @@ export default async function TasksPage({
   } catch (error) {
     return (
       <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
+        error={error}
       />
     );
   }

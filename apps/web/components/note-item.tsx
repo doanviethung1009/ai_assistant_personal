@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionAuth } from "@/lib/use-action-auth";
+import { useOptimistic, useState, useTransition } from "react";
 
 import {
   archiveNoteAction,
@@ -35,6 +36,9 @@ export function NoteItem({
   const archivedAt = note.archived_at ?? null;
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
+  // Ghim/bỏ ghim đổi ngay, tự quay lại nếu action lỗi hoặc hết phiên.
+  const [pinned, setOptimisticPinned] = useOptimistic<boolean, boolean>(note.is_pinned, (_c, next) => next);
   const [expanded, setExpanded] = useState(false);
 
   const lines = note.content.split("\n");
@@ -43,10 +47,12 @@ export function NoteItem({
   // thứ lẽ ra đọc được ngay.
   const shown = isLong && !expanded ? lines.slice(0, 12).join("\n") : note.content;
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>) {
+  function run(action: () => Promise<{ ok: boolean; error?: string; code?: string }>, optimisticPin?: boolean) {
     setError(null);
     startTransition(async () => {
+      if (optimisticPin !== undefined) setOptimisticPinned(optimisticPin);
       const result = await action();
+      if (gate(result)) return;
       if (!result.ok) setError(result.error ?? "Không thực hiện được");
     });
   }
@@ -54,7 +60,7 @@ export function NoteItem({
   return (
     <li className="flex flex-col gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-3">
       <div className="flex flex-wrap items-start gap-2">
-        {note.is_pinned ? (
+        {pinned ? (
           <span aria-label="Đã ghim" title="Đã ghim" className="text-sm">
             📌
           </span>
@@ -133,10 +139,10 @@ export function NoteItem({
         <button
           type="button"
           disabled={pending}
-          onClick={() => run(() => toggleNotePinAction(note.id, !note.is_pinned))}
+          onClick={() => run(() => toggleNotePinAction(note.id, !pinned), !pinned)}
           className={ACTION_CLASS}
         >
-          {note.is_pinned ? "Bỏ ghim" : "Ghim"}
+          {pinned ? "Bỏ ghim" : "Ghim"}
         </button>
 
         {archiveSupported ? (

@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useMemo, useRef, useState, useTransition } from "react";
 
 import { createNoteAction } from "@/app/actions";
@@ -21,6 +22,7 @@ export function NoteForm({
 }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const formRef = useRef<HTMLFormElement>(null);
 
   // Nội dung giữ ở state để chạy heuristic ngay khi gõ. Các field khác để
@@ -61,6 +63,7 @@ export function NoteForm({
         isPinned: form.get("is_pinned") === "on",
         isDangerous,
       });
+      if (gate(result)) return;
 
       if (result.ok) {
         formRef.current?.reset();

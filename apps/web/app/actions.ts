@@ -1,5 +1,6 @@
 "use server";
 
+import { requirePermission, requireSession, toActionAuthError, type ActionAuthCode } from "@/lib/auth-guard";
 import * as api from "@/lib/api";
 import { revalidatePath } from "next/cache";
 import { invalidateCoreCache } from "@/lib/core-cache";
@@ -35,11 +36,13 @@ import {
   type ImportSummary,
 } from "@/lib/store/transfer";
 import type { ImportReport, NoteKind, TaskPriority, TaskScope, TaskStatus, UpsertSummary } from "@/lib/types";
-import { authorizeImport, pushRowsToCore } from "@/lib/excel-upsert";
+import { pushRowsToCore } from "@/lib/excel-upsert";
 
 export interface ActionResult {
   ok: boolean;
   error?: string;
+  /** Có khi lỗi là phiên/quyền: client chuyển trang (session_expired, unauthenticated) hoặc báo thiếu quyền. */
+  code?: ActionAuthCode;
 }
 
 function revalidateAll(): void {
@@ -54,6 +57,14 @@ function revalidateAll(): void {
 }
 
 function toResult(error: unknown): ActionResult {
+  const authError = toActionAuthError(error);
+  if (authError) {
+    // 403 `forbidden` của core là câu tự viết (ForbiddenError), giữ lại để nói rõ thiếu quyền gì.
+    if (authError.code === "forbidden" && error instanceof CoreApiError && error.message) {
+      return { ...authError, error: error.message.slice(0, 300) };
+    }
+    return authError;
+  }
   if (error instanceof CoreApiError) {
     return { ok: false, error: error.message };
   }
@@ -78,6 +89,8 @@ export interface NewTaskInput {
 }
 
 export async function createTaskAction(input: NewTaskInput): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   const title = input.title?.trim();
   if (!title) {
     return { ok: false, error: "Tiêu đề không được để trống" };
@@ -122,6 +135,8 @@ export async function setScopeAction(
   id: string,
   scope: TaskScope,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (scope !== "work" && scope !== "personal") {
     return { ok: false, error: "scope phải là 'work' hoặc 'personal'" };
   }
@@ -138,6 +153,8 @@ export async function setStatusAction(
   id: string,
   status: TaskStatus,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await patchTask(id, { status });
     revalidateAll();
@@ -151,6 +168,8 @@ export async function setScheduleAction(
   id: string,
   scheduledFor: string | null,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await patchTask(id, { scheduled_for: scheduledFor });
     revalidateAll();
@@ -164,6 +183,8 @@ export async function logTimeAction(
   id: string,
   minutes: number,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!Number.isInteger(minutes) || minutes <= 0) {
     return { ok: false, error: "Số phút phải là số nguyên dương" };
   }
@@ -178,6 +199,8 @@ export async function logTimeAction(
 
 /** Xoá mềm: task vào thùng rác, còn phục hồi được trong thời hạn giữ. */
 export async function deleteTaskAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await deleteTask(id);
     revalidateAll();
@@ -190,6 +213,8 @@ export async function deleteTaskAction(id: string): Promise<ActionResult> {
 // ── Thùng rác ──────────────────────────────────────────────────────────
 
 export async function restoreTaskAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await restoreTask(id);
     revalidateAll();
@@ -201,6 +226,8 @@ export async function restoreTaskAction(id: string): Promise<ActionResult> {
 
 /** Xoá vĩnh viễn một task trong thùng rác. Không hoàn tác được. */
 export async function purgeTaskAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await purgeTask(id);
     revalidateAll();
@@ -216,6 +243,8 @@ export interface PurgeActionResult extends ActionResult {
 
 /** Dọn những task đã quá thời hạn giữ. */
 export async function purgeExpiredAction(): Promise<PurgeActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     const result = await purgeExpired();
     revalidateAll();
@@ -227,6 +256,8 @@ export async function purgeExpiredAction(): Promise<PurgeActionResult> {
 
 /** Xoá vĩnh viễn toàn bộ thùng rác, không chờ hết hạn. */
 export async function emptyTrashAction(): Promise<PurgeActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     const result = await emptyTrash();
     revalidateAll();
@@ -247,6 +278,8 @@ export async function updateProjectAction(
     is_archived?: boolean;
   },
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     const payload = { ...input };
     if (payload.key) payload.key = payload.key.trim().toUpperCase();
@@ -263,6 +296,8 @@ export async function updateProjectAction(
 }
 
 export async function deleteProjectAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await api.deleteProject(id);
     revalidateAll();
@@ -277,6 +312,8 @@ export async function createProjectAction(
   name: string,
   color?: string,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   const normalizedKey = key?.trim().toUpperCase();
   if (!normalizedKey || !name?.trim()) {
     return { ok: false, error: "Cần cả mã và tên project" };
@@ -319,6 +356,8 @@ export interface NewNoteInput {
 export async function createNoteAction(
   input: NewNoteInput,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   const title = input.title?.trim();
   if (!title) {
     return { ok: false, error: "Tiêu đề không được để trống" };
@@ -361,6 +400,8 @@ export async function updateNoteAction(
   id: string,
   patch: Record<string, unknown>,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (typeof patch.title === "string" && !patch.title.trim()) {
     return { ok: false, error: "Tiêu đề không được để trống" };
   }
@@ -389,6 +430,8 @@ export async function toggleNotePinAction(
   id: string,
   isPinned: boolean,
 ): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await patchNote(id, { is_pinned: isPinned });
     revalidateAll();
@@ -406,6 +449,8 @@ export async function toggleNotePinAction(
  * dùng. Số liệu sẽ đúng ở lần tải trang sau.
  */
 export async function markNoteUsedAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await markNoteUsed(id);
     return { ok: true };
@@ -416,6 +461,8 @@ export async function markNoteUsedAction(id: string): Promise<ActionResult> {
 
 /** Xoá mềm: note vào thùng rác, còn phục hồi được trong thời hạn giữ. */
 export async function deleteNoteAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await deleteNote(id);
     revalidateAll();
@@ -427,6 +474,8 @@ export async function deleteNoteAction(id: string): Promise<ActionResult> {
 
 /** Lưu trữ note: ẩn khỏi tab Đang dùng, không bị dọn như thùng rác. */
 export async function archiveNoteAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await archiveNote(id);
     revalidateAll();
@@ -437,6 +486,8 @@ export async function archiveNoteAction(id: string): Promise<ActionResult> {
 }
 
 export async function unarchiveNoteAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await unarchiveNote(id);
     revalidateAll();
@@ -447,6 +498,8 @@ export async function unarchiveNoteAction(id: string): Promise<ActionResult> {
 }
 
 export async function restoreNoteAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await restoreNote(id);
     revalidateAll();
@@ -458,6 +511,8 @@ export async function restoreNoteAction(id: string): Promise<ActionResult> {
 
 /** Xoá vĩnh viễn một note trong thùng rác. Không hoàn tác được. */
 export async function purgeNoteAction(id: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     await purgeNote(id);
     revalidateAll();
@@ -468,6 +523,8 @@ export async function purgeNoteAction(id: string): Promise<ActionResult> {
 }
 
 export async function purgeExpiredNotesAction(): Promise<PurgeActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     const result = await purgeExpiredNotes();
     revalidateAll();
@@ -479,6 +536,8 @@ export async function purgeExpiredNotesAction(): Promise<PurgeActionResult> {
 
 /** Xoá vĩnh viễn toàn bộ thùng rác sổ tay, không chờ hết hạn. */
 export async function emptyNoteTrashAction(): Promise<PurgeActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   try {
     const result = await emptyNoteTrash();
     revalidateAll();
@@ -507,6 +566,8 @@ export interface ImportActionResult extends ActionResult {
 export async function importDataAction(
   formData: FormData,
 ): Promise<ImportActionResult> {
+  const auth = await requirePermission("data:import");
+  if (!auth.ok) return auth;
   const file = formData.get("file");
   const kind = String(formData.get("kind") ?? "");
   const mode = String(formData.get("mode") ?? "merge") as ImportMode;
@@ -546,10 +607,14 @@ export async function importDataAction(
     revalidateAll();
     return { ok: true, summary };
   } catch (error) {
-    console.error("nhập dữ liệu thất bại", error);
+    const authError = toActionAuthError(error);
+    if (authError) return authError;
+    console.error("nhập dữ liệu thất bại", error instanceof Error ? error.name : "unknown");
+    // api: lỗi từ core có thể chứa chi tiết nội bộ nên chỉ trả câu chung. Cục bộ (file/memory) không có
+    // ranh giới tin cậy và message là lỗi kiểm tra file của chính người dùng nên giữ để họ sửa file.
     return {
       ok: false,
-      error: error instanceof Error ? error.message : "Nhập dữ liệu thất bại",
+      error: api.IS_LOCAL && error instanceof Error ? error.message : "Nhập dữ liệu thất bại",
     };
   }
 }
@@ -604,27 +669,19 @@ function toDirectDownloadUrl(url: string): string {
  *
  * Chế độ api: web vẫn tải và đọc file (giữ allowlist + stream trần 20 MB), ánh xạ dòng sang
  * TaskUpsert rồi đẩy qua `upsert-batch` với `source` cố định `jira` (khớp chế độ file).
- * Cần mật khẩu nhập vì là ghi đè hàng loạt; mật khẩu không bao giờ vào log hay thông báo lỗi.
+ * Quyền ghi đè hàng loạt do core kiểm theo role.
  * Mọi tham số kiểm kiểu lại ở đây vì Server Action là endpoint công khai.
  */
 export async function syncFromUrlAction(
   url: unknown,
-  secret?: unknown,
 ): Promise<ActionResult & { count?: number; skipped_personal?: number; summary?: UpsertSummary }> {
+  const auth = await requirePermission("integration:sync");
+  if (!auth.ok) return auth;
   if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   // Server Action là endpoint công khai: kiểm URL gốc trước, rồi kiểm lại ở MỖI bước
   // redirect bên trong fetchAllowlisted (SSRF).
   const rejected = syncUrlError(url);
   if (rejected !== null) return { ok: false, error: rejected };
-
-  // Chế độ api: hỏi core xem mật khẩu đúng không TRƯỚC khi fetch URL, để server không bị
-  // dùng làm công cụ tải URL ngoài bởi request chưa xác thực.
-  let verifiedSecret = "";
-  if (!api.IS_LOCAL) {
-    const auth = await authorizeImport(secret);
-    if (!auth.ok) return { ok: false, error: auth.error };
-    verifiedSecret = auth.secret;
-  }
 
   try {
     const downloadUrl = toDirectDownloadUrl(url);
@@ -651,8 +708,8 @@ export async function syncFromUrlAction(
     if (!rows || rows.length === 0) throw new Error('Sheet rỗng, không có dữ liệu');
 
     if (!api.IS_LOCAL) {
-      const out = await pushRowsToCore(rows, verifiedSecret);
-      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại" };
+      const out = await pushRowsToCore(rows);
+      if (!out.ok || !out.summary) return { ok: false, error: out.error ?? "Nhập thất bại", code: out.code };
       revalidateAll();
       return {
         ok: true,
@@ -665,6 +722,7 @@ export async function syncFromUrlAction(
     // Delegate to the unified import logic (handles Company, Projects, Labels, dedup, etc.)
     const { importBulkTasksAction } = await import("@/app/actions-import");
     const result = await importBulkTasksAction(rows);
+    if (!("added" in result)) return { ok: false, error: result.error };
 
     revalidateAll();
     return {
@@ -686,6 +744,8 @@ import { addSyncUrlApi, removeSyncUrlApi } from "@/lib/api";
 export type SyncUrlActionResult = ActionResult & { dropped?: number };
 
 export async function addSyncUrlAction(url: string): Promise<SyncUrlActionResult> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return auth;
   if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   try {
     const { dropped } = await addSyncUrlApi(url.trim());
@@ -697,6 +757,8 @@ export async function addSyncUrlAction(url: string): Promise<SyncUrlActionResult
 }
 
 export async function removeSyncUrlAction(url: string): Promise<SyncUrlActionResult> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return auth;
   if (typeof url !== "string") return { ok: false, error: "URL không hợp lệ" };
   try {
     const { dropped } = await removeSyncUrlApi(url);
@@ -709,14 +771,28 @@ export async function removeSyncUrlAction(url: string): Promise<SyncUrlActionRes
 
 import { renameGlobalTagApi, deleteGlobalTagApi } from "@/lib/api";
 
-export async function renameTagAction(oldName: string, newName: string) {
-  await renameGlobalTagApi(oldName, newName);
-  revalidateAll();
+export async function renameTagAction(oldName: string, newName: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
+  try {
+    await renameGlobalTagApi(oldName, newName);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
 }
 
-export async function deleteTagAction(name: string) {
-  await deleteGlobalTagApi(name);
-  revalidateAll();
+export async function deleteTagAction(name: string): Promise<ActionResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
+  try {
+    await deleteGlobalTagApi(name);
+    revalidateAll();
+    return { ok: true };
+  } catch (error) {
+    return toResult(error);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -743,6 +819,8 @@ export interface CoreImportResult extends ActionResult {
  * văn cho core validate. API key chỉ nằm ở server (lib/api.ts).
  */
 export async function importToCoreAction(formData: FormData): Promise<CoreImportResult> {
+  const auth = await requirePermission("data:import");
+  if (!auth.ok) return auth;
   if (api.IS_LOCAL) {
     return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api", status: 501 };
   }
@@ -765,7 +843,6 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
 
   let expectReplaced: number | undefined;
   let expectSha256: string | undefined;
-  let secret: string | undefined;
   if (!dryRun) {
     const raw = String(formData.get("expect_replaced") ?? "");
     // Chỉ nhận số nguyên không âm ở dạng chữ số thuần, không để "1e3" hay " 5" lọt qua.
@@ -779,13 +856,6 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
       return { ok: false, error: "Thiếu mã băm file của lần Kiểm tra. Hãy bấm Kiểm tra trước." };
     }
     expectSha256 = sha.toLowerCase();
-
-    const rawSecret = formData.get("import_secret");
-    // ASCII in được: giá trị đi vào header HTTP, ký tự lạ làm fetch ném lỗi chứa giá trị.
-    if (typeof rawSecret !== "string" || !/^[\x20-\x7e]{1,256}$/.test(rawSecret)) {
-      return { ok: false, error: "Chưa nhập mật khẩu nhập dữ liệu (hoặc chứa ký tự không hợp lệ)." };
-    }
-    secret = rawSecret;
   }
 
   let text: string;
@@ -796,25 +866,29 @@ export async function importToCoreAction(formData: FormData): Promise<CoreImport
   }
 
   try {
-    const options = { dryRun, expectReplaced, expectSha256, secret, includePersonal };
+    const options = { dryRun, expectReplaced, expectSha256, includePersonal };
     const report = await api.importDataFile(text, options);
     // Chỉ làm mới cache khi dữ liệu thật sự đổi.
     if (report.committed) revalidateAll();
     return { ok: true, report };
   } catch (error) {
+    const authError = toActionAuthError(error);
+    if (authError) return authError;
     if (error instanceof CoreApiError) {
-      if (error.status === 403) {
-        // Thông điệp tự viết, không chuyển tiếp detail của core và không nhắc lại giá trị đã gõ.
+      if (error.status === 401 || error.status === 403) {
+        // Thông điệp tự viết, không chuyển tiếp detail của core.
         return {
           ok: false,
-          status: 403,
+          status: error.status,
           error:
-            "Mật khẩu nhập sai, hoặc core chưa cấu hình IMPORT_COMMIT_SECRET (đặt biến này trong .env của core rồi khởi động lại api).",
+            error.status === 401
+              ? "Chưa đăng nhập, hoặc phiên đã hết hạn."
+              : "Tài khoản của bạn không có quyền nhập dữ liệu.",
         };
       }
       return { ok: false, error: error.message, status: error.status };
     }
-    // Chỉ log tên lỗi, không log cả object: tránh vô tình ghi header chứa mật khẩu.
+    // Chỉ log tên lỗi, không log cả object: tránh vô tình ghi header xác thực.
     console.error("nhập vào Postgres thất bại", error instanceof Error ? error.name : "unknown");
     return { ok: false, error: "Không gọi được core API. Kiểm tra service api." };
   }

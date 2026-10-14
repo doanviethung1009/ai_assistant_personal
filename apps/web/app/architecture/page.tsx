@@ -1,3 +1,4 @@
+import { loadDocAccess } from "@/components/doc-access";
 import Link from "next/link";
 
 import {
@@ -25,7 +26,9 @@ const SECTIONS = [
   { id: "layers", label: "Phân lớp backend" },
 ];
 
-export default function ArchitecturePage() {
+export default async function ArchitecturePage() {
+  const access = await loadDocAccess();
+  if (access.error) return access.error;
   return (
     <div className="flex flex-col gap-6">
       {/* Marker mũi tên và filter đổ bóng, khai báo một lần cho cả trang */}

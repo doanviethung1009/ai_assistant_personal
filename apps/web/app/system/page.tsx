@@ -1,3 +1,5 @@
+import { ForbiddenPanel } from "@/components/forbidden-panel";
+import { canView } from "@/lib/auth-guard";
 import Link from "next/link";
 
 import { ApiErrorPanel } from "@/components/api-error";
@@ -74,7 +76,7 @@ const ACCOUNTS: AccountInfo[] = [
     username: null,
     envVar: "(không có)",
     lookupCommand: "—",
-    note: "Chưa có đăng nhập ở Phase 1. Ai mở được URL thì dùng app như chủ sở hữu — xem cảnh báo ở mục Deploy.",
+    note: "Chế độ api: đăng nhập Google (Auth.js), chỉ tài khoản được mời mới vào được. Chế độ file/memory không có đăng nhập, chỉ dùng trên máy dev — xem cảnh báo ở mục Deploy.",
   },
 ];
 
@@ -113,7 +115,7 @@ const CONTAINERS: ContainerInfo[] = [
   {
     name: "builder-api",
     image: "builder-ai-api (build từ apps/core)",
-    role: "FastAPI — toàn bộ logic nghiệp vụ, xác thực X-API-Key, migration Alembic chạy tự động lúc khởi động.",
+    role: "FastAPI — toàn bộ logic nghiệp vụ, xác thực X-API-Key kèm JWT Bearer theo từng người, kiểm quyền theo role, migration Alembic chạy tự động lúc khởi động.",
     defaultPort: "8000",
     profile: "mặc định",
   },
@@ -186,10 +188,10 @@ const PROFILE_STYLES: Record<ContainerInfo["profile"], string> = {
  *
  * NGUYÊN TẮC AN TOÀN cho trang này — đọc trước khi thêm field mới:
  *   1. KHÔNG BAO GIỜ render giá trị thật của secret (API_KEY, DATABASE_URL,
- *      LITELLM_MASTER_KEY, mật khẩu Postgres/Grafana). Trang này không có
- *      cơ chế đăng nhập riêng — bất kỳ ai mở được URL /system trên trình
- *      duyệt đã đăng nhập Next.js (hoặc qua LAN, xem docker-compose.lan.yml)
- *      đều xem được mọi thứ ở đây.
+ *      LITELLM_MASTER_KEY, mật khẩu Postgres/Grafana). Trang này cần
+ *      đăng nhập và quyền system:read (chỉ admin) ở chế độ api; ở chế độ file
+ *      không có đăng nhập nên bất kỳ ai mở được URL (kể cả qua LAN, xem
+ *      docker-compose.lan.yml) đều xem được mọi thứ ở đây.
  *   2. Mọi field hiển thị phải tới từ app/schemas/system.py::SystemInfo ở
  *      backend — schema đó là nơi quyết định field nào "đủ an toàn để lộ
  *      cho ai xem được trang này", không phải quyết định ở component.
@@ -200,6 +202,7 @@ const PROFILE_STYLES: Record<ContainerInfo["profile"], string> = {
  *      hiện secret thật sau một cú click.
  */
 export default async function SystemPage() {
+  if (!(await canView("system:read"))) return <ForbiddenPanel />;
   let health: Awaited<ReturnType<typeof getHealth>>;
   let info: Awaited<ReturnType<typeof getSystemInfo>>;
 
@@ -208,7 +211,7 @@ export default async function SystemPage() {
   } catch (error) {
     return (
       <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
+        error={error}
       />
     );
   }
@@ -305,26 +308,7 @@ export default async function SystemPage() {
           <dl className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
             <ConfigItem label="Tên ứng dụng" value={info.app_name} />
             <ConfigItem label="Môi trường" value={info.environment} />
-            <ConfigItem
-              label="Timezone hiển thị (hiệu lực)"
-              value={`${info.display_timezone}${
-                info.display_timezone === info.display_timezone_default
-                  ? " (mặc định)"
-                  : " (bạn đã chọn)"
-              }`}
-            />
-            <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface-raised)] px-3 py-2">
-              <dt className="text-xs text-[var(--color-ink-muted)]">Timezone mặc định (env)</dt>
-              <dd className="mt-0.5 text-sm font-medium">
-                {info.display_timezone_default}{" "}
-                <Link
-                  href="/data?tab=dong-bo"
-                  className="text-xs font-normal text-[var(--color-accent)] underline"
-                >
-                  Đổi ở trang Dữ liệu
-                </Link>
-              </dd>
-            </div>
+            <ConfigItem label="Timezone hiển thị (theo server)" value={info.display_timezone} />
             <ConfigItem
               label="Giữ thùng rác"
               value={`${info.trash_retention_days} ngày`}

@@ -26,7 +26,7 @@ export function DeploymentDiagram() {
       description="Bốn container của profile mặc định, cộng hai profile bật khi cần. Nét chạy đi theo đúng đường một request thật."
       width={920}
       height={600}
-      altText="Browser gọi vào web Next.js, web gọi api FastAPI bằng header X-API-Key, api đọc ghi Postgres và Redis. Profile llm chứa LiteLLM gateway được api gọi để dùng model. Profile monitoring chứa Prometheus và Grafana, Prometheus scrape endpoint metrics của api."
+      altText="Browser gọi vào web Next.js, người dùng đăng nhập Google qua Auth.js trên web, web gọi api FastAPI bằng header X-API-Key kèm JWT Bearer theo từng người, api đọc ghi Postgres và Redis. Profile llm chứa LiteLLM gateway được api gọi để dùng model. Profile monitoring chứa Prometheus và Grafana, Prometheus scrape endpoint metrics của api."
       footnote="Mũi tên từ web sang api là lời gọi nội bộ trong mạng docker. Browser không bao giờ gọi api trực tiếp, nên API key không rời khỏi phía server."
     >
       <Box x={380} y={16} w={160} h={40} label="Browser" tone="muted" accentBar={false} />
@@ -46,7 +46,7 @@ export function DeploymentDiagram() {
       <Arrow
         points={[{ x: 460, y: 168 }, { x: 460, y: 206 }]}
         tone="accent"
-        label="X-API-Key"
+        label="API key + JWT"
         labelAt={{ x: 472, y: 192 }}
         labelAnchor="start"
         animated
@@ -198,7 +198,7 @@ export function WriteFlowDiagram() {
         from={340}
         to={590}
         y={136}
-        label="POST /api/v1/tasks + X-API-Key"
+        label="POST /api/v1/tasks + JWT"
         tone="accent"
         animated
         delay={STEP_STAGGER}

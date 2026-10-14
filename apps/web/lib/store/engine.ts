@@ -54,8 +54,8 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
-// Múi giờ dự phòng khi người dùng chưa chọn. lib/api.ts gọi setDefaultTimezone() với giá
-// trị lấy từ biến môi trường; đây chỉ là mặc định cuối cùng nếu chưa ai gọi.
+// Múi giờ của store cục bộ = múi giờ server. lib/api.ts gọi setTimezone() một lần với giá
+// trị lấy từ biến TZ; đây chỉ là mặc định cuối cùng nếu chưa ai gọi.
 const BUILTIN_TIMEZONE = "Asia/Ho_Chi_Minh";
 
 /**
@@ -64,7 +64,7 @@ const BUILTIN_TIMEZONE = "Asia/Ho_Chi_Minh";
  */
 function currentTz(): string {
   const s = globalState.__builderStoreState;
-  return s?.displayTimezone ?? s?.defaultTimezone ?? BUILTIN_TIMEZONE;
+  return s?.timezone ?? BUILTIN_TIMEZONE;
 }
 
 function isoDate(offsetDays = 0): string {
@@ -105,10 +105,8 @@ interface StoreState {
   minutesLoggedToday: number;
   minutesLoggedDate: string;
   currentUsers: string[];
-  /** Múi giờ người dùng chọn (meta.display_timezone). null = dùng mặc định. */
-  displayTimezone: string | null;
-  /** Mặc định khi chưa chọn, do lib/api.ts đặt từ biến môi trường. */
-  defaultTimezone: string;
+  /** Múi giờ server, do lib/api.ts đặt từ biến TZ. Không lưu xuống file. */
+  timezone: string;
   /** Gọi sau mỗi lần ghi, để lớp persistence lưu xuống đĩa. */
   onChange: (() => void) | null;
 }
@@ -125,52 +123,15 @@ export function state(): StoreState {
     minutesLoggedToday: 0,
     minutesLoggedDate: isoDate(),
     currentUsers: ["Đoàn Việt Hưng"], // Giá trị mặc định
-    displayTimezone: null,
-    defaultTimezone: BUILTIN_TIMEZONE,
+    timezone: BUILTIN_TIMEZONE,
     onChange: null,
   };
   return globalState.__builderStoreState;
 }
 
-/** Đặt múi giờ mặc định (không lưu xuống file). Gọi một lần từ lib/api.ts. */
-export function setDefaultTimezone(tz: string): void {
-  if (isValidTimezone(tz)) state().defaultTimezone = tz;
-}
-
-export interface LocalDisplayTimezone {
-  timezone: string;
-  default: string;
-  source: "setting" | "default";
-}
-
-/** Múi giờ hiển thị ở chế độ file/memory, cùng hình dạng với GET /settings/display-timezone. */
-export function getDisplayTimezone(): LocalDisplayTimezone {
-  const store = state();
-  return {
-    timezone: store.displayTimezone ?? store.defaultTimezone,
-    default: store.defaultTimezone,
-    source: store.displayTimezone ? "setting" : "default",
-  };
-}
-
-/** null = xoá lựa chọn, quay về mặc định. Tên sai thì ném lỗi (api.ts đổi sang CoreApiError). */
-export function setDisplayTimezone(tz: string | null): void {
-  const store = state();
-  if (tz === null) {
-    store.displayTimezone = null;
-  } else {
-    const name = tz.trim();
-    if (!name || name.length > 64 || !isValidTimezone(name)) {
-      throw new Error("Múi giờ không hợp lệ (cần tên IANA, ví dụ Asia/Ho_Chi_Minh)");
-    }
-    store.displayTimezone = name;
-  }
-  // "Hôm nay" dịch theo múi giờ mới: đồng hồ phút của ngày cũ không còn ý nghĩa.
-  if (store.minutesLoggedDate !== isoDate()) {
-    store.minutesLoggedToday = 0;
-    store.minutesLoggedDate = isoDate();
-  }
-  touched();
+/** Đặt múi giờ của store (không lưu xuống file). Gọi một lần từ lib/api.ts. */
+export function setTimezone(tz: string): void {
+  if (isValidTimezone(tz)) state().timezone = tz;
 }
 
 export function setChangeHandler(handler: (() => void) | null): void {
@@ -212,7 +173,6 @@ export function snapshot(): DataFile {
       minutes_logged_today: store.minutesLoggedToday,
       minutes_logged_date: store.minutesLoggedDate,
       current_users: store.currentUsers,
-      ...(store.displayTimezone ? { display_timezone: store.displayTimezone } : {}),
     },
   };
 }
@@ -240,13 +200,6 @@ export function restore(data: DataFile): void {
   // tiếp qua restore() mà không qua migrate sẽ không làm sập engine.
   store.notes = data.notes ?? [];
   store.sync_urls = Array.isArray(data.sync_urls) ? [...data.sync_urls] : [];
-
-  // Đặt múi giờ TRƯỚC khi so ngày bên dưới. Tên rác trong file bị bỏ qua, về mặc định.
-  const savedTz = data.meta?.display_timezone;
-  store.displayTimezone =
-    typeof savedTz === "string" && savedTz.length <= 64 && isValidTimezone(savedTz)
-      ? savedTz
-      : null;
 
   store.minutesLoggedToday = data.meta?.minutes_logged_today ?? 0;
   store.minutesLoggedDate = data.meta?.minutes_logged_date ?? isoDate();

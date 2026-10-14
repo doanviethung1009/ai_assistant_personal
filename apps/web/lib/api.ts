@@ -2,21 +2,26 @@ import "server-only";
 
 import { cache } from "react";
 
-import { isValidTimezone, tzOffsetMinutes } from "./format";
+import { isValidTimezone } from "./format";
 import * as engine from "./store/engine";
 import { ensureLoaded } from "./store/json-file";
 import { cachedGet, invalidateCoreCache } from "./core-cache";
+import { CoreApiError } from "./core-errors";
+import { signCoreToken } from "./core-jwt";
+import { getSessionUser, type SessionUser } from "./session";
 import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
-  DisplayTimezoneRead,
   HealthResponse,
   ImportReport,
   IntegrationConnection,
   IntegrationCreateBody,
   IntegrationSyncResult,
   IntegrationUpdateBody,
+  LoginClaims,
+  LoginResult,
+  MeRead,
   Note,
   NoteKind,
   NoteSortField,
@@ -34,7 +39,6 @@ import type {
   TaskUpsertItem,
   TaskUpsertResult,
   TaskView,
-  TimezoneList,
   TrashResponse,
 } from "./types";
 
@@ -61,15 +65,7 @@ export { DATA_SOURCE };
 /** true khi dữ liệu nằm ngay trong process này, không qua mạng. */
 export const IS_LOCAL = DATA_SOURCE !== "api";
 
-export class CoreApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-  ) {
-    super(message);
-    this.name = "CoreApiError";
-  }
-}
+export { CoreApiError };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -117,34 +113,37 @@ async function local<T>(run: () => T): Promise<T> {
 
 // ── Đường mạng: core API ───────────────────────────────────────────────
 
-// Đường không được cache: trạng thái đồng bộ phải luôn mới.
-const UNCACHED_PREFIXES = ["/api/v1/integrations"];
+// Đường không được cache: trạng thái đồng bộ (integrations) và quyền/hồ sơ (me) phải luôn mới.
+const UNCACHED_PREFIXES = ["/api/v1/integrations", "/api/v1/me"];
 
-// Múi giờ hiển thị được layout đọc ở MỌI trang (kể cả trang tĩnh như docs, kiến trúc) mà hiếm khi
-// đổi. Giữ lâu hơn TTL mặc định để các trang đó không gọi core mỗi 10 giây; đổi múi giờ qua web
-// vẫn có hiệu lực ngay vì mọi mutation xoá cache.
-const SLOW_TTL_PATHS = new Set(["/api/v1/settings/display-timezone"]);
-const SLOW_TTL_MS = 5 * 60_000;
+function isUncached(path: string): boolean {
+  return UNCACHED_PREFIXES.some(
+    (prefix) => path === prefix || path.startsWith(`${prefix}/`) || path.startsWith(`${prefix}?`),
+  );
+}
 
 /**
- * GET được cache ngắn hạn và gộp lời gọi đồng thời (lib/core-cache.ts); mọi lời gọi ghi xoá cache.
- * Phần gọi mạng thật nằm ở coreFetchRaw.
+ * Cửa DUY NHẤT gọi core cho dữ liệu của người dùng (api mode). Gắn Bearer ở MỘT chỗ, trong
+ * coreFetchRaw, nên caller không ghi đè được danh tính.
+ *
+ * Không có phiên → ném 401 `no_session` TRƯỚC khi chạm cache hay mạng: Server Action quên guard
+ * vẫn không gọi được core. GET được cache 10 giây theo `uid:sv` + path và gộp lời gọi đồng thời
+ * (lib/core-cache.ts); mọi lời gọi ghi xoá toàn bộ cache. Xuất ra chỉ để test T2-T7.
  */
-async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
+export async function coreFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const session = await getSessionUser();
+  if (!session) throw new CoreApiError("Chưa đăng nhập", 401, "no_session");
+
   const method = (init?.method ?? "GET").toUpperCase();
   if (method !== "GET") {
     try {
-      return await coreFetchRaw<T>(path, init);
+      return await coreFetchRaw<T>(path, init, session);
     } finally {
       invalidateCoreCache();
     }
   }
-  // Request gắn danh tính người dùng (Bearer) trả dữ liệu theo người: cấm cache dùng chung (core-cache.ts).
-  const perUser = new Headers(init?.headers).has("Authorization");
-  if (perUser || UNCACHED_PREFIXES.some((prefix) => path.startsWith(prefix))) {
-    return coreFetchRaw<T>(path, init);
-  }
-  return cachedGet(path, () => coreFetchRaw<T>(path, init), SLOW_TTL_PATHS.has(path) ? SLOW_TTL_MS : undefined);
+  if (isUncached(path)) return coreFetchRaw<T>(path, init, session);
+  return cachedGet(`${session.uid}:${session.sv}`, path, () => coreFetchRaw<T>(path, init, session));
 }
 
 /** Chỉ thử lại khi core bảo chờ không quá ngần này: cửa sổ rate limit là 60s nên chờ lâu hơn là vô ích. */
@@ -164,7 +163,12 @@ async function fetchWithRetry(url: string, init: RequestInit): Promise<Response>
   return fetch(url, init);
 }
 
-async function coreFetchRaw<T>(path: string, init?: RequestInit): Promise<T> {
+/**
+ * Gọi mạng thật. `session` có → ký Bearer 60 giây mới cho lời gọi này, gắn SAU khi trộn header của
+ * caller (caller không ghi đè được). Không có (chỉ coreLogin) → không Bearer, và xoá luôn Authorization
+ * nếu caller lỡ truyền.
+ */
+async function coreFetchRaw<T>(path: string, init?: RequestInit, session?: SessionUser): Promise<T> {
   if (!API_KEY) {
     throw new CoreApiError(
       "Thiếu biến môi trường CORE_API_KEY. Đặt DATA_SOURCE=file nếu muốn " +
@@ -173,13 +177,14 @@ async function coreFetchRaw<T>(path: string, init?: RequestInit): Promise<T> {
     );
   }
 
+  const headers = new Headers({ "X-API-Key": API_KEY, "Content-Type": "application/json" });
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value));
+  headers.delete("Authorization");
+  if (session) headers.set("Authorization", `Bearer ${await signCoreToken(session)}`);
+
   const response = await fetchWithRetry(`${BASE_URL}${path}`, {
     ...init,
-    headers: {
-      "X-API-Key": API_KEY,
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers,
     cache: "no-store",
   });
 
@@ -211,10 +216,37 @@ async function coreFetchRaw<T>(path: string, init?: RequestInit): Promise<T> {
       : rawDetail !== undefined
         ? String(rawDetail)
         : `Core API trả về ${response.status}`;
-    throw new CoreApiError(detail, response.status);
+    const code =
+      body && typeof body === "object" && "code" in body && typeof (body as { code: unknown }).code === "string"
+        ? (body as { code: string }).code
+        : undefined;
+    throw new CoreApiError(detail, response.status, code);
   }
 
   return body as T;
+}
+
+/**
+ * Hồ sơ + quyền của người đang đăng nhập. `React.cache`: layout, trang và guard trong cùng một
+ * lần render chỉ tốn MỘT lời gọi core. KHÔNG vào cache dùng chung (/me luôn mới, isUncached).
+ * Quyền/vai trò chỉ lấy từ đây, không gọi endpoint khác để hỏi quyền.
+ */
+export const getMe = cache((): Promise<MeRead> => coreFetch<MeRead>("/api/v1/me"));
+
+/**
+ * Báo claim Google đã được web xác minh cho core (chỉ gọi từ auth.ts). Đi thẳng coreFetchRaw,
+ * không Bearer (chưa có phiên), không cache.
+ */
+export function coreLogin(claims: LoginClaims, clientIp: string | null): Promise<LoginResult> {
+  return coreFetchRaw<LoginResult>("/api/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ ...claims, ...(clientIp ? { client_ip: clientIp } : {}) }),
+  });
+}
+
+/** Tự kiểm khoá chung web↔core ngay sau đăng nhập (auth.ts, signIn bước 4). Không cache. */
+export function coreProbeMe(session: SessionUser): Promise<MeRead> {
+  return coreFetchRaw<MeRead>("/api/v1/me", undefined, session);
 }
 
 /**
@@ -263,11 +295,6 @@ export interface ImportCallOptions {
   /** Bắt buộc khi dryRun=false: `file_sha256` của báo cáo Kiểm tra (chứng minh cùng một file). */
   expectSha256?: string;
   /**
-   * Bắt buộc khi dryRun=false: mật khẩu IMPORT_COMMIT_SECRET. Chỉ đi qua header,
-   * KHÔNG đưa vào URL, log hay thông báo lỗi.
-   */
-  secret?: string;
-  /**
    * true: cho phép file ghi đè cả task đang `personal` trong Postgres. Phải gửi ở
    * CẢ dry-run lẫn nhập thật, nếu không số ghi đè lệch và expect_replaced từ chối.
    */
@@ -305,18 +332,12 @@ async function postImport(
     if (!options.expectSha256 || !/^[0-9a-f]{64}$/i.test(options.expectSha256)) {
       return Promise.reject(new CoreApiError("Thiếu mã băm file của lần Kiểm tra (expect_sha256)", 400));
     }
-    if (!options.secret) {
-      return Promise.reject(new CoreApiError("Thiếu mật khẩu nhập", 400));
-    }
     params.set("expect_sha256", options.expectSha256.toLowerCase());
   }
   const body = text.charCodeAt(0) === 0xfeff ? text.slice(1) : text;
-  const headers: Record<string, string> = {};
-  if (!options.dryRun && options.secret) headers["X-Import-Secret"] = options.secret;
   return coreFetch<ImportReport>(`/api/v1/import/${endpoint}?${params.toString()}`, {
     method: "POST",
     body,
-    headers,
   });
 }
 
@@ -330,8 +351,9 @@ export function importDataFile(text: string, options: ImportCallOptions): Promis
 // Bọc cache(): getAgenda/getStats/listTasks (view=mine) đều hỏi tên "của tôi", một lần render chỉ cần gọi một lần.
 export const getCurrentUsersApi = cache(async (): Promise<string[]> => {
   if (IS_LOCAL) return local(() => engine.getCurrentUsers());
-  const body = await coreFetch<{ names: string[] }>("/api/v1/settings/current-users");
-  return body.names;
+  // Core không còn endpoint tên-của-tôi theo cài đặt: alias Jira của người dùng nằm ở /me (quản trị viên đặt).
+  const me = await getMe();
+  return me.aliases.map((a) => a.alias);
 });
 
 /** Gợi ý tên cho ô "tôi là ai": chế độ api chỉ lấy assignee của task công việc còn sống. */
@@ -342,78 +364,23 @@ export async function getAssigneesApi(): Promise<string[]> {
 
 export async function setCurrentUsersApi(names: string[]): Promise<void> {
   if (IS_LOCAL) return local(() => { engine.setCurrentUsers(names); return undefined as any; });
-  await coreFetch<{ names: string[] }>("/api/v1/settings/current-users", {
-    method: "PUT",
-    body: JSON.stringify({ names }),
-  });
+  throw new CoreApiError("Alias Jira do quản trị viên quản lý", 400, "alias_admin_only");
 }
 
 // ── Múi giờ hiển thị ─────────────────────────────────────────────────────
 
-// Dự phòng khi API sập hoặc chưa có cài đặt. Đây là nơi DUY NHẤT còn đọc biến build-time
-// này; nguồn chính là backend (chế độ api) hoặc meta của file JSON (chế độ file).
-// Giá trị env sai (gõ nhầm tên múi giờ) phải rơi về mặc định, không để Intl ném RangeError lúc render.
-const FALLBACK_TZ =
-  process.env.NEXT_PUBLIC_DISPLAY_TZ && isValidTimezone(process.env.NEXT_PUBLIC_DISPLAY_TZ)
-    ? process.env.NEXT_PUBLIC_DISPLAY_TZ
-    : "Asia/Ho_Chi_Minh";
-engine.setDefaultTimezone(FALLBACK_TZ);
-
 /**
- * Múi giờ hiển thị hiện hành, cho layout và các trang. Bọc `cache()` để một lần render
- * chỉ gọi backend một lần dù nhiều Server Component cùng hỏi.
+ * Múi giờ hiển thị = múi giờ SERVER (biến TZ, cùng biến core đọc cho `display_timezone`),
+ * mặc định Asia/Ho_Chi_Minh. Không gọi core, không lưu ở đâu: hệ thống chỉ phục vụ người dùng
+ * cùng một nơi, và layout đọc giá trị này ở mọi trang nên mỗi lần gọi API là một request thừa.
  *
- * KHÔNG BAO GIỜ ném lỗi: layout bọc cả app, nếu API sập mà layout vỡ thì không còn trang
- * nào mở được (kể cả trang /system để chẩn đoán). Lỗi thì trả múi giờ dự phòng.
+ * Dùng ở Server Component rồi chuyển xuống client qua `TimezoneProvider` để SSR và hydrate ra
+ * cùng chuỗi. Tên sai (gõ nhầm TZ) phải rơi về mặc định, không để Intl ném RangeError lúc render.
+ * Đổi múi giờ = đổi TZ trong `.env` rồi `docker compose up -d` lại cả api và web.
  */
-export const getDisplayTimezoneApi = cache(async (): Promise<DisplayTimezoneRead> => {
-  if (IS_LOCAL) {
-    try {
-      return await local(() => engine.getDisplayTimezone());
-    } catch {
-      return { timezone: FALLBACK_TZ, default: FALLBACK_TZ, source: "default" };
-    }
-  }
-  try {
-    return await coreFetch<DisplayTimezoneRead>("/api/v1/settings/display-timezone");
-  } catch {
-    return { timezone: FALLBACK_TZ, default: FALLBACK_TZ, source: "default" };
-  }
-});
-
-/** Lưu múi giờ. `null` = xoá lựa chọn, về mặc định. Backend 409 nếu đang có lần nhập giữ khoá. */
-export async function setDisplayTimezoneApi(tz: string | null): Promise<DisplayTimezoneRead> {
-  if (IS_LOCAL) {
-    return local(() => {
-      engine.setDisplayTimezone(tz);
-      return engine.getDisplayTimezone();
-    });
-  }
-  return coreFetch<DisplayTimezoneRead>("/api/v1/settings/display-timezone", {
-    method: "PUT",
-    body: JSON.stringify({ timezone: tz }),
-  });
-}
-
-/**
- * Danh mục tên IANA cho ô chọn. Chế độ file lấy từ Intl của Node. Cố ý không phân trang:
- * danh mục tĩnh khoảng 600 tên, không phải dữ liệu người dùng tăng dần.
- */
-export async function listTimezonesApi(): Promise<TimezoneList> {
-  if (IS_LOCAL) {
-    const now = new Date();
-    const names = Intl.supportedValuesOf("timeZone");
-    // Intl bỏ "UTC" khỏi danh sách trên một số bản Node.
-    if (!names.includes("UTC")) names.push("UTC");
-    names.sort();
-    const items = names.map((name) => ({
-      name,
-      utc_offset_minutes: tzOffsetMinutes(name, now),
-    }));
-    return { items, total: items.length };
-  }
-  return coreFetch<TimezoneList>("/api/v1/settings/timezones");
-}
+export const DISPLAY_TZ: string =
+  process.env.TZ && isValidTimezone(process.env.TZ) ? process.env.TZ : "Asia/Ho_Chi_Minh";
+engine.setTimezone(DISPLAY_TZ);
 
 // ── Đọc ────────────────────────────────────────────────────────────────
 
@@ -423,7 +390,8 @@ export async function listTimezonesApi(): Promise<TimezoneList> {
  * Trước B2, chế độ api trả [] nên "Hôm nay" chỉ còn task cá nhân (S6).
  */
 async function ownersFor(view: TaskView): Promise<string[]> {
-  return view === "mine" ? getCurrentUsersApi() : [];
+  // Ở api, view=mine do core suy từ JWT; chỉ chế độ cục bộ cần tên owner.
+  return IS_LOCAL && view === "mine" ? getCurrentUsersApi() : [];
 }
 
 /** Gắn view và owner (lặp lại) vào query của core. owner chỉ hợp lệ với view=mine. */
@@ -1025,14 +993,13 @@ export async function deleteIntegration(id: string): Promise<void> {
 
 /**
  * Cào Jira theo kết nối đã lưu (B4b). Core tự gọi Jira bằng token đã giải mã; web chỉ
- * kích hoạt. Mật khẩu IMPORT_COMMIT_SECRET đi DUY NHẤT qua header X-Import-Secret.
+ * kích hoạt. Quyền chạy do core quyết định (role admin), web không giữ mật khẩu nào.
  *
  * Không đặt timeout ngắn: core có trần 5 phút cho một lượt sync. Ở đây dùng 6 phút để
  * core là bên tự cắt trước và trả 504 có thông báo rõ.
  */
 export async function syncIntegration(
   id: string,
-  secret: string,
   since?: string,
   people: { assignees?: string[]; reporters?: string[] } = {},
 ): Promise<IntegrationSyncResult> {
@@ -1044,22 +1011,7 @@ export async function syncIntegration(
   const query = params.size > 0 ? `?${params.toString()}` : "";
   return coreFetch<IntegrationSyncResult>(`/api/v1/integrations/${pathId(id)}/sync${query}`, {
     method: "POST",
-    headers: { "X-Import-Secret": secret },
     signal: AbortSignal.timeout(6 * 60_000),
-  });
-}
-
-/**
- * Kiểm mật khẩu nhập (IMPORT_COMMIT_SECRET) mà KHÔNG ghi gì. Gọi trước các việc tốn kém
- * (fetch URL, đọc/parse file) để request sai mật khẩu bị từ chối sớm, không biến server
- * thành công cụ tải URL hay parse file cho người chưa xác thực. Core trả 204 nếu đúng,
- * 403 nếu sai/thiếu/chưa cấu hình (ném CoreApiError status 403).
- */
-export async function verifyImportSecret(secret: string): Promise<void> {
-  requireApiMode();
-  await coreFetch<void>("/api/v1/import/verify-secret", {
-    method: "POST",
-    headers: { "X-Import-Secret": secret },
   });
 }
 
@@ -1107,7 +1059,7 @@ function splitBatches(items: TaskUpsertItem[]): TaskUpsertItem[][] {
 /**
  * Upsert task theo `(source, external_id)`, tự chia lô và cộng dồn kết quả.
  *
- * Mật khẩu IMPORT_COMMIT_SECRET chỉ đi qua header X-Import-Secret. Chỉ số `index` trong
+ * Chỉ số `index` trong
  * errors/warnings được quy đổi về vị trí trong MẢNG GỐC (cộng offset lô). Mỗi lô là một
  * giao dịch riêng: nếu lô sau thất bại thì các lô trước ĐÃ ghi; lỗi ném ra là
  * UpsertBatchError (mang số lô đã xong) và chạy lại an toàn vì upsert idempotent.
@@ -1115,7 +1067,6 @@ function splitBatches(items: TaskUpsertItem[]): TaskUpsertItem[][] {
 export async function upsertTasksBatch(
   source: "jira",
   items: TaskUpsertItem[],
-  secret: string,
 ): Promise<TaskUpsertResult> {
   requireApiMode();
   const total: TaskUpsertResult = {
@@ -1135,7 +1086,6 @@ export async function upsertTasksBatch(
       res = await coreFetch<TaskUpsertResult>("/api/v1/tasks/upsert-batch", {
         method: "POST",
         body: JSON.stringify({ source, items: chunk }),
-        headers: { "X-Import-Secret": secret },
       });
     } catch (error) {
       if (i > 0 && error instanceof CoreApiError) {

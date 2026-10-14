@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useEffect, useState, useTransition } from "react";
 import { syncJiraAction } from "@/app/jira-actions";
 import { STORAGE_KEY } from "@/lib/jira-storage";
@@ -20,6 +21,7 @@ export interface JiraConfig {
 }
 
 export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: { id: string; key: string; name: string }[], taskCount?: number }) {
+  const gate = useActionAuth();
   const [configs, setConfigs] = useState<JiraConfig[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -136,6 +138,10 @@ export function JiraSyncManager({ projects = [], taskCount = 0 }: { projects?: {
     }
 
     const response = await syncJiraAction(fd);
+    if (gate(response)) {
+      setPendingId(null);
+      return;
+    }
     setResult(response);
     // Lượt lọc theo người chỉ phủ một phần: không đặt mốc, nếu không "Cập nhật nhanh" sẽ bỏ sót người khác.
     if (response.ok && syncAssignees.trim() === "") {

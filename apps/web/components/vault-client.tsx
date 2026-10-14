@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { getVaultBlobAction, saveVaultBlobAction } from "@/app/vault-actions";
 import {
   createVault,
@@ -112,6 +113,7 @@ function blankEntry(): VaultEntry {
 type Phase = "loading" | "setup" | "recovery" | "forgot" | "locked" | "unlocked";
 
 export function VaultClient() {
+  const gate = useActionAuth();
   const [phase, setPhase] = useState<Phase>("loading");
   const [blob, setBlob] = useState<VaultBlob | null>(null);
   const [entries, setEntries] = useState<VaultEntry[]>([]);
@@ -141,6 +143,7 @@ export function VaultClient() {
     let cancelled = false;
     void getVaultBlobAction().then((result) => {
       if (cancelled) return;
+      if (gate(result)) return;
       if (!result.ok) {
         setError(result.error ?? "Lỗi đọc két");
         setPhase("locked");
@@ -191,6 +194,7 @@ export function VaultClient() {
         encrypted,
         blob?.updated_at ?? null,
       );
+      if (gate(result)) return false;
       if (!result.ok) {
         setError(result.error ?? "Lưu thất bại");
         return false;
@@ -200,7 +204,7 @@ export function VaultClient() {
       setError(null);
       return true;
     },
-    [blob],
+    [blob, gate],
   );
 
   // ── Đặt mật khẩu lần đầu ──────────────────────────────────────────
