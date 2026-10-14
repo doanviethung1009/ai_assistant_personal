@@ -1,6 +1,7 @@
+import { toActionAuthError, type ActionAuthCode } from "@/lib/auth-guard";
 import "server-only";
 
-import { CoreApiError, UpsertBatchError, upsertTasksBatch, verifyImportSecret } from "./api";
+import { CoreApiError, UpsertBatchError, upsertTasksBatch } from "./api";
 import type { TaskStatus, TaskUpsertItem, UpsertSummary } from "./types";
 
 /**
@@ -18,19 +19,12 @@ export const EXCEL_SOURCE = "jira" as const;
 const MAX_ERRORS_SHOWN = 20;
 const MAX_REASON_LEN = 200;
 
-/** Mật khẩu đi vào header HTTP: chỉ ASCII in được, 1-256 ký tự. Trả null nếu không hợp lệ. */
-export function parseImportSecret(raw: unknown): string | null {
-  return typeof raw === "string" && /^[\x20-\x7e]{1,256}$/.test(raw) ? raw : null;
-}
+const UNAUTHENTICATED_MESSAGE = "Chưa đăng nhập, hoặc phiên đã hết hạn.";
 
-export const SECRET_REQUIRED_MESSAGE =
-  "Chưa nhập mật khẩu nhập dữ liệu (hoặc chứa ký tự không hợp lệ).";
-
-const FORBIDDEN_MESSAGE =
-  "Mật khẩu nhập sai, hoặc core chưa cấu hình IMPORT_COMMIT_SECRET (đặt biến này trong .env của core rồi khởi động lại api).";
+const FORBIDDEN_MESSAGE = "Tài khoản của bạn không có quyền nhập dữ liệu.";
 
 const UNAVAILABLE_MESSAGE =
-  "Core chưa sẵn sàng cho thao tác này (503). Kiểm tra cấu hình biến môi trường của service api (ví dụ IMPORT_COMMIT_SECRET) rồi thử lại.";
+  "Core chưa sẵn sàng cho thao tác này (503). Kiểm tra cấu hình của service api rồi thử lại.";
 
 const VALIDATION_MESSAGE =
   "Core từ chối dữ liệu (422). Kiểm tra định dạng các cột trong file (ngày, độ dài tiêu đề, Issue Key...).";
@@ -38,34 +32,15 @@ const VALIDATION_MESSAGE =
 const MAX_CORE_MESSAGE_LEN = 500;
 
 /**
- * Đổi lỗi của core thành thông báo an toàn cho client. 403/503/422 dùng câu tự viết (msg
+ * Đổi lỗi của core thành thông báo an toàn cho client. 401/403/503/422 dùng câu tự viết (msg
  * validator của 422 có thể chứa giá trị lấy từ file Excel); lỗi khác cắt còn ~500 ký tự.
  */
 function coreErrorText(error: CoreApiError): string {
+  if (error.status === 401) return UNAUTHENTICATED_MESSAGE;
   if (error.status === 403) return FORBIDDEN_MESSAGE;
   if (error.status === 503) return UNAVAILABLE_MESSAGE;
   if (error.status === 422) return VALIDATION_MESSAGE;
   return error.message.slice(0, MAX_CORE_MESSAGE_LEN);
-}
-
-/**
- * Cổng vào của mọi thao tác ghi hàng loạt: kiểm dạng mật khẩu rồi hỏi core xem có đúng
- * không, TRƯỚC khi fetch URL hay parse file. Nhờ vậy request sai mật khẩu không bắt server
- * tải URL ngoài hay giải nén XLSX (tốn CPU/RAM). Mật khẩu không bao giờ nằm trong lỗi trả về.
- */
-export async function authorizeImport(
-  raw: unknown,
-): Promise<{ ok: true; secret: string } | { ok: false; error: string }> {
-  const secret = parseImportSecret(raw);
-  if (secret === null) return { ok: false, error: SECRET_REQUIRED_MESSAGE };
-  try {
-    await verifyImportSecret(secret);
-    return { ok: true, secret };
-  } catch (error) {
-    if (error instanceof CoreApiError) return { ok: false, error: coreErrorText(error) };
-    console.error("kiểm mật khẩu nhập thất bại", error instanceof Error ? error.name : "unknown");
-    return { ok: false, error: "Không gọi được core API. Kiểm tra service api." };
-  }
 }
 
 function parseDate(val: unknown): string | null {
@@ -196,17 +171,18 @@ export function rowsToUpsertItems(rows: unknown[]): {
 export interface CoreUpsertOutcome {
   ok: boolean;
   error?: string;
+  /** Lỗi phiên/quyền (session_expired, forbidden...): action trả nguyên để client chuyển trang. */
+  code?: ActionAuthCode;
   summary?: UpsertSummary;
 }
 
 /**
- * Đẩy các dòng đã đọc lên core. `secret` PHẢI đã qua `authorizeImport`. Mật khẩu và nội
- * dung lỗi thô của core không bao giờ được lặp lại cho client (xem coreErrorText).
+ * Đẩy các dòng đã đọc lên core. Nội dung lỗi thô của core không bao giờ được lặp lại cho client (xem coreErrorText).
  *
  * `errors`/`warnings` trả về có `index` = SỐ DÒNG EXCEL và bị cắt còn 20 mục; tổng thật
  * nằm ở `errors_total`/`warnings_total`.
  */
-export async function pushRowsToCore(rows: unknown[], secret: string): Promise<CoreUpsertOutcome> {
+export async function pushRowsToCore(rows: unknown[]): Promise<CoreUpsertOutcome> {
   const { items, rowNumbers, skippedNoKey } = rowsToUpsertItems(rows);
   if (items.length === 0) {
     return {
@@ -219,7 +195,7 @@ export async function pushRowsToCore(rows: unknown[], secret: string): Promise<C
   }
   const toRow = (index: number): number => rowNumbers[index] ?? index + 2;
   try {
-    const res = await upsertTasksBatch(EXCEL_SOURCE, items, secret);
+    const res = await upsertTasksBatch(EXCEL_SOURCE, items);
     const errors = res.errors ?? [];
     const warnings = res.warnings ?? [];
     return {
@@ -234,14 +210,18 @@ export async function pushRowsToCore(rows: unknown[], secret: string): Promise<C
       },
     };
   } catch (error) {
+    // Phiên/quyền trước: client cần `code` (nhất là session_expired) để chuyển /auth/expired.
+    const authError = toActionAuthError(error);
     if (error instanceof UpsertBatchError) {
       return {
         ok: false,
+        code: authError?.code,
         error:
-          `Đã ghi xong ${error.batchesDone}/${error.batchesTotal} lô đầu, lô tiếp theo lỗi: ${coreErrorText(error)} ` +
+          `Đã ghi xong ${error.batchesDone}/${error.batchesTotal} lô đầu, lô tiếp theo lỗi: ${authError?.error ?? coreErrorText(error)} ` +
           "Chạy lại an toàn (không nhân đôi dữ liệu).",
       };
     }
+    if (authError) return { ok: false, error: authError.error, code: authError.code };
     if (error instanceof CoreApiError) return { ok: false, error: coreErrorText(error) };
     // Chỉ log tên lỗi: tránh ghi header chứa mật khẩu.
     console.error("upsert-batch thất bại", error instanceof Error ? error.name : "unknown");

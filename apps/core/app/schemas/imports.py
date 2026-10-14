@@ -59,8 +59,8 @@ class DataFileEnvelope(BaseModel):
     # Danh sách URL đồng bộ (v6). None/vắng = không đụng cài đặt trong DB. Để Any: giá
     # trị sai kiểu phải ra lỗi theo dòng (code `setting_invalid`) chứ không 422 chung chung.
     sync_urls: Any = None
-    # Múi giờ hiển thị (v7; cũng nhận `meta.display_timezone` do chế độ file của web ghi).
-    # Để Any: giá trị sai chỉ là cảnh báo và bị bỏ qua, không làm hỏng cả lần nhập.
+    # Múi giờ hiển thị (v7; cũng nhận `meta.display_timezone`). Chỉ để file cũ không bị 422:
+    # server bỏ qua giá trị này (múi giờ là env DISPLAY_TIMEZONE) và cảnh báo.
     display_timezone: Any = None
 
 

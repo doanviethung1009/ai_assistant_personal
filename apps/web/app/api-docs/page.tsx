@@ -1,3 +1,5 @@
+import { authEnabled } from "@/lib/auth-config";
+import { loadDocAccess } from "@/components/doc-access";
 import { Markdown } from "@/components/markdown";
 import { ApiTester } from "@/components/api-tester";
 import { findDoc, readDoc, stripFrontMatter } from "@/lib/docs";
@@ -7,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ApiDocsPage() {
   // Đọc trực tiếp file API_REFERENCE.md đã tạo ban nãy
+  const access = await loadDocAccess();
+  if (access.error) return access.error;
   const entry = findDoc("api-reference");
   const content = await readDoc(entry);
 
@@ -36,9 +40,12 @@ export default async function ApiDocsPage() {
             <p className="mt-1 text-sm text-[var(--color-ink-muted)]">
               {content.error}
             </p>
+{/* Đường dẫn tuyệt đối trên server chỉ hiện ở chế độ cục bộ (api: không lộ cấu trúc thư mục). */}
+            {!authEnabled() ? (
             <p className="mt-2 break-all text-xs text-[var(--color-ink-muted)]">
               Đã thử đọc: <code>{content.resolvedPath}</code>
             </p>
+            ) : null}
           </div>
         ) : (
           <Markdown>{stripFrontMatter(content.markdown)}</Markdown>

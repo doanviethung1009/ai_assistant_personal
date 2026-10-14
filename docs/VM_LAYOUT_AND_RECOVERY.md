@@ -105,17 +105,12 @@ sang `~/auth-test/core`, Postgres tạm trên tmpfs, network riêng, **không đ
 - Ghi chú đã biết về script (chưa sửa): `.dockerignore` loại thư mục `tests/` nên `ruff` trong image không thấy test;
   `ENVIRONMENT=test` không hợp lệ (chỉ nhận `development|staging|production`); image thiếu `pyjwt` cho epic đăng nhập.
 
-## 6. Đồng bộ Jira trên môi trường DEV cần mật khẩu nào
+## 6. Đồng bộ Jira trên môi trường DEV cần quyền gì
 
-Nút "Cào ngay" (chế độ api) gọi `POST /api/v1/integrations/{id}/sync` và **bắt buộc** header `X-Import-Secret`, so với
-biến `IMPORT_COMMIT_SECRET` của core. Giá trị nằm trong `.env` của **từng** môi trường (mỗi nơi tự sinh, khác máy local):
-
-```bash
-ssh -i ~/.ssh/ai_assistant_deploy deploy@192.168.100.201 "grep ^IMPORT_COMMIT_SECRET /srv/builder-ai/dev/.env"
-```
-
-Nhập sai sẽ thấy `403` và log `nhập thật bị từ chối: sai mật khẩu nhập`; lúc đó request **chưa** gọi sang Jira. Token Jira
-được mã hoá Fernet bằng `INTEGRATION_SECRET_KEY` trong cùng `.env`: mất khoá này thì phải nhập lại mọi token.
+Nút "Cào ngay" (chế độ api) gọi `POST /api/v1/integrations/{id}/sync`, do core kiểm quyền theo role: cần tài khoản
+**admin** (email nằm trong `ADMIN_EMAILS`). Không còn mật khẩu nhập; biến `IMPORT_COMMIT_SECRET` đã bỏ, nếu còn trong `.env`
+của VM thì xoá đi (core chỉ ghi cảnh báo). Token Jira được mã hoá Fernet bằng `INTEGRATION_SECRET_KEY` trong `.env`:
+mất khoá này thì phải nhập lại mọi token.
 
 ## 7. Sự cố tham khảo (2026-10-10)
 
@@ -123,5 +118,5 @@ Nhập sai sẽ thấy `403` và log `nhập thật bị từ chối: sai mật 
 |---|---|---|
 | Tab Data báo "Core API trả về 500" | VM quá tải RAM (test + stack), API không phản hồi; sau reset còn lỗi DNS thoáng qua | Mục 4, rồi mục 3 |
 | Trang web local pending mãi | Tunnel `localhost:8001` chết cùng VM | `make devvm-tunnel` |
-| Cào Jira trả 403 | Sai `IMPORT_COMMIT_SECRET` | Mục 6 |
+| Cào Jira trả 401/403 | Chưa đăng nhập, hoặc tài khoản không phải admin | Mục 6 |
 | SSH "banner exchange" timeout | VM hết RAM | Mục 4 |

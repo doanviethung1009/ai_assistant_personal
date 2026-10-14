@@ -3,19 +3,19 @@ import "server-only";
 /**
  * Cache GET ngắn hạn trong process cho mọi lời gọi core API (xem coreFetch trong api.ts).
  *
- * Vì sao có: web dùng CHUNG một API key nên mọi trang và mọi người dùng chung một bucket rate
- * limit. Click filter chỉ đổi searchParams nhưng Next render lại cả page, gọi lại timezone,
- * projects, stats, current-users... Dữ liệu đó không đổi giữa hai click, nên dùng lại vài giây
- * và gộp các lần gọi đồng thời vào một promise.
+ * Vì sao có: rate limit của core tính theo từng người dùng (JWT), nhưng mỗi click filter chỉ đổi
+ * searchParams mà Next vẫn render lại cả page và gọi lại projects, stats, agenda... Dữ liệu đó không
+ * đổi giữa hai click, nên dùng lại vài giây (đỡ request và độ trễ) và gộp các lần gọi đồng thời vào
+ * một promise.
  *
  * ══════════════════════════════════════════════════════════════════════
- *  CACHE NÀY DÙNG CHUNG CHO MỌI NGƯỜI DÙNG, KHOÁ CHỈ LÀ PATH.
+ *  CACHE NÀY DÙNG CHUNG CHO MỌI NGƯỜI DÙNG: KHOÁ PHẢI CÓ uid:sv.
  *
- *  Chỉ an toàn khi web gọi core bằng MỘT API key dùng chung (hiện tại). Khi web gửi
- *  `Authorization: Bearer` theo từng người (spec auth-multiuser), core trả dữ liệu và quyền
- *  (can_edit...) khác nhau theo người, và cache theo path sẽ đưa dữ liệu của A cho B.
- *  coreFetch vì vậy BỎ QUA cache khi request có header Authorization. Muốn cache lại thì phải
- *  đưa user id vào khoá, đừng gỡ rào đó.
+ *  Core trả dữ liệu và quyền (can_edit...) khác nhau theo người, nên khoá chỉ theo path sẽ đưa
+ *  dữ liệu của A cho B. Khoá = `${uid}:${sv}\u0000${path}` (cacheKey), `sv` trong khoá để thu hồi
+ *  phiên ra khoá mới. `identity` rỗng là lỗi lập trình và ném ngay; đừng gỡ rào này, đừng thêm
+ *  đường gọi cachedGet bỏ qua identity. Mọi lời gọi ghi xoá TOÀN BỘ cache (mọi người dùng).
+ *  Test khoá hành vi: tests/core-cache.test.ts, tests/core-fetch.test.ts (T1-T8).
  *
  *  Giá trị trả về dùng chung theo tham chiếu: KHÔNG sửa tại chỗ (sort, push...), hãy sao chép.
  * ══════════════════════════════════════════════════════════════════════
@@ -43,20 +43,28 @@ interface CacheState {
 const g = globalThis as typeof globalThis & { __coreCache?: CacheState };
 const state: CacheState = (g.__coreCache ??= { version: 0, entries: new Map() });
 
+/** Chỉ cho test: số mục đang giữ. */
+export function coreCacheSize(): number {
+  return state.entries.size;
+}
+
 export function invalidateCoreCache(): void {
   state.version += 1;
   state.entries.clear();
 }
 
-export function cachedGet<T>(
-  key: string,
-  loader: () => Promise<T>,
-  ttlMs: number = TTL_MS,
-): Promise<T> {
+/** Khoá cache: danh tính người dùng + path. Hàm thuần để test được. */
+export function cacheKey(identity: string, path: string): string {
+  if (!identity) throw new Error("core-cache: thiếu identity (uid:sv), cấm cache không theo người dùng");
+  return `${identity}\u0000${path}`;
+}
+
+export function cachedGet<T>(identity: string, path: string, loader: () => Promise<T>): Promise<T> {
+  const key = cacheKey(identity, path);
   const { entries } = state;
   const now = Date.now();
   const hit = entries.get(key);
-  if (hit && hit.version === state.version && now - hit.at < ttlMs) {
+  if (hit && hit.version === state.version && now - hit.at < TTL_MS) {
     return hit.promise as Promise<T>;
   }
   const promise = loader();

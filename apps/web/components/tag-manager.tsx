@@ -1,12 +1,15 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useActionAuth } from "@/lib/use-action-auth";
 import { renameTagAction, deleteTagAction } from "@/app/actions";
 import type { TagStat } from "@/lib/api";
 
 export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
   const [tags, setTags] = useState<TagStat[]>(initialTags);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
+  const [error, setError] = useState<string | null>(null);
 
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -19,7 +22,14 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
     const newName = editValue.trim().toLowerCase();
 
     startTransition(async () => {
-      await renameTagAction(oldName, newName);
+      setError(null);
+      const result = await renameTagAction(oldName, newName);
+      if (gate(result)) return;
+      // Thất bại thì KHÔNG cập nhật state cục bộ (tránh hiện đã đổi tên dù server từ chối).
+      if (!result.ok) {
+        setError(result.error ?? "Đổi tên tag thất bại");
+        return;
+      }
       // Update local state optimism
       setTags(prev => {
         let exists = prev.find(t => t.name === newName);
@@ -42,13 +52,24 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
     if (!confirm(`Bạn có chắc muốn xoá tag #${name} khỏi tất cả các task và sổ tay? Hành động này không thể hoàn tác.`)) return;
 
     startTransition(async () => {
-      await deleteTagAction(name);
+      setError(null);
+      const result = await deleteTagAction(name);
+      if (gate(result)) return;
+      if (!result.ok) {
+        setError(result.error ?? "Xoá tag thất bại");
+        return;
+      }
       setTags(prev => prev.filter(t => t.name !== name));
     });
   };
 
   return (
     <div className="flex flex-col gap-4">
+      {error ? (
+        <p role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
+          {error}
+        </p>
+      ) : null}
       {tags.length === 0 ? (
         <p className="rounded-lg border border-dashed border-[var(--color-border)] p-6 text-center text-sm text-[var(--color-ink-muted)]">
           Chưa có tag nào trong hệ thống.

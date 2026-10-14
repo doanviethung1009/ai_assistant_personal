@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Settings2 } from "lucide-react";
 
 import { ApiErrorPanel } from "@/components/api-error";
@@ -11,23 +12,22 @@ import { FileUploadManager } from "@/components/file-upload-manager";
 import { JiraConnectionsManager } from "@/components/jira-connections-manager";
 import { JiraSyncManager } from "@/components/jira-sync-manager";
 import { RestoreJsonManager } from "@/components/restore-json-manager";
-import { TimezonePicker } from "@/components/timezone-picker";
 import { UrlSyncManager } from "@/components/url-sync-manager";
 import { VaultImportManager } from "@/components/vault-import-manager";
 import { WipeDataManager } from "@/components/wipe-data-manager";
 import {
   IS_LOCAL,
   getAssigneesApi,
+  getMe,
   getCurrentUsersApi,
-  getDisplayTimezoneApi,
   getSyncUrlsApi,
   listIntegrations,
   listNotes,
   listProjects,
   listTasks,
-  listTimezonesApi,
 } from "@/lib/api";
-import type { IntegrationConnection, TimezoneOption } from "@/lib/types";
+import { hasPermission, type PermissionSet } from "@/lib/permissions";
+import type { IntegrationConnection } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -61,51 +61,51 @@ export default async function DataPage({
   let assignees: string[] = [];
   let connections: IntegrationConnection[] = [];
   let connectionsTotal = 0;
+  // api: quyền và alias lấy từ /me (một lời gọi, dùng chung với layout); cục bộ: không có đăng nhập, mọi quyền mở.
+  let perms: PermissionSet = "all";
+  let myAliases: string[] = [];
   let connectionsError: string | null = null;
-  let timezone = "";
-  let tzDefault = "";
-  let tzSource: Awaited<ReturnType<typeof getDisplayTimezoneApi>>["source"] = "default";
-  let timezoneOptions: TimezoneOption[] = [];
 
   // Mỗi tab là một lần render server, nên chỉ gọi API mà tab đó dùng: trước đây
   // mỗi cú bấm tab bắn 8 request (kể cả khi chỉ ở tab Xuất), dễ chạm rate limit.
   // Ba số đếm luôn cần vì DataSourceCard hiện ở mọi tab.
   const needSync = tab === "dong-bo";
   try {
-    const [tasks, projects, notes] = await Promise.all([
+    const [tasks, projects, notes, me] = await Promise.all([
       listTasks({ includeClosed: true, limit: 1 }),
       listProjects(true),
       listNotes({ limit: 1 }),
+      IS_LOCAL ? Promise.resolve(null) : getMe(),
     ]);
+    if (me) {
+      perms = me.permissions;
+      myAliases = me.aliases.map((a) => a.alias);
+    }
     taskCount = tasks.total;
     projectCount = projects.length;
     projectList = projects.filter((p) => !p.is_archived);
     noteCount = notes.total;
 
-    if (needSync || tab === "nguy-hiem") {
-      assignees = await getAssigneesApi();
-    }
-    if (needSync) {
-      // Danh mục múi giờ lỗi không được làm sập trang: ô nhập vẫn gõ tay được.
-      const [urls, users, tz, tzList, integrationPage] = await Promise.all([
-        getSyncUrlsApi(),
-        getCurrentUsersApi(),
-        getDisplayTimezoneApi(),
-        listTimezonesApi()
-          .then((list) => list.items)
-          .catch(() => [] as TimezoneOption[]),
+    // Endpoint nào cần quyền thì chỉ gọi khi có quyền (member không bị 403 vô ích).
+    const may = (permission: Parameters<typeof hasPermission>[1]) => hasPermission(perms, permission);
+    // Tab nguy-hiem chỉ dùng assignees cho WipeDataManager (render ở local); api thì khỏi request thừa.
+    const loadAssignees = (needSync || (tab === "nguy-hiem" && IS_LOCAL)) && may("team:read");
+    if (loadAssignees || needSync) {
+      const [names, urls, users, integrationPage] = await Promise.all([
+        loadAssignees ? getAssigneesApi() : Promise.resolve([] as string[]),
+        needSync && may("integration:manage") ? getSyncUrlsApi() : Promise.resolve([] as string[]),
+        needSync && IS_LOCAL ? getCurrentUsersApi() : Promise.resolve([] as string[]),
         // Kết nối lỗi (vd. core cũ chưa có /integrations) không được làm sập cả trang.
-        IS_LOCAL
+        IS_LOCAL || !needSync || !may("integration:sync")
           ? Promise.resolve(null)
           : listIntegrations().catch((error: unknown) => {
               connectionsError = error instanceof Error ? error.message : "Không tải được danh sách kết nối";
               return null;
             }),
       ]);
+      assignees = names;
       syncUrls = urls;
       currentUsers = users;
-      ({ timezone, default: tzDefault, source: tzSource } = tz);
-      timezoneOptions = tzList;
       if (integrationPage) {
         connections = integrationPage.items;
         connectionsTotal = integrationPage.total;
@@ -113,9 +113,11 @@ export default async function DataPage({
     }
   } catch (error) {
     return (
-      <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />
+      <ApiErrorPanel error={error} />
     );
   }
+
+  const may = (permission: Parameters<typeof hasPermission>[1]) => hasPermission(perms, permission);
 
   return (
     <div className="mx-auto flex w-full max-w-none flex-col gap-6 pb-12">
@@ -138,7 +140,7 @@ export default async function DataPage({
 
       <DataTabs active={tab} />
 
-      {tab === "xuat" && <DataExportGrid />}
+      {tab === "xuat" && <DataExportGrid vaultOnly={!IS_LOCAL} />}
 
       {tab === "nhap" && (
         <div className="flex flex-col gap-8">
@@ -154,13 +156,21 @@ export default async function DataPage({
           ) : (
             <>
               {/* Chế độ api: JSON đi qua panel có Kiểm tra (dry-run) trước khi ghi đè. */}
-              <CoreImportPanel />
-              {DIVIDER}
-              <DataImport allowReplace={false} kinds={["tasks-csv", "projects-csv", "notes-csv"]} />
-              {DIVIDER}
-              {/* Excel đi qua upsert-batch của core (B4a) nên cần mật khẩu nhập. */}
-              <FileUploadManager requireSecret />
-              {DIVIDER}
+              {may("data:import") ? (
+                <>
+                  <CoreImportPanel />
+                  {DIVIDER}
+                  <DataImport allowReplace={false} kinds={["tasks-csv", "projects-csv", "notes-csv"]} />
+                  {DIVIDER}
+                </>
+              ) : null}
+              {/* Excel đi qua upsert-batch của core (B4a); cần quyền đồng bộ. */}
+              {may("integration:sync") ? (
+                <>
+                  <FileUploadManager apiMode />
+                  {DIVIDER}
+                </>
+              ) : null}
               <LocalOnlyNotice feature="Khôi phục từ bản sao lưu cục bộ" />
             </>
           )}
@@ -173,11 +183,21 @@ export default async function DataPage({
         // Người dùng hiện tại, URL đồng bộ, cào URL (upsert-batch) và kết nối Jira đều dùng
         // được ở cả hai chế độ. Sync Jira từ kết nối đã lưu ở chế độ api nằm ở nút Cào ngay (B4b).
         <div className="flex flex-col gap-8">
-          <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
-          <TimezonePicker
-            current={{ timezone, default: tzDefault, source: tzSource }}
-            options={timezoneOptions}
-          />
+          {IS_LOCAL ? (
+            <CurrentUserManager initialUsers={currentUsers} assignees={assignees} />
+          ) : (
+            // Alias Jira do quản trị viên đặt ở core, người dùng chỉ xem.
+            <section className="rounded-lg border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-4 text-sm">
+              <h2 className="font-semibold">Alias Jira của bạn</h2>
+              <p className="mt-1 text-[var(--color-ink-muted)]">
+                {myAliases.length > 0 ? myAliases.join(", ") : "Chưa có alias nào."} Do quản trị viên đặt; xem thêm ở{" "}
+                <Link href="/me" className="text-[var(--color-accent)] underline">
+                  Hồ sơ
+                </Link>
+                .
+              </p>
+            </section>
+          )}
           {IS_LOCAL ? (
             <JiraSyncManager
               taskCount={taskCount}
@@ -195,10 +215,12 @@ export default async function DataPage({
                   Chỉ hiện {connections.length}/{connectionsTotal} kết nối (giới hạn 100 của core); phần còn lại chưa hiển thị.
                 </p>
               )}
-              <JiraConnectionsManager connections={connections} />
+              {may("integration:sync") || may("integration:manage") ? (
+                <JiraConnectionsManager connections={connections} canManage={may("integration:manage")} />
+              ) : null}
             </>
           )}
-          <UrlSyncManager initialUrls={syncUrls} requireSecret={!IS_LOCAL} />
+          {may("integration:manage") ? <UrlSyncManager initialUrls={syncUrls} /> : null}
         </div>
       )}
 

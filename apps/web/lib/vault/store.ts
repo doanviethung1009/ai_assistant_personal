@@ -25,8 +25,17 @@ function dataDir(): string {
     : path.resolve(process.cwd(), "..", "..", "data");
 }
 
-export function vaultFilePath(): string {
-  return path.join(dataDir(), "vault.json");
+const OWNER_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Đường dẫn file két. `owner` là uid từ PHIÊN (api) hoặc null (local, giữ `vault.json`). Không bao
+ * giờ lấy từ input client; vẫn kiểm UUID trước khi ghép vào đường dẫn để "../x" không thoát thư mục.
+ * Tách file theo user: dùng chung một file thì mọi người đăng nhập đọc/ghi/xoá chung một két.
+ */
+export function vaultFilePath(owner: string | null): string {
+  if (owner === null) return path.join(dataDir(), "vault.json");
+  if (!OWNER_RE.test(owner)) throw new Error("owner két không hợp lệ");
+  return path.join(dataDir(), `vault-${owner.toLowerCase()}.json`);
 }
 
 // Memory mode: DATA_SOURCE=memory không được ghi đĩa
@@ -41,10 +50,10 @@ function isMemoryMode(): boolean {
 // Tuần tự hoá ghi, cùng lý do với json-file.ts
 let writeChain: Promise<unknown> = Promise.resolve();
 
-export async function readVaultBlob(): Promise<VaultBlob | null> {
+export async function readVaultBlob(owner: string | null): Promise<VaultBlob | null> {
   if (isMemoryMode()) return globalCache.__vaultMemoryBlob ?? null;
   try {
-    const raw = await readFile(vaultFilePath(), "utf8");
+    const raw = await readFile(vaultFilePath(owner), "utf8");
     const parsed: unknown = JSON.parse(raw);
     return isVaultBlob(parsed) ? parsed : null;
   } catch (error) {
@@ -67,11 +76,12 @@ export class VaultConflictError extends Error {
  * Truyền null khi tạo két lần đầu (chưa có blob nào).
  */
 export function writeVaultBlob(
+  owner: string | null,
   blob: VaultBlob,
   expectedUpdatedAt: string | null,
 ): Promise<void> {
   const job = async () => {
-    const current = await readVaultBlob();
+    const current = await readVaultBlob(owner);
     if ((current?.updated_at ?? null) !== expectedUpdatedAt) {
       throw new VaultConflictError();
     }
@@ -81,7 +91,7 @@ export function writeVaultBlob(
       return;
     }
 
-    const target = vaultFilePath();
+    const target = vaultFilePath(owner);
     await mkdir(path.dirname(target), { recursive: true });
     const body = JSON.stringify(blob);
     if (Buffer.byteLength(body) > MAX_BLOB_BYTES) {
@@ -103,22 +113,25 @@ export function writeVaultBlob(
   return next;
 }
 
-export async function readVaultRaw(): Promise<string | null> {
-  const blob = await readVaultBlob();
+export async function readVaultRaw(owner: string | null): Promise<string | null> {
+  const blob = await readVaultBlob(owner);
   return blob ? JSON.stringify(blob, null, 2) : null;
 }
 
-export async function deleteVaultBlob(): Promise<void> {
+export async function deleteVaultBlob(owner: string | null): Promise<void> {
   if (isMemoryMode()) {
     globalCache.__vaultMemoryBlob = null;
     return;
   }
-  const target = vaultFilePath();
-  try {
-    await unlink(target);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
-      throw error;
+  const target = vaultFilePath(owner);
+  // Xoá cả bản `.bak` (writeVaultBlob để lại bản trước): nếu không, "xoá két" vẫn để ciphertext cũ trên đĩa.
+  for (const file of [target, `${target}.bak`]) {
+    try {
+      await unlink(file);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
     }
   }
 }

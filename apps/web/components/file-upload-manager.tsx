@@ -1,16 +1,18 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition, useRef } from "react";
 import { importBulkFileAction } from "@/app/actions-import";
 import { UpsertResult } from "@/components/upsert-result";
 import type { UpsertSummary } from "@/lib/types";
 
 /**
- * Nhập Excel/CSV Jira. `requireSecret` bật ở chế độ api: ghi qua core cần mật khẩu nhập
- * (IMPORT_COMMIT_SECRET), ô này không bao giờ được lưu hay điền sẵn.
+ * Nhập Excel/CSV Jira. `apiMode` bật ở chế độ api: dữ liệu ghi vào Postgres qua core, quyền
+ * ghi do core kiểm theo role nên không có ô mật khẩu.
  */
-export function FileUploadManager({ requireSecret = false }: { requireSecret?: boolean }) {
+export function FileUploadManager({ apiMode = false }: { apiMode?: boolean }) {
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [summary, setSummary] = useState<UpsertSummary | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -26,6 +28,7 @@ export function FileUploadManager({ requireSecret = false }: { requireSecret?: b
     startTransition(async () => {
       try {
         const res = await importBulkFileAction(formData);
+        if (gate(res)) return;
         if (res.ok) {
           const skipped = res.skipped_personal > 0 ? `, giữ nguyên ${res.skipped_personal} task cá nhân` : "";
           setResult({ ok: true, message: `Thành công! Đã phân tích file ${file.name}. Thêm mới: ${res.added}, Cập nhật: ${res.updated} tasks${skipped}.` });
@@ -36,7 +39,7 @@ export function FileUploadManager({ requireSecret = false }: { requireSecret?: b
       } catch {
         setResult({ ok: false, message: "Lỗi gửi file lên server." });
       } finally {
-        // Xoá cả ô mật khẩu sau mỗi lần gửi, dù thành công, lỗi hay ném ngoại lệ.
+        // Xoá ô chọn file sau mỗi lần gửi, dù thành công, lỗi hay ném ngoại lệ.
         formRef.current?.reset();
       }
     });
@@ -49,7 +52,7 @@ export function FileUploadManager({ requireSecret = false }: { requireSecret?: b
         Tải file <b>.xlsx</b> hoặc <b>.csv</b> lên đây để đồng bộ ngay lập tức. Tính năng này được xử lý trực tiếp trên server nên sẽ không gây giật lag trình duyệt.
       </p>
 
-      {requireSecret && (
+      {apiMode && (
         <p className="mb-3 text-xs text-[var(--color-ink-muted)]">
           Chế độ api: dữ liệu ghi vào Postgres theo khoá Issue Key (nguồn <code>jira</code>), chạy lại không nhân đôi.
           Task cá nhân trùng khoá được giữ nguyên; dòng thiếu Issue Key bị bỏ qua.
@@ -70,17 +73,6 @@ export function FileUploadManager({ requireSecret = false }: { requireSecret?: b
             hover:file:bg-[var(--color-surface-hover)]
             disabled:opacity-50 cursor-pointer"
         />
-        {requireSecret && (
-          <input
-            type="password"
-            name="import_secret"
-            required
-            autoComplete="new-password"
-            placeholder="Mật khẩu nhập dữ liệu"
-            disabled={pending}
-            className="w-56 rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-2 text-sm disabled:opacity-50"
-          />
-        )}
         <button
           type="submit"
           disabled={pending}

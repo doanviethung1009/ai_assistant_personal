@@ -168,16 +168,10 @@ make prod-up    # docker compose up -d áp .env mới cho container đổi
 make health
 ```
 
-**Ngoại lệ: biến `NEXT_PUBLIC_*` (hiện tại chỉ có `NEXT_PUBLIC_DISPLAY_TZ`).**
-Next.js nhúng giá trị này vào bundle **lúc build**, không đọc được lúc chạy.
-Múi giờ do người dùng chọn trên UI (lưu DB); biến này chỉ là múi giờ dự phòng khi
-API không trả lời, và là mặc định khi chưa ai chọn. Đổi `TZ` trong `.env` mà không
-rebuild thì giá trị dự phòng vẫn là giá trị cũ:
-
-```bash
-make prod-build   # bắt buộc, vì build arg lấy từ ${TZ}
-make prod-up
-```
+**Múi giờ:** hệ thống dùng một múi giờ duy nhất, là biến `TZ` trong `.env`. Cả `api`
+(`display_timezone`) và `web` đọc nó lúc chạy, nên đổi `TZ` chỉ cần `make prod-up`, không
+phải build lại image. Không còn biến `NEXT_PUBLIC_*` nào; nếu sau này thêm thì giá trị
+bị nhúng lúc build và đổi nó phải `make prod-build`.
 
 **Xoay `API_KEY`.** `API_KEY` được cả `api` (để validate) và `web` (để gọi
 `api`) dùng, nên đổi nó phải restart cả hai cùng lúc — `make prod-up` làm đúng

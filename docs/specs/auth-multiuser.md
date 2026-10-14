@@ -6,6 +6,7 @@
 - Ngày: 2026-10-10
 - Nhánh lúc viết: `feat/auth-multiuser` (sạch, HEAD `b4587ef`)
 - Alembic head lúc viết spec: `a1c9e4b7d2f8` (user_timezone_due_all_day). Migration của epic có `down_revision = "a1c9e4b7d2f8"`.
+- **CẬP NHẬT 2026-10-13:** múi giờ theo từng user (`PUT /me/timezone`, `GET /settings/timezones`, `MeRead.timezone`, `bind_display_tz`, bộ chọn ở `/me`) đã bị GỠ, thay bằng một múi giờ của server (biến `TZ`). Cột `users.timezone` còn trong DB nhưng không dùng. Các đoạn nhắc tới chúng bên dưới chỉ còn giá trị lịch sử.
 - User đã chốt trước khi viết: (C1) invite-only theo email; (C2) task `work` dùng chung cả team, task `personal` chỉ owner thấy, server tự suy "của tôi", bỏ tham số `owner`; (C3) ba role `admin`/`lead`/`member`; (C4) chế độ local (`DATA_SOURCE=file|memory`) không có auth, đa người dùng chỉ ở `DATA_SOURCE=api`; (C5) orchestrator viết `docs/GOOGLE_OAUTH_SETUP.md`, spec chỉ chốt tên biến env.
 - Đã đối chiếu với code thật. Điểm lệch giữa đề bài và code ở **Phụ lục A**.
 

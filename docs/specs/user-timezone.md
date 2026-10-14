@@ -1,5 +1,6 @@
 # Spec: Người dùng tự chọn múi giờ hiển thị, và sửa lỗi quá hạn của hạn Jira
 
+- **CẬP NHẬT 2026-10-13: phần "người dùng tự chọn múi giờ" (mục 1.2 điểm 1, API `display-timezone`, `PUT /me/timezone`, bộ chọn ở `/data`) đã bị GỠ** theo quyết định "theo giờ server" (mọi người dùng cùng một nơi). Chỉ còn hiệu lực phần hạn cả ngày (`tasks.due_all_day`, quy tắc quá hạn theo ngày, sync hạn có điều kiện). Múi giờ nay là biến `TZ` của server; xem `docs/AI_HANDOFF_STATE.md` mục 16.
 - Trạng thái: **CHỐT** (User chốt 2026-10-13, Q1-Q7 theo khuyến nghị của architect; code đã vào `main` ở các commit `34a5774`, `5a4724a`, `57589e2`, `87b6d7d`)
 - Tác giả: architect
 - Ngày: 2026-10-09

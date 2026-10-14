@@ -21,7 +21,6 @@ class MeRead(BaseModel):
     name: str | None
     role: UserRole
     status: UserStatus
-    timezone: str | None = Field(description="Múi giờ user đã chọn; null = dùng mặc định env")
-    effective_timezone: str = Field(description="Múi giờ đang áp dụng cho request này")
+    effective_timezone: str = Field(description="Múi giờ của server")
     aliases: list[AliasRead]
     permissions: list[Permission]

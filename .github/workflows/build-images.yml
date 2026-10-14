@@ -55,9 +55,6 @@ jobs:
           target: prod
           push: true
           tags: ${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.tag }}
-          # NEXT_PUBLIC_* nhúng lúc build; image dùng chung mọi môi trường nên múi giờ cố định ở đây.
-          build-args: |
-            NEXT_PUBLIC_DISPLAY_TZ=Asia/Ho_Chi_Minh
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
       - name: Quét lỗ hổng (Trivy)

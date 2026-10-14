@@ -190,7 +190,8 @@ class SettingKey(StrEnum):
 
     CURRENT_USERS = "current_users"
     SYNC_URLS = "sync_urls"
-    # Giá trị là CHUỖI JSON (tên IANA), khác hai khoá trên có value là list.
+    # DORMANT: không còn đọc/ghi (múi giờ chỉ là env DISPLAY_TIMEZONE). GIỮ giá trị vì CHECK
+    # ck_app_settings_key_valid sinh từ enum này; gỡ cần migration riêng.
     DISPLAY_TIMEZONE = "display_timezone"
 
 

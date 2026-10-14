@@ -47,8 +47,8 @@ Không "tải hết rồi lọc ở server" cho tập lớn: đó là lỗi cũ 
   (`lib/core-cache.ts`); mọi lời gọi ghi và `revalidateAll()` xoá cache; `/api/v1/integrations*` không
   cache. Tự thử lại tối đa 2 lần khi core trả 429 (theo `Retry-After`, trần 3 giây).
 - `React.cache()` cho hàm được nhiều Server Component gọi trong cùng một lần render
-  (`getDisplayTimezoneApi`).
-- Dữ liệu dùng chung nhiều trang (timezone, projects, current-users) đặt ở layout hoặc để cache lo;
+  (`getCurrentUsersApi`). Múi giờ không cần: nó là hằng `DISPLAY_TZ`, không gọi API.
+- Dữ liệu dùng chung nhiều trang (projects, current-users) đặt ở layout hoặc để cache lo;
   layout KHÔNG render lại khi chỉ đổi `searchParams`.
 - Tải song song độc lập bằng `Promise.all`; không `await` nối tiếp trừ khi phụ thuộc nhau.
 - Phân trang bắt buộc phía server cho danh sách lớn, mặc định 50, tối đa 200 (backend `le=200`).

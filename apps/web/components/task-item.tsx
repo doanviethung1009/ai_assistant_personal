@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useActionAuth } from "@/lib/use-action-auth";
+import { useOptimistic, useState, useTransition } from "react";
 import {
   deleteTaskAction,
   logTimeAction,
@@ -35,10 +36,16 @@ const ICON_BUTTON =
 export function TaskItem({ task }: { task: Task }) {
   const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [error, setError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // Đổi trạng thái hiện NGAY; nếu action lỗi (hoặc hết phiên) transition kết thúc và giá trị tự quay về task.status.
+  const [status, setOptimisticStatus] = useOptimistic<TaskStatus, TaskStatus>(task.status, (_current, next) => next);
 
-  const isClosed = task.status === "done" || task.status === "cancelled";
+  // Chỉ khoá khi core nói rõ `false`; core vẫn là bên chặn thật.
+  const canEdit = task.can_edit !== false;
+  const canDelete = task.can_delete !== false;
+  const isClosed = status === "done" || status === "cancelled";
   const scope = scopeOf(task);
   // Task do tích hợp quản lý: sync sau sẽ ghi đè trạng thái, tiêu đề... (chỉ cảnh báo, không khoá).
   const syncManaged = isSyncManaged(task);
@@ -59,10 +66,12 @@ export function TaskItem({ task }: { task: Task }) {
     run(() => setScopeAction(task.id, next));
   }
 
-  function run(action: () => Promise<{ ok: boolean; error?: string }>) {
+  function run(action: () => Promise<{ ok: boolean; error?: string; code?: string }>, optimistic?: TaskStatus) {
     setError(null);
     startTransition(async () => {
+      if (optimistic) setOptimisticStatus(optimistic);
       const result = await action();
+      if (gate(result)) return;
       if (!result.ok) setError(result.error ?? "Thao tác thất bại");
     });
   }
@@ -80,15 +89,16 @@ export function TaskItem({ task }: { task: Task }) {
           <div className="pt-0.5 relative z-10">
             <input
               type="checkbox"
-              checked={task.status === "done"}
-              disabled={pending}
+              checked={status === "done"}
+              disabled={pending || !canEdit}
               onChange={(event) =>
-                run(() =>
-                  setStatusAction(task.id, event.target.checked ? "done" : "todo"),
+                run(
+                  () => setStatusAction(task.id, event.target.checked ? "done" : "todo"),
+                  event.target.checked ? "done" : "todo",
                 )
               }
               aria-label={
-                task.status === "done"
+                status === "done"
                   ? `Mở lại: ${task.title}`
                   : `Đánh dấu xong: ${task.title}`
               }
@@ -115,7 +125,7 @@ export function TaskItem({ task }: { task: Task }) {
 
             <div className="mt-3 flex flex-wrap items-center gap-2">
               <ScopeBadge scope={scope} />
-              <StatusBadge status={task.status} />
+              <StatusBadge status={status} />
               <PriorityBadge priority={task.priority} />
               <SourceBadge source={task.source} />
               {task.project ? (
@@ -206,10 +216,10 @@ export function TaskItem({ task }: { task: Task }) {
             </label>
             <select
               id={`status-${task.id}`}
-              value={task.status}
-              disabled={pending}
+              value={status}
+              disabled={pending || !canEdit}
               onChange={(event) =>
-                run(() => setStatusAction(task.id, event.target.value as TaskStatus))
+                run(() => setStatusAction(task.id, event.target.value as TaskStatus), event.target.value as TaskStatus)
               }
               title={
                 syncManaged
@@ -234,7 +244,7 @@ export function TaskItem({ task }: { task: Task }) {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              disabled={pending}
+              disabled={pending || !canEdit}
               onClick={toggleScope}
               className={`${ICON_BUTTON} col-span-2`}
               title={
@@ -248,7 +258,7 @@ export function TaskItem({ task }: { task: Task }) {
             {!isClosed && task.scheduled_for !== todayInDisplayTz(tz) ? (
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !canEdit}
                 onClick={() =>
                   run(() => setScheduleAction(task.id, todayInDisplayTz(tz)))
                 }
@@ -262,7 +272,7 @@ export function TaskItem({ task }: { task: Task }) {
             {!isClosed ? (
               <button
                 type="button"
-                disabled={pending}
+                disabled={pending || !canEdit}
                 onClick={() => run(() => logTimeAction(task.id, 30))}
                 className={ICON_BUTTON}
                 title="Ghi thêm 30 phút đã làm"
@@ -274,8 +284,8 @@ export function TaskItem({ task }: { task: Task }) {
             {!isClosed ? (
               <button
                 type="button"
-                disabled={pending}
-                onClick={() => run(() => setStatusAction(task.id, "done"))}
+                disabled={pending || !canEdit}
+                onClick={() => run(() => setStatusAction(task.id, "done"), "done")}
                 className="w-full rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-center text-sm font-medium text-emerald-600 dark:text-emerald-400 transition-all hover:bg-emerald-500 hover:text-white shadow-sm"
                 title="Đánh dấu hoàn thành"
               >
@@ -301,7 +311,7 @@ export function TaskItem({ task }: { task: Task }) {
                   Huỷ
                 </button>
               </>
-            ) : (
+            ) : canDelete ? (
               <button
                 type="button"
                 disabled={pending}
@@ -311,7 +321,7 @@ export function TaskItem({ task }: { task: Task }) {
               >
                 Xoá
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

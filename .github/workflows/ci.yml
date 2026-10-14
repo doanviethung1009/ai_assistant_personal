@@ -88,6 +88,8 @@ jobs:
       - run: npm ci
       - name: Typecheck (cùng lệnh với `make lint`)
         run: npx tsc --noEmit
+      - name: Test (vitest)
+        run: npm test
       - name: Audit dependency production
         # Chưa chặn merge: hiện có lỗ hổng high chưa xử lý. Bỏ continue-on-error
         # sau khi chạy `npm audit fix` xong để audit thành cổng thật.

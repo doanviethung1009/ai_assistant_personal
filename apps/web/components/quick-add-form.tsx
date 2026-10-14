@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useRef, useState, useTransition } from "react";
 
 import { createTaskAction, type NewTaskInput } from "@/app/actions";
@@ -34,6 +35,7 @@ export function QuickAddForm({
   const [expanded, setExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const formRef = useRef<HTMLFormElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
 
@@ -85,6 +87,7 @@ export function QuickAddForm({
 
     startTransition(async () => {
       const result = await createTaskAction(payload);
+      if (gate(result)) return;
       if (result.ok) {
         formRef.current?.reset();
         setExpanded(false);

@@ -19,10 +19,9 @@ CMD ["npm", "run", "dev"]
 
 # ── Build cho prod ─────────────────────────────────────────────────────
 FROM deps AS builder
-# Biến NEXT_PUBLIC_* được nhúng vào bundle client lúc build, không đọc được
-# ở runtime. Vì vậy phải truyền qua build arg, không phải qua environment.
-ARG NEXT_PUBLIC_DISPLAY_TZ=Asia/Ho_Chi_Minh
-ENV NEXT_PUBLIC_DISPLAY_TZ=$NEXT_PUBLIC_DISPLAY_TZ
+# Hiện không có biến NEXT_PUBLIC_* nào. Nếu thêm: chúng được nhúng vào bundle client lúc
+# build, không đọc được ở runtime, nên phải khai ARG/ENV ở đây và build arg trong compose.
+# Múi giờ KHÔNG nằm trong số đó: web đọc biến TZ lúc chạy (lib/api.ts, DISPLAY_TZ).
 COPY . .
 RUN npm run build
 

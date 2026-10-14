@@ -1,3 +1,5 @@
+import { ForbiddenPanel } from "@/components/forbidden-panel";
+import { canView } from "@/lib/auth-guard";
 import { listTasks, IS_LOCAL } from "@/lib/api";
 import { TeamOpenList } from "@/components/team-open-list";
 import { JiraQuickSync, JiraSyncLink } from "@/components/jira-quick-sync";
@@ -99,6 +101,7 @@ export default async function TeamPage({
 }: {
   searchParams: Promise<{ assignee?: string; status?: string; sort?: string; page?: string; q?: string; size?: string; time?: string; from?: string; to?: string }>;
 }) {
+  if (!(await canView("team:read"))) return <ForbiddenPanel />;
   const sp = await searchParams;
   const currentAssignee = sp.assignee;
   const currentStatus = sp.status || "open"; // "open", "closed", "all"
@@ -478,7 +481,7 @@ export default async function TeamPage({
   } catch (error) {
     return (
       <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
+        error={error}
       />
     );
   }

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useActionAuth } from "@/lib/use-action-auth";
 import { wipeAllDataAction } from "@/app/actions-danger";
 import { useRouter } from "next/navigation";
 
@@ -11,6 +12,7 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
+  const gate = useActionAuth();
 
   const handleWipe = () => {
     setError(null);
@@ -48,7 +50,12 @@ export function WipeDataManager({ assignees = [] }: { assignees?: string[] }) {
       }
 
       try {
-        await wipeAllDataAction(options);
+        const result = await wipeAllDataAction(options);
+        if (gate(result)) return;
+        if (!result.ok) {
+          setError(result.error ?? "Xoá dữ liệu thất bại.");
+          return;
+        }
       } catch {
         setError("Xoá dữ liệu thất bại. Kiểm tra DATA_SOURCE và log của web.");
         return;

@@ -28,9 +28,7 @@ async def get_system_info() -> SystemInfo:
         app_name=settings.app_name,
         version=__version__,
         environment=settings.environment,
-        # Múi giờ hiệu lực của chính người gọi (admin), không còn cài đặt toàn cục.
         display_timezone=clock.display_tz().key,
-        display_timezone_default=settings.display_timezone,
         trash_retention_days=settings.trash_retention_days,
         rate_limit_enabled=settings.rate_limit_enabled,
         rate_limit_requests_per_minute=settings.rate_limit_requests_per_minute,

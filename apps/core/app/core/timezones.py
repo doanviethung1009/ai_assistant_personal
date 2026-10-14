@@ -1,15 +1,14 @@
 """Kiểm tra tên múi giờ IANA. Hàm thuần, không phụ thuộc config nên `config.py` dùng được.
 
-Nguồn DUY NHẤT của luật "tên múi giờ hợp lệ": validator env, API PUT và đường nhập
-file cùng gọi `normalize_timezone`, nên giá trị API từ chối không lọt vào DB qua cửa khác.
+Nguồn DUY NHẤT của luật "tên múi giờ hợp lệ": validator của env DISPLAY_TIMEZONE gọi
+`normalize_timezone`, nên tên sai làm app không khởi động thay vì vỡ ở request đầu tiên.
 """
 
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
 from functools import lru_cache
-from zoneinfo import ZoneInfo, available_timezones
+from zoneinfo import available_timezones
 
 MAX_TIMEZONE_LEN = 64
 
@@ -39,9 +38,3 @@ def normalize_timezone(value: str) -> str:
         raise ValueError("Múi giờ không nằm trong danh sách IANA")
     return name
 
-
-def utc_offset_minutes(name: str, at: datetime | None = None) -> int:
-    """Offset của múi giờ so với UTC tại thời điểm `at` (mặc định: bây giờ), đơn vị phút."""
-    moment = (at or datetime.now(UTC)).astimezone(ZoneInfo(name))
-    offset = moment.utcoffset()
-    return int(offset.total_seconds() // 60) if offset is not None else 0

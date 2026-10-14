@@ -27,7 +27,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      TZ: ${TZ}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
       # Bắt buộc scram, không trust
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
@@ -74,7 +74,7 @@ services:
     environment:
       ENVIRONMENT: ${ENVIRONMENT:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-      TZ: ${TZ}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       API_KEY: ${API_KEY}
@@ -84,10 +84,7 @@ services:
       # Email admin ban đầu (phân cách dấu phẩy) và domain Google Workspace được phép đăng nhập.
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
-      # Mật khẩu bắt buộc khi "Nhập thật" JSON vào Postgres (ghi đè dữ liệu). Rỗng thì core
-      # từ chối nhập thật (chỉ cho Kiểm tra). Web không có đăng nhập nên đây là lớp chặn
-      # duy nhất khi web mở ra LAN. Xem docs/specs/import-json-to-postgres.md (M2).
-      IMPORT_COMMIT_SECRET: ${IMPORT_COMMIT_SECRET:-}
+      # (IMPORT_COMMIT_SECRET đã bỏ: nhập thật và cào Jira nay cần quyền `data:import` của admin.)
       # Khoá Fernet (32 byte base64 url-safe) mã hoá token tích hợp (Jira...) trước khi lưu ở Postgres.
       # KHÁC API_KEY. Rỗng thì tạo/sửa kết nối trả 503. MẤT KHOÁ = phải nhập lại mọi token;
       # đổi khoá cũng vậy. Không bao giờ log hay trả khoá/token về client.
@@ -101,10 +98,10 @@ services:
       SYNC_URL_EXTRA_HOSTS: ${SYNC_URL_EXTRA_HOSTS:-}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
-      # Giới hạn request/phút, đếm ở Redis theo user (JWT), rồi X-API-Key, rồi IP. Web hiện
-      # gửi một key dùng chung nên cả web chung một bucket; hạ lại khi web gửi JWT từng người. Xem core/rate_limit.py.
+      # Giới hạn request/phút, đếm ở Redis theo user (JWT), rồi X-API-Key, rồi IP. Web gửi JWT từng
+      # người nên mỗi người một bucket (300/phút); request không có JWT chung bucket theo key. Xem core/rate_limit.py.
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
-      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-900}
+      RATE_LIMIT_REQUESTS_PER_MINUTE: ${RATE_LIMIT_REQUESTS_PER_MINUTE:-300}
       LITELLM_BASE_URL: http://litellm:4000
       LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-}
     volumes:
@@ -132,7 +129,10 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: development
-      TZ: ${TZ}
+      # Múi giờ hiển thị = múi giờ server, đọc lúc chạy (lib/api.ts, DISPLAY_TZ). Cùng biến
+      # TZ mà service api đọc cho display_timezone, cùng mặc định Asia/Ho_Chi_Minh khi .env không đặt;
+      # TZ không hợp lệ thì api không khởi động còn web rơi về mặc định, nên đặt đúng tên IANA.
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
       # Chạy phía server của Next.js, không lộ ra browser
       # Mặc định "api" (Postgres qua core API) — đây là chế độ thật, nên
       # giữ nguyên trừ khi có lý do cụ thể. Đặt DATA_SOURCE=file trong .env
@@ -144,14 +144,26 @@ services:
       DATA_SOURCE: ${DATA_SOURCE:-api}
       CORE_API_URL: ${CORE_API_URL:-http://api:8000}
       CORE_API_KEY: ${API_KEY}
+      # Đăng nhập Google bằng Auth.js (docs/specs/web-authjs-login.md). Chỉ bắt buộc khi
+      # DATA_SOURCE=api; thiếu thì web hiện trang lỗi cấu hình thay vì mở cửa.
+      AUTH_SECRET: ${AUTH_SECRET:-}
+      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      AUTH_TRUST_HOST: "true"
+      AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
+      AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
+      # Cùng giá trị với service api: web ký JWT từng người, core xác thực.
+      CORE_JWT_SECRET: ${CORE_JWT_SECRET:-}
+      GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
+      # true chỉ khi có reverse proxy ghi đè X-Forwarded-For; nếu không client tự đặt IP để né giới hạn đăng nhập.
+      TRUST_FORWARDED_FOR: ${TRUST_FORWARDED_FOR:-false}
+      # Số proxy tin cậy đứng trước web (Caddy = 1); lấy IP client từ bên phải X-Forwarded-For theo số hop này.
+      TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       # Cùng giá trị với service api (xem SYNC_URL_EXTRA_HOSTS ở trên).
       SYNC_URL_EXTRA_HOSTS: ${SYNC_URL_EXTRA_HOSTS:-}
       # Chỉ dùng khi DATA_SOURCE=file. Mount thêm bên dưới để file JSON nằm
       # trên host (./data), không mất khi container bị xoá.
       DATA_DIR: /data
       TRASH_RETENTION_DAYS: ${TRASH_RETENTION_DAYS:-30}
-      # Cố định timezone hiển thị để SSR và hydrate ra cùng chuỗi ngày giờ
-      NEXT_PUBLIC_DISPLAY_TZ: ${TZ}
       # Nơi trang /docs đọc file markdown. Trong container không thấy được gốc
       # repo vì build context chỉ có apps/web, nên phải mount vào.
       DOCS_DIR: /docs
@@ -241,7 +253,7 @@ services:
       GF_USERS_ALLOW_SIGN_UP: "false"
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
-      TZ: ${TZ}
+      TZ: ${TZ:-Asia/Ho_Chi_Minh}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./infra/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro

@@ -1,4 +1,4 @@
-"""Hạn cả ngày (due_all_day): quy tắc quá hạn theo NGÀY ở múi giờ người dùng.
+"""Hạn cả ngày (due_all_day): quy tắc quá hạn theo NGÀY ở múi giờ của server.
 
 Chạy với hai múi giờ lệch nhau 26 giờ (+14 và -12) để bắt lỗi lệch ngày.
 """
@@ -12,13 +12,13 @@ from zoneinfo import ZoneInfo
 import httpx
 import pytest
 
+from app.core.config import settings
 from app.db.session import SessionFactory
 from app.models.enums import TaskScope, TaskStatus
 from app.models.task import Task
 
 pytestmark = pytest.mark.db
 
-TZ_URL = "/api/v1/me/timezone"
 EXTREME_TZ = ["Pacific/Kiritimati", "Etc/GMT+12"]
 
 
@@ -51,9 +51,9 @@ def _titles(items: list[dict[str, Any]]) -> set[str]:
 
 @pytest.mark.parametrize("tz", EXTREME_TZ)
 async def test_all_day_due_today_is_due_soon_not_overdue(
-    client: httpx.AsyncClient, tz: str
+    client: httpx.AsyncClient, tz: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    assert (await client.put(TZ_URL, json={"timezone": tz})).status_code == 200
+    monkeypatch.setattr(settings, "display_timezone", tz)
     await _seed(tz)
 
     agenda = (await client.get("/api/v1/tasks/agenda")).json()
@@ -73,8 +73,10 @@ async def test_all_day_due_today_is_due_soon_not_overdue(
     assert all(t["due_all_day"] for t in listing["items"] if t["title"] in ("hôm nay", "hôm qua"))
 
 
-async def test_closed_all_day_task_is_never_overdue(client: httpx.AsyncClient) -> None:
-    await client.put(TZ_URL, json={"timezone": "Etc/GMT+12"})
+async def test_closed_all_day_task_is_never_overdue(
+    client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(settings, "display_timezone", "Etc/GMT+12")
     today = datetime.now(ZoneInfo("Etc/GMT+12")).date()
     await _add(
         "đã xong",

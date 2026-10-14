@@ -1,6 +1,7 @@
 "use server";
 
-import { CoreApiError, setCurrentUsersApi, setDisplayTimezoneApi } from "@/lib/api";
+import { requireSession } from "@/lib/auth-guard";
+import { CoreApiError, setCurrentUsersApi } from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
 const MAX_OWNERS = 20;
@@ -17,6 +18,8 @@ export interface SetUsersResult {
  * Trả {ok,error} thay vì ném để component hiện được thông báo rõ ràng.
  */
 export async function setCurrentUserAction(names: string[]): Promise<SetUsersResult> {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!Array.isArray(names)) return { ok: false, error: "Danh sách tên không hợp lệ" };
   const clean: string[] = [];
   for (const raw of names) {
@@ -42,31 +45,5 @@ export async function setCurrentUserAction(names: string[]): Promise<SetUsersRes
     return { ok: false, error: "Không lưu được cài đặt. Kiểm tra service api." };
   }
   revalidatePath("/", "layout"); // Cập nhật toàn bộ các trang (Hôm nay, Task, Team)
-  return { ok: true };
-}
-
-// Chỉ ký tự có thể xuất hiện trong tên IANA (Asia/Ho_Chi_Minh, Etc/GMT+12, America/Port-au-Prince).
-const TIMEZONE_NAME_RE = /^[A-Za-z0-9_+\-/]+$/;
-
-/**
- * Lưu múi giờ hiển thị. null = về mặc định env. Validate sơ bộ ở đây vì Server Action là
- * endpoint công khai; backend (danh sách IANA) mới là nơi quyết định cuối cùng. Backend trả
- * 409 khi đang có lần nhập giữ khoá, message của nó được chuyển nguyên cho người dùng.
- */
-export async function setDisplayTimezoneAction(tz: string | null): Promise<SetUsersResult> {
-  if (tz !== null) {
-    if (typeof tz !== "string" || tz.length < 1 || tz.length > 64 || !TIMEZONE_NAME_RE.test(tz)) {
-      return { ok: false, error: "Tên múi giờ không hợp lệ (ví dụ Asia/Ho_Chi_Minh)" };
-    }
-  }
-  try {
-    await setDisplayTimezoneApi(tz);
-  } catch (error) {
-    if (error instanceof CoreApiError) return { ok: false, error: error.message };
-    console.error("lưu múi giờ thất bại", error instanceof Error ? error.name : "unknown");
-    return { ok: false, error: "Không lưu được cài đặt. Kiểm tra service api." };
-  }
-  // Layout giữ tz trong context nên phải làm mới cả cây, không chỉ một trang.
-  revalidatePath("/", "layout");
   return { ok: true };
 }

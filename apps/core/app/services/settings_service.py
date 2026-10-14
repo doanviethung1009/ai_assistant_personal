@@ -1,7 +1,7 @@
 """Đọc/ghi cài đặt toàn cục (app_settings: sync_urls) và danh sách assignee.
 
-`current_users` và `display_timezone` KHÔNG còn được đọc/ghi ở đây: chúng thành alias và múi giờ
-của từng user (bảng `users`/`user_aliases`). Dòng cũ trong app_settings được CLI bootstrap sao chép
+`current_users` KHÔNG còn được đọc/ghi ở đây: nó thành alias của từng user (`user_aliases`);
+`display_timezone` chỉ còn là env của server. Dòng cũ trong app_settings được CLI bootstrap sao chép
 đi rồi để nguyên (downgrade code cũ vẫn chạy).
 
 Chỉ nhận khoá khai báo ở `SettingKey`. Dữ liệu vào đã được chuẩn hoá ở
@@ -16,12 +16,11 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.timezones import utc_offset_minutes, valid_timezone_names
 from app.db import locks
 from app.models.app_setting import AppSetting
 from app.models.enums import SettingKey, TaskScope
 from app.models.task import Task
-from app.schemas.settings import TimezoneList, TimezoneOption, normalize_urls
+from app.schemas.settings import normalize_urls
 from app.services.task_service import _alive
 
 # Chặn kích thước danh sách assignee: DISTINCT trên cột có thể phình khi Jira sync kéo
@@ -77,15 +76,6 @@ async def set_sync_urls(session: AsyncSession, urls: list[str]) -> list[str]:
     await locks.take_import_write_lock(session, lock_timeout=SETTINGS_LOCK_TIMEOUT)
     await put_list(session, SettingKey.SYNC_URLS, clean)
     return clean
-
-
-def list_timezones() -> TimezoneList:
-    """Danh mục IANA. Không phân trang: ~600 tên tĩnh (< 25 KB), không phải dữ liệu tăng dần."""
-    items = [
-        TimezoneOption(name=name, utc_offset_minutes=utc_offset_minutes(name))
-        for name in sorted(valid_timezone_names())
-    ]
-    return TimezoneList(items=items, total=len(items))
 
 
 async def list_assignees(session: AsyncSession) -> list[str]:

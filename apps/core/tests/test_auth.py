@@ -493,13 +493,6 @@ def test_role_permission_matrix_matches_spec() -> None:
     assert ROLE_PERMISSIONS[UserRole.ADMIN] == set(P)
 
 
-async def test_me_timezone_roundtrip(client: httpx.AsyncClient) -> None:
-    resp = await client.put(f"{ME}/timezone", json={"timezone": "Asia/Tokyo"})
-    assert resp.status_code == 200 and resp.json()["effective_timezone"] == "Asia/Tokyo"
-    assert (await client.put(f"{ME}/timezone", json={"timezone": "Mars/Base"})).status_code == 422
-    assert (await client.get(ME)).json()["timezone"] == "Asia/Tokyo"
-
-
 # ═══════════════════════════════════════════════════════════════════════
 #  ADMIN_EMAILS và CLI
 # ═══════════════════════════════════════════════════════════════════════
@@ -585,7 +578,7 @@ async def test_bootstrap_assigns_owner_validates_checks_and_is_idempotent(
     real = await bootstrap(session, default_user.email, dry_run=False)
     await session.commit()
     assert (real.tasks, real.notes) == (1, 1)
-    assert real.aliases_added == ["Hùng"] and real.timezone_set == "Asia/Tokyo"
+    assert real.aliases_added == ["Hùng"]
     owners = {
         r.title: (r.owner_id, r.updated_at)
         for r in (
@@ -655,6 +648,181 @@ async def test_cli_invite_then_token_end_to_end(anon_client: httpx.AsyncClient) 
 
     too_long = await asyncio.to_thread(_cli, "token", "--email", "cli@test.local", "--ttl", "9999")
     assert too_long.returncode == 2
+
+
+async def _user_row(email: str) -> Any:
+    async with SessionFactory() as s:
+        return (
+            await s.execute(
+                text("SELECT id, status, session_version FROM users WHERE email = :e"), {"e": email}
+            )
+        ).one()
+
+
+async def _audit_count(action: str, target: uuid.UUID) -> int:
+    async with SessionFactory() as s:
+        return int(
+            await s.scalar(
+                text("SELECT count(*) FROM audit_log WHERE action = :a AND target_id = :t"),
+                {"a": action, "t": target},
+            )
+            or 0
+        )
+
+
+async def test_cli_revoke_bumps_session_version_and_audits(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    who = await create_persona("revoke@test.local")
+    old = who.headers
+    assert (await anon_client.get(ME, headers=old)).status_code == 200
+    out = await asyncio.to_thread(_cli, "revoke", "--email", "Revoke@Test.local")
+    assert out.returncode == 0, out.stderr
+    row = await _user_row("revoke@test.local")
+    assert row.session_version == 1
+    assert await _audit_count("sessions_revoked", row.id) == 1
+    assert (await anon_client.get(ME, headers=old)).status_code == 401
+
+
+async def test_cli_disable_then_enable(anon_client: httpx.AsyncClient) -> None:
+    who = await create_persona("disable@test.local")
+    old = who.headers
+    out = await asyncio.to_thread(_cli, "disable", "--email", "disable@test.local")
+    assert out.returncode == 0, out.stderr
+    row = await _user_row("disable@test.local")
+    assert row.status == "disabled" and row.session_version == 1
+    assert await _audit_count("user_status_changed", row.id) == 1
+    gone = await anon_client.get(ME, headers=old)
+    assert gone.status_code == 401
+    assert gone.json()["code"] in {"user_inactive", "token_invalid"}
+
+    back = await asyncio.to_thread(_cli, "enable", "--email", "disable@test.local")
+    assert back.returncode == 0, back.stderr
+    row = await _user_row("disable@test.local")
+    assert row.status == "active"
+    assert await _audit_count("user_status_changed", row.id) == 2
+    # Token cũ vẫn chết (sv đã tăng); token mới sống.
+    assert (await anon_client.get(ME, headers=old)).status_code == 401
+    fresh = _bearer(mint_token(who.id, row.session_version))
+    assert (await anon_client.get(ME, headers=fresh)).status_code == 200
+
+
+async def test_cli_enable_without_google_sub_goes_back_to_invited(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    assert (
+        await asyncio.to_thread(_cli, "invite", "--email", "inv2@test.local")
+    ).returncode == 0
+    assert (await asyncio.to_thread(_cli, "disable", "--email", "inv2@test.local")).returncode == 0
+    assert (await asyncio.to_thread(_cli, "enable", "--email", "inv2@test.local")).returncode == 0
+    assert (await _user_row("inv2@test.local")).status == "invited"
+
+
+async def test_cli_alias_adds_then_skips_duplicate(anon_client: httpx.AsyncClient) -> None:
+    await create_persona("alias-a@test.local")
+    await create_persona("alias-b@test.local")
+    first = await asyncio.to_thread(
+        _cli, "alias", "--email", "alias-a@test.local", "--alias", "Nguyễn A"
+    )
+    assert first.returncode == 0 and "Đã thêm" in first.stdout, first.stderr
+    again = await asyncio.to_thread(
+        _cli, "alias", "--email", "alias-a@test.local", "--alias", "Nguyễn A"
+    )
+    assert again.returncode == 0 and "Bỏ qua" in again.stdout
+    other = await asyncio.to_thread(
+        _cli, "alias", "--email", "alias-b@test.local", "--alias", "Nguyễn A", "--source", "jira"
+    )
+    assert other.returncode == 0 and "Bỏ qua" in other.stdout
+
+
+async def _alias_names(email: str) -> set[str]:
+    async with SessionFactory() as s:
+        rows = await s.execute(
+            text(
+                "SELECT a.alias FROM user_aliases a JOIN users u ON u.id = a.user_id "
+                "WHERE u.email = :e"
+            ),
+            {"e": email},
+        )
+        return {r[0] for r in rows}
+
+
+async def _last_alias_audit(target: uuid.UUID) -> dict[str, Any]:
+    async with SessionFactory() as s:
+        return dict(
+            (
+                await s.execute(
+                    text(
+                        "SELECT details FROM audit_log WHERE action = 'user_aliases_changed' "
+                        "AND target_id = :t ORDER BY created_at DESC LIMIT 1"
+                    ),
+                    {"t": target},
+                )
+            ).scalar_one()
+        )
+
+
+async def test_cli_alias_set_replaces_set_and_reports(anon_client: httpx.AsyncClient) -> None:
+    await create_persona("set-a@test.local")
+    await create_persona("set-b@test.local")
+    mail = "set-a@test.local"
+    first = await asyncio.to_thread(_cli, "alias", "--email", mail, "--set", "A1, A2")
+    assert first.returncode == 0, first.stderr
+    assert await _alias_names(mail) == {"A1", "A2"}
+    # B giữ "Taken" trước; set của A chứa "Taken" thì bị bỏ qua, A2 bị gỡ, A3 được thêm.
+    assert (
+        await asyncio.to_thread(_cli, "alias", "--email", "set-b@test.local", "--alias", "Taken")
+    ).returncode == 0
+    out = await asyncio.to_thread(_cli, "alias", "--email", mail, "--set", "A1,A3,Taken")
+    assert out.returncode == 0, out.stderr
+    assert await _alias_names(mail) == {"A1", "A3"}
+    assert await _alias_names("set-b@test.local") == {"Taken"}
+    assert "Đã gỡ alias 'A2'" in out.stdout and "Bỏ qua alias 'Taken'" in out.stdout
+    assert "thêm 1, gỡ 1" in out.stdout
+    row = await _user_row(mail)
+    assert await _last_alias_audit(row.id) == {
+        "source": "jira",
+        "added": 1,
+        "removed": 1,
+        "via": "cli",
+    }
+    # Không đụng session_version.
+    assert row.session_version == 0
+
+
+async def test_cli_alias_remove(anon_client: httpx.AsyncClient) -> None:
+    await create_persona("rm-a@test.local")
+    mail = "rm-a@test.local"
+    await asyncio.to_thread(_cli, "alias", "--email", mail, "--set", "X,Y,Z")
+    out = await asyncio.to_thread(_cli, "alias", "--email", mail, "--remove", "X,Nope")
+    assert out.returncode == 0, out.stderr
+    assert await _alias_names(mail) == {"Y", "Z"}
+    assert "thêm 0, gỡ 1" in out.stdout
+    row = await _user_row(mail)
+    assert (await _last_alias_audit(row.id))["removed"] == 1
+
+
+async def test_cli_alias_modes_are_mutually_exclusive() -> None:
+    email = ("--email", "x@test.local")
+    none = await asyncio.to_thread(_cli, "alias", *email)
+    both = await asyncio.to_thread(_cli, "alias", *email, "--alias", "a", "--set", "b")
+    three = await asyncio.to_thread(_cli, "alias", *email, "--set", "a", "--remove", "b")
+    for out in (none, both, three):
+        assert out.returncode == 2 and "usage" in out.stderr.lower()
+
+
+async def test_cli_unknown_email_exits_2(anon_client: httpx.AsyncClient) -> None:
+    for args in (
+        ("revoke",),
+        ("disable",),
+        ("enable",),
+        ("alias", "--alias", "x"),
+        ("alias", "--set", "x"),
+        ("alias", "--remove", "x"),
+    ):
+        out = await asyncio.to_thread(_cli, args[0], "--email", "khong-co@test.local", *args[1:])
+        assert out.returncode == 2, (args, out.stderr)
+        assert "Lỗi" in out.stderr
 
 
 # ═══════════════════════════════════════════════════════════════════════

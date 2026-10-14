@@ -1,11 +1,13 @@
 "use client";
 
 import { useState } from "react";
+import { useActionAuth } from "@/lib/use-action-auth";
 import { setCurrentUserAction } from "@/app/actions-user";
 
 export function CurrentUserManager({ initialUsers, assignees = [] }: { initialUsers: string[], assignees?: string[] }) {
   const [userText, setUserText] = useState((initialUsers || []).join(", "));
   const [loading, setLoading] = useState(false);
+  const gate = useActionAuth();
   const [message, setMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
   async function handleSave(e: React.FormEvent) {
@@ -15,6 +17,7 @@ export function CurrentUserManager({ initialUsers, assignees = [] }: { initialUs
     try {
       const names = userText.split(",").map(n => n.trim()).filter(Boolean);
       const result = await setCurrentUserAction(names);
+      if (gate(result)) return;
       if (result.ok) {
         setMessage({ text: "Đã lưu thành công. Bảng Hôm nay và Tất cả Task sẽ chỉ hiện task của các thành viên này.", type: "success" });
       } else {

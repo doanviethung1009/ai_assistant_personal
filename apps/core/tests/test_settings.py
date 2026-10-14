@@ -1,7 +1,7 @@
 """Pha B2: app_settings, /settings/*, /tasks/assignees và nhập meta.current_users, sync_urls.
 
-Sau epic đăng nhập: `current_users` thành alias Jira của người nhập và `display_timezone` thành
-múi giờ của người nhập (bảng users); chỉ `sync_urls` còn là cài đặt toàn cục trong app_settings.
+Sau epic đăng nhập: `current_users` thành alias Jira của người nhập và `display_timezone` bị bỏ qua
+(múi giờ là env của server); chỉ `sync_urls` còn là cài đặt toàn cục trong app_settings.
 
 Mọi dữ liệu đều tổng hợp. Riêng test cuối chỉ ĐỌC file thật của User (mở 'rb') để suy
 kỳ vọng từ nội dung file; không bao giờ ghi hay chép nó.
@@ -115,7 +115,7 @@ async def test_settings_require_api_key(client: httpx.AsyncClient) -> None:
 
 
 async def test_removed_settings_routes_are_gone(client: httpx.AsyncClient) -> None:
-    """current-users và display-timezone đã thay bằng alias (admin) và /me/timezone."""
+    """current-users và display-timezone đã gỡ: alias do admin quản lý, múi giờ là env server."""
     for method, path in [
         ("GET", "/api/v1/settings/current-users"),
         ("PUT", "/api/v1/settings/current-users"),
@@ -805,9 +805,6 @@ async def test_other_routes_keep_default_422_shape(client: httpx.AsyncClient) ->
 #  Múi giờ hiển thị (display_timezone) và due_all_day khi nhập
 # ═══════════════════════════════════════════════════════════════════════
 
-TZ_URL = "/api/v1/me/timezone"
-
-
 def test_normalize_timezone_rules() -> None:
     from app.core.timezones import normalize_timezone
 
@@ -818,90 +815,32 @@ def test_normalize_timezone_rules() -> None:
             normalize_timezone(bad)
 
 
-async def test_my_timezone_defaults_to_env(client: httpx.AsyncClient) -> None:
+async def test_me_reports_server_timezone(client: httpx.AsyncClient) -> None:
     me = (await client.get("/api/v1/me")).json()
-    assert me["timezone"] is None
+    assert "timezone" not in me
     assert me["effective_timezone"] == app_config.display_timezone
-
-
-async def test_my_timezone_put_get_and_reset(
-    client: httpx.AsyncClient, session: AsyncSession
-) -> None:
-    put = await client.put(TZ_URL, json={"timezone": " America/New_York "})
-    assert put.status_code == 200
-    assert put.json()["timezone"] == "America/New_York"
-    assert put.json()["effective_timezone"] == "America/New_York"
-    me = (await client.get("/api/v1/me")).json()
-    assert (me["timezone"], me["effective_timezone"]) == ("America/New_York",) * 2
-    assert await _user_tz(session) == "America/New_York"
-
     info = (await client.get("/api/v1/system/info")).json()
-    assert info["display_timezone"] == "America/New_York"
-    assert info["display_timezone_default"] == app_config.display_timezone
+    assert info["display_timezone"] == app_config.display_timezone
+    assert "display_timezone_default" not in info
 
-    reset = await client.put(TZ_URL, json={"timezone": None})
-    assert reset.status_code == 200 and reset.json()["timezone"] is None
-    assert reset.json()["effective_timezone"] == app_config.display_timezone
+
+async def test_timezone_endpoints_are_gone(client: httpx.AsyncClient) -> None:
+    for method, path in [("PUT", "/api/v1/me/timezone"), ("GET", "/api/v1/settings/timezones")]:
+        resp = await client.request(method, path, json={"timezone": None})
+        assert resp.status_code in (404, 405), (method, path)
+
+
+async def test_import_display_timezone_is_ignored_with_warning(session: AsyncSession) -> None:
+    for data in (
+        _file(display_timezone="Asia/Tokyo"),
+        _file(meta={"display_timezone": "Europe/Paris"}),
+        _file(display_timezone="Mars/Base", meta={"current_users": ["An"]}),
+    ):
+        result = await _import(session, data)
+        assert result.committed and result.errors == 0, result.issues
+        assert any(i.code == "setting_ignored" and i.level == "warning" for i in result.issues)
+        assert "meta" not in result.ignored_fields
     assert await _user_tz(session) is None
-
-
-async def test_timezone_is_per_user(client: httpx.AsyncClient) -> None:
-    """Đổi múi giờ của A không đổi múi giờ của B (trước đây là cài đặt toàn cục)."""
-    other = await create_persona("tz-other@test.local")
-    await client.put(TZ_URL, json={"timezone": "Asia/Tokyo"})
-    mine = (await client.get("/api/v1/me")).json()
-    theirs = (await client.get("/api/v1/me", headers=other.headers)).json()
-    assert mine["effective_timezone"] == "Asia/Tokyo"
-    assert theirs["effective_timezone"] == app_config.display_timezone
-
-
-@pytest.mark.parametrize("bad", ["Mars/Base", "Factory", "x" * 65, "", 5])
-async def test_my_timezone_put_rejects_invalid(client: httpx.AsyncClient, bad: Any) -> None:
-    resp = await client.put(TZ_URL, json={"timezone": bad})
-    assert resp.status_code == 422
-    assert (await client.get("/api/v1/me")).json()["timezone"] is None
-
-
-async def test_timezones_catalog(client: httpx.AsyncClient) -> None:
-    body = (await client.get("/api/v1/settings/timezones")).json()
-    names = [item["name"] for item in body["items"]]
-    assert body["total"] == len(names) > 300
-    assert names == sorted(names)
-    assert "Factory" not in names
-    by_name = {item["name"]: item["utc_offset_minutes"] for item in body["items"]}
-    assert by_name["Asia/Ho_Chi_Minh"] == 420
-    assert by_name["Pacific/Kiritimati"] == 840
-
-
-async def test_bad_stored_timezone_falls_back_to_env(
-    client: httpx.AsyncClient, session: AsyncSession
-) -> None:
-    await session.execute(text("UPDATE users SET timezone = 'Mars/Base'"))
-    await session.commit()
-    assert (await client.get("/api/v1/tasks/agenda")).status_code == 200
-    me = (await client.get("/api/v1/me")).json()
-    assert me["effective_timezone"] == app_config.display_timezone
-
-
-async def test_import_display_timezone_valid_and_invalid(session: AsyncSession) -> None:
-    ok = await _import(session, _file(display_timezone="Asia/Tokyo"))
-    assert ok.committed, ok.issues
-    assert await _user_tz(session) == "Asia/Tokyo"
-    # Cũng nhận ở meta (chế độ file của web ghi vào đó), và không bị liệt kê là field lạ.
-    # Múi giờ người nhập đã đặt rồi thì file KHÔNG ghi đè (unchanged).
-    meta = await _import(session, _file(meta={"display_timezone": "Europe/Paris"}))
-    assert meta.committed
-    assert "meta" not in meta.ignored_fields
-    assert meta.counts["settings"].unchanged == 1
-    assert await _user_tz(session) == "Asia/Tokyo"
-
-    bad = await _import(
-        session, _file(display_timezone="Mars/Base", meta={"current_users": ["An"]})
-    )
-    # Sai múi giờ chỉ là cảnh báo: phần còn lại vẫn nhập, giá trị cũ giữ nguyên.
-    assert bad.committed and bad.errors == 0
-    assert any(i.code == "setting_invalid" and i.level == "warning" for i in bad.issues)
-    assert await _user_tz(session) == "Asia/Tokyo"
     assert await _aliases(session) == ["An"]
 
 

@@ -1,6 +1,6 @@
 # Spec: Đăng nhập đa người dùng, pha P2 (Web)
 
-- Trạng thái: **DRAFT** (chờ User duyệt các câu hỏi ở mục 7.1)
+- Trạng thái: **SUPERSEDED** bởi `docs/specs/web-authjs-login.md` (2026-10-13). Giữ để tham khảo lịch sử; còn nhắc múi giờ theo user và `X-Import-Secret` đã gỡ.
 - Tác giả: architect
 - Ngày: 2026-10-13
 - Nhánh lúc viết: `feat/auth-multiuser` (HEAD `5484441`, sạch)

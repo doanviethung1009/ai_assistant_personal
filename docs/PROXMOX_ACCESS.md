@@ -309,7 +309,7 @@ Sửa `.env`: chỉ sửa trên VM (`nano /srv/builder-ai/<env>/.env`), rồi `m
 | `IMAGE_TAG` | (không dùng, build tại chỗ) | do deploy ghi | do deploy ghi |
 | Khóa bí mật | riêng | riêng | riêng (**không dùng chung**) |
 
-Hiện **staging và prod thiếu hai biến** mà code mới ở `main` cần: `IMPORT_COMMIT_SECRET` và `INTEGRATION_SECRET_KEY` (hai VM này sinh `.env` từ
+Hiện **staging và prod có thể thiếu biến** mà code mới cần (`INTEGRATION_SECRET_KEY`, `CORE_JWT_SECRET`; `IMPORT_COMMIT_SECRET` đã bỏ, nếu còn thì xoá) (hai VM này sinh `.env` từ
 nhánh `uat`/`prod` cũ). Trước khi deploy phiên bản mới lên đó, chạy trên VM: `make env-fill` (chỉ bổ sung biến còn thiếu, không đổi biến đã có).
 
 ### 7.3 Token Proxmox và khóa SSH: nằm TRÊN MÁY DEV của bạn

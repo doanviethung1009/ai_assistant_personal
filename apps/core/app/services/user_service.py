@@ -14,7 +14,6 @@ from collections.abc import Iterable
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.timezones import normalize_timezone
 from app.models.enums import AliasSource, UserRole, UserStatus
 from app.models.user import User, UserAlias
 from app.schemas.settings import MAX_NAME_LEN
@@ -112,14 +111,6 @@ async def sync_admin_emails(session: AsyncSession, emails: Iterable[str]) -> int
     return changed
 
 
-async def set_timezone(session: AsyncSession, user_id: uuid.UUID, name: str | None) -> User:
-    """Đặt (tên IANA đã chuẩn hoá) hoặc xoá (None = về mặc định env) múi giờ của user."""
-    user = await get_user(session, user_id)
-    user.timezone = None if name is None else normalize_timezone(name)
-    await session.flush()
-    return user
-
-
 async def add_aliases(
     session: AsyncSession, user_id: uuid.UUID, source: AliasSource, aliases: Iterable[str]
 ) -> tuple[list[str], list[str]]:
@@ -144,3 +135,59 @@ async def add_aliases(
         added.append(clean)
     await session.flush()
     return added, skipped
+
+
+def _clean_names(names: Iterable[str]) -> list[str]:
+    """Chuẩn hoá như `add_aliases` (strip, bỏ rỗng) và bỏ trùng, giữ thứ tự."""
+    return list(dict.fromkeys(n.strip() for n in names if n.strip()))
+
+
+async def remove_aliases(
+    session: AsyncSession, user_id: uuid.UUID, source: AliasSource, aliases: Iterable[str]
+) -> list[str]:
+    """Gỡ alias CỦA user này; trả danh sách đã gỡ (tên không có hoặc của người khác: bỏ qua).
+
+    Gỡ alias là rút quyền sửa task `work` của user: caller phải khoá dòng user trước
+    (`get_by_email(lock=True)`) để không đè với lệnh thêm/gỡ song song.
+    """
+    names = _clean_names(aliases)
+    if not names:
+        return []
+    rows = (
+        await session.scalars(
+            select(UserAlias).where(
+                UserAlias.user_id == user_id,
+                UserAlias.source == source,
+                UserAlias.alias.in_(names),
+            )
+        )
+    ).all()
+    for row in rows:
+        await session.delete(row)
+    await session.flush()
+    return [row.alias for row in rows]
+
+
+async def set_aliases(
+    session: AsyncSession, user_id: uuid.UUID, source: AliasSource, aliases: Iterable[str]
+) -> tuple[list[str], list[str], list[str]]:
+    """Thay toàn bộ alias của user (theo `source`) bằng danh sách này.
+
+    Trả `(đã thêm, đã gỡ, bị bỏ qua)`. Tên đang thuộc user khác bị bỏ qua (không cướp, như
+    `add_aliases`). Gỡ trước, thêm sau trong cùng transaction của caller.
+    """
+    desired = _clean_names(aliases)
+    current = set(
+        (
+            await session.scalars(
+                select(UserAlias.alias).where(
+                    UserAlias.user_id == user_id, UserAlias.source == source
+                )
+            )
+        ).all()
+    )
+    removed = await remove_aliases(session, user_id, source, current - set(desired))
+    added, skipped = await add_aliases(
+        session, user_id, source, [n for n in desired if n not in current]
+    )
+    return added, removed, skipped

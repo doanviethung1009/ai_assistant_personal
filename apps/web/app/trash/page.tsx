@@ -22,7 +22,7 @@ export default async function TrashPage() {
   } catch (error) {
     return (
       <ApiErrorPanel
-        message={error instanceof Error ? error.message : String(error)}
+        error={error}
       />
     );
   }

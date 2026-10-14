@@ -676,8 +676,8 @@ trong code chính vì lý do này.
 - `.env` chmod 600 và nằm trong `.gitignore`.
 - Image prod chạy bằng user không phải root.
 - Header `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` ở web.
-- **Rate limit** 120 request/phút (đổi bằng `RATE_LIMIT_REQUESTS_PER_MINUTE`),
-  đếm theo `X-API-Key` (hoặc IP nếu thiếu key) ở Redis, cửa sổ cố định 60s.
+- **Rate limit** 300 request/phút (đổi bằng `RATE_LIMIT_REQUESTS_PER_MINUTE`),
+  đếm theo user trong JWT (rồi `X-API-Key`, rồi IP nếu thiếu) ở Redis, cửa sổ cố định 60s.
   Xem `apps/core/app/core/rate_limit.py`. Fail-open khi Redis lỗi — rate
   limiter không phải nguồn xác thực nên không được làm sập API chỉ vì Redis
   tạm mất kết nối. Tắt bằng `RATE_LIMIT_ENABLED=false` khi cần debug.
@@ -707,7 +707,7 @@ liệu.
 | Postgres | giá trị `POSTGRES_USER` (mặc định `builder`) | `POSTGRES_PASSWORD` | `grep POSTGRES .env` |
 | Grafana | `admin` (mặc định của chính image Grafana) | `GRAFANA_ADMIN_PASSWORD` | `grep GRAFANA_ADMIN_PASSWORD .env` |
 | LiteLLM | (không có — master key) | `LITELLM_MASTER_KEY` | `grep LITELLM_MASTER_KEY .env` |
-| Nhập thật JSON, xoá hàng loạt, Cào ngay | (không có — mật khẩu gõ tay) | `IMPORT_COMMIT_SECRET` | `grep IMPORT_COMMIT_SECRET .env` |
+| Nhập thật JSON, xoá hàng loạt, Cào ngay | tài khoản có role admin (quyền `data:import`) | (không còn mật khẩu nhập; `IMPORT_COMMIT_SECRET` đã bỏ) | Đăng nhập bằng tài khoản admin, xem `docs/GOOGLE_OAUTH_SETUP.md` |
 | Token Jira đã lưu ở Postgres (mã hoá Fernet) | (không có — khoá mã hoá) | `INTEGRATION_SECRET_KEY` (khoá cũ khi xoay: `INTEGRATION_SECRET_KEY_OLD`) | Không in ra; **mất khoá = nhập lại mọi token**, hãy sao lưu `.env` |
 | Web (Next.js) | — | không có | Chưa có đăng nhập ở Phase 1, xem cảnh báo ở mục Chia sẻ trong LAN |
 

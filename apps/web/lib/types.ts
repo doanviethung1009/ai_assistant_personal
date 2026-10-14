@@ -5,6 +5,7 @@
 // store (file/memory), và hằng số/label chỉ UI cần (không nằm trong OpenAPI
 // vì đó là quyết định hiển thị, không phải hợp đồng dữ liệu).
 import type { components } from "./generated/openapi";
+import type { Permission } from "./permissions";
 
 type Schemas = components["schemas"];
 
@@ -38,7 +39,12 @@ type WithRequiredColor<T extends { color?: string | null }> = Omit<
 > & { color: string | null };
 
 export type ProjectSummary = WithRequiredColor<Schemas["ProjectSummary"]>;
-export type Project = WithRequiredColor<Schemas["ProjectRead"]>;
+/**
+ * `can_edit`/`can_delete`: core tính theo người xem (api). Khai bù tới khi `openapi.d.ts` sinh lại có
+ * field này; UI chỉ ẨN/KHOÁ khi giá trị là `false` (cục bộ không có field = được phép). Core vẫn chặn thật.
+ */
+type WithAccess = { can_edit?: boolean; can_delete?: boolean };
+export type Project = WithRequiredColor<Schemas["ProjectRead"]> & WithAccess;
 
 /**
  * `deleted_at` ở Pydantic khai `Field(default=None, ...)`, nên
@@ -60,7 +66,7 @@ type WithRequiredDeletedAt<
  */
 export type Task = Omit<WithRequiredDeletedAt<Schemas["TaskRead"]>, "reporter"> & {
   reporter: string | null;
-};
+} & WithAccess;
 export type TaskEvent = Schemas["TaskEventRead"];
 /** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
 export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
@@ -123,11 +129,6 @@ export type PurgeResponse = Schemas["PurgeResponse"];
 export type ComponentHealth = Schemas["ComponentHealth"];
 export type HealthResponse = Schemas["HealthResponse"];
 export type SystemInfo = Schemas["SystemInfo"];
-
-/** Múi giờ hiển thị (GET/PUT /settings/display-timezone) và danh mục múi giờ IANA. */
-export type DisplayTimezoneRead = Schemas["DisplayTimezoneRead"];
-export type TimezoneOption = Schemas["TimezoneOption"];
-export type TimezoneList = Schemas["TimezoneList"];
 
 /**
  * Page[T] của core API là generic thật (`Page_TaskRead_`, `Page_NoteRead_`),
@@ -236,4 +237,38 @@ export interface UpsertSummary extends TaskUpsertResult {
   skipped_no_key?: number;
   errors_total?: number;
   warnings_total?: number;
+}
+
+// ── Đăng nhập (spec web-authjs-login) ───────────────────────────────────
+// Khai tay vì lib/generated/openapi.d.ts chưa sinh lại từ core có /me và /auth/login (P0 `make gen-types`).
+// Sau khi sinh, thay bằng alias Schemas["MeRead"] / Schemas["LoginResult"] và xoá khối này.
+
+/** Quyền của core: nguồn khai ở lib/permissions.ts. */
+export type PermissionName = Permission;
+
+export interface MeRead {
+  id: string;
+  email: string;
+  name: string | null;
+  role: "admin" | "member" | (string & {});
+  status: string;
+  /** Múi giờ của server (= DISPLAY_TZ), chỉ đọc. */
+  effective_timezone: string;
+  aliases: { source: string; alias: string }[];
+  permissions: PermissionName[];
+}
+
+/** Claim Google đã được web xác minh, gửi cho POST /auth/login (core đặt extra="forbid"). */
+export interface LoginClaims {
+  google_sub: string;
+  email: string;
+  email_verified: boolean;
+  name?: string;
+  hd?: string;
+}
+
+export interface LoginResult {
+  user_id: string;
+  role: string;
+  session_version: number;
 }

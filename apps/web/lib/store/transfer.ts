@@ -529,15 +529,6 @@ export async function importJson(
   if (!IS_LOCAL) throw new Error(API_IMPORT_REDIRECT);
   const data = parseDataFile(text);
   const summary = await apply(data.projects, data.tasks, data.notes, mode);
-  // Múi giờ là cài đặt (cùng nhóm current_users), chỉ thay khi nhập kiểu replace và file có
-  // mang theo. Tên rác thì cảnh báo, không làm hỏng cả lần nhập.
-  if (mode === "replace" && data.meta?.display_timezone) {
-    try {
-      engine.setDisplayTimezone(data.meta.display_timezone);
-    } catch {
-      summary.warnings.push("Bỏ qua display_timezone không hợp lệ trong file");
-    }
-  }
   return summary;
 }
 

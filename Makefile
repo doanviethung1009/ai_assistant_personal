@@ -32,7 +32,7 @@ env: ## Sinh file .env với khoá ngẫu nhiên (không ghi đè nếu đã có
 	@bash scripts/gen-env.sh
 
 .PHONY: env-fill
-env-fill: ## Bổ sung IMPORT_COMMIT_SECRET, INTEGRATION_SECRET_KEY và CORE_JWT_SECRET vào .env cũ (không đổi biến đã có)
+env-fill: ## Bổ sung INTEGRATION_SECRET_KEY, CORE_JWT_SECRET và AUTH_SECRET vào .env cũ (không đổi biến đã có)
 	@bash scripts/gen-env.sh --fill-missing
 
 # ── Vòng đời stack ─────────────────────────────────────────────────────
@@ -336,12 +336,30 @@ reset: ## XOÁ TOÀN BỘ DỮ LIỆU rồi dựng lại từ đầu
 	@echo "  Đã dựng lại. Migration chạy tự động khi api khởi động."
 
 # ── Đăng nhập đa người dùng (CLI trong container api, xem app/cli/auth.py) ──
-.PHONY: auth-token auth-invite auth-bootstrap
+.PHONY: auth-token auth-invite auth-bootstrap auth-revoke auth-disable auth-enable auth-alias auth-alias-set auth-alias-remove
 auth-token: ## In JWT cho một user active: make auth-token EMAIL=a@b.com [TTL=60] (dev, smoke test)
 	@$(API) python -m app.cli.auth token --email "$(EMAIL)" --ttl $(or $(TTL),60)
 
 auth-invite: ## Mời email: make auth-invite EMAIL=a@b.com [ROLE=member|lead|admin]
 	$(API) python -m app.cli.auth invite --email "$(EMAIL)" --role $(or $(ROLE),member)
+
+auth-revoke: ## Đăng xuất mọi thiết bị của user (tăng session_version): make auth-revoke EMAIL=a@b.com
+	$(API) python -m app.cli.auth revoke --email "$(EMAIL)"
+
+auth-disable: ## Khoá user (và thu hồi phiên): make auth-disable EMAIL=a@b.com
+	$(API) python -m app.cli.auth disable --email "$(EMAIL)"
+
+auth-enable: ## Mở khoá user: make auth-enable EMAIL=a@b.com
+	$(API) python -m app.cli.auth enable --email "$(EMAIL)"
+
+auth-alias: ## Đặt alias Jira cho user: make auth-alias EMAIL=a@b.com ALIAS="Tên Jira"
+	$(API) python -m app.cli.auth alias --email "$(EMAIL)" --alias "$(ALIAS)"
+
+auth-alias-set: ## Thay TOÀN BỘ alias Jira của user: make auth-alias-set EMAIL=a@b.com ALIASES="Tên 1,Tên 2" (rỗng = xoá hết)
+	$(API) python -m app.cli.auth alias --email "$(EMAIL)" --set "$(ALIASES)"
+
+auth-alias-remove: ## Gỡ alias Jira của user: make auth-alias-remove EMAIL=a@b.com ALIASES="Tên 1,Tên 2"
+	$(API) python -m app.cli.auth alias --email "$(EMAIL)" --remove "$(ALIASES)"
 
 auth-bootstrap: ## Gán chủ cho dữ liệu cũ SAU make migrate: make auth-bootstrap OWNER=admin@b.com [DRY=1]
 	$(API) python -m app.cli.auth bootstrap --owner "$(OWNER)" $(if $(DRY),--dry-run,)

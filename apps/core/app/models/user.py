@@ -52,7 +52,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=UserStatus.INVITED,
         server_default=UserStatus.INVITED.value,
     )
-    # Múi giờ hiển thị riêng của user; NULL = dùng mặc định env (DISPLAY_TIMEZONE).
+    # KHÔNG CÒN DÙNG: múi giờ nay chỉ lấy từ server (DISPLAY_TIMEZONE). Cột để nguyên,
+    # gỡ bằng migration riêng sau.
     timezone: Mapped[str | None] = mapped_column(String(64), default=None)
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     invited_by: Mapped[uuid.UUID | None] = mapped_column(

@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition } from "react";
 
 import { importToCoreAction } from "@/app/actions";
@@ -75,13 +76,11 @@ export function CoreImportPanel() {
   const [error, setError] = useState<string | null>(null);
   const [ackReplace, setAckReplace] = useState(false);
   const [ackOlder, setAckOlder] = useState(false);
-  // Mật khẩu IMPORT_COMMIT_SECRET gõ tay cho mỗi lần Nhập thật. Chỉ nằm trong state của
-  // component: không lưu localStorage, không đưa vào URL, và bị xoá sau mỗi lần thử nhập.
-  const [secret, setSecret] = useState("");
   // Mặc định TẮT: task đang `personal` trong Postgres không bị file ghi đè (S8). Phải gửi
   // cùng giá trị ở Kiểm tra lẫn Nhập thật, nên đổi ô này buộc Kiểm tra lại.
   const [includePersonal, setIncludePersonal] = useState(false);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
 
   function resetResult() {
     setReport(null);
@@ -90,7 +89,6 @@ export function CoreImportPanel() {
     setError(null);
     setAckReplace(false);
     setAckOlder(false);
-    setSecret("");
   }
 
   function onFileChange(event: React.ChangeEvent<HTMLInputElement>) {
@@ -128,14 +126,12 @@ export function CoreImportPanel() {
       form.set("expect_replaced", String(sum(report, "replaced")));
       // Mã băm của file lúc Kiểm tra: core từ chối nếu file gửi lên khác file đã xem báo cáo.
       form.set("expect_sha256", report.file_sha256);
-      form.set("import_secret", secret);
     }
 
     setError(null);
     startTransition(async () => {
       const result = await importToCoreAction(form);
-      // Xoá mật khẩu sau MỌI lần thử Nhập thật (đúng, sai hay lỗi): không để nó nằm lại trong state.
-      if (!dryRun) setSecret("");
+      if (gate(result)) return;
       if (!result.ok || !result.report) {
         setError(messageFor(result.status, result.error ?? "Nhập thất bại"));
         return;
@@ -179,7 +175,6 @@ export function CoreImportPanel() {
     !!report &&
     report.dry_run &&
     report.errors === 0 &&
-    secret.length > 0 &&
     (replaced === 0 || ackReplace) &&
     (older === 0 || ackOlder);
 
@@ -329,28 +324,6 @@ export function CoreImportPanel() {
                 Cần Kiểm tra lại: file hoặc loại file đã đổi so với lần Kiểm tra gần nhất.
               </p>
             ) : null}
-            <div>
-              <label htmlFor="core-import-secret" className={LABEL_CLASS}>
-                Mật khẩu nhập dữ liệu
-              </label>
-              <input
-                id="core-import-secret"
-                type="password"
-                // "off" bị trình duyệt bỏ qua; "new-password" + các cờ dưới giảm việc đề nghị lưu mật khẩu.
-                autoComplete="new-password"
-                data-1p-ignore
-                data-lpignore="true"
-                value={secret}
-                disabled={pending}
-                onChange={(e) => setSecret(e.target.value)}
-                className={INPUT_CLASS}
-              />
-              <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                Là giá trị <code>IMPORT_COMMIT_SECRET</code> trong <code>.env</code> của core (
-                <code>make env</code> sinh sẵn; <code>.env</code> có từ trước thì tự thêm biến này
-                rồi khởi động lại api). Chỉ cần khi Nhập thật, không cần khi Kiểm tra.
-              </p>
-            </div>
             <div>
               <button
                 type="button"

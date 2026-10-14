@@ -40,9 +40,6 @@ services:
     build:
       context: ./apps/web
       target: prod
-      args:
-        # Phải là build arg. NEXT_PUBLIC_* được nhúng vào bundle lúc build.
-        NEXT_PUBLIC_DISPLAY_TZ: ${TZ:-Asia/Ho_Chi_Minh}
     environment:
       NODE_ENV: production
       # Prod luôn phải là "api" (Postgres qua core API) — không override ở
@@ -55,6 +52,8 @@ services:
       DOCS_DIR: /docs
     # Bỏ bind mount source của dev, nhưng vẫn cần tài liệu cho trang /docs
     volumes: !override
+      # Két (Vault) theo từng người nằm ở /data của web; không có volume này thì mất khi tạo lại container.
+      - web_data:/data
       - ./README.md:/docs/README.md:ro
       - ./docs:/docs/docs:ro
       - ./.agents/rules:/docs/.agents/rules:ro
@@ -89,3 +88,7 @@ services:
 
   redis:
     ports: !override []
+
+volumes:
+  # Két Vault theo từng người của web (xem docs/specs/web-authjs-login.md, Q14).
+  web_data:

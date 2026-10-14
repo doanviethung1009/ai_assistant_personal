@@ -1,10 +1,11 @@
-"""Cài đặt toàn cục: URL đồng bộ (sync_urls) và danh mục múi giờ IANA.
+"""Cài đặt toàn cục: URL đồng bộ (sync_urls).
 
 Nằm dưới router cha có `require_api_key` và JWT người dùng. Chỉ cài đặt KHÔNG bí mật (xem
 models/app_setting.py). PUT là ghi đè toàn bộ danh sách (idempotent).
 
 Đã gỡ khi có đăng nhập (docs/specs/auth-multiuser.md): `/settings/current-users` (thay bằng
-alias của từng user, admin quản lý) và `/settings/display-timezone` (thay bằng `PUT /me/timezone`).
+alias của từng user, admin quản lý), `/settings/display-timezone` và `/settings/timezones`
+(múi giờ nay chỉ là env DISPLAY_TIMEZONE của server).
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from fastapi import APIRouter, Depends
 
 from app.api.deps import SessionDep, require_permission
 from app.core.permissions import Permission
-from app.schemas.settings import SyncUrlsBody, TimezoneList
+from app.schemas.settings import SyncUrlsBody
 from app.services import settings_service
 
 router = APIRouter(prefix="/settings", tags=["settings"])
@@ -45,15 +46,3 @@ async def get_sync_urls(session: SessionDep) -> SyncUrlsBody:
 async def put_sync_urls(body: SyncUrlsBody, session: SessionDep) -> SyncUrlsBody:
     return SyncUrlsBody(urls=await settings_service.set_sync_urls(session, body.urls))
 
-
-@router.get(
-    "/timezones",
-    response_model=TimezoneList,
-    summary="Danh mục múi giờ IANA",
-    description=(
-        "Không phân trang: đây là danh mục tĩnh khoảng 600 tên (dưới 25 KB), không phải dữ "
-        "liệu người dùng tăng dần nên không thuộc quy tắc 50 dòng/trang."
-    ),
-)
-async def list_timezones() -> TimezoneList:
-    return settings_service.list_timezones()

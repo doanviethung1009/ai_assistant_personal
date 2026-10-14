@@ -19,6 +19,8 @@ import {
   type LucideIcon
 } from "lucide-react";
 
+import type { Permission } from "./permissions";
+
 /**
  * Cấu hình điều hướng.
  *
@@ -31,12 +33,14 @@ export interface NavItem {
   icon: LucideIcon;
   /** Nhãn ngắn cho màn hình hẹp. Bỏ trống thì dùng `label`. */
   short?: string;
+  /** Có thì chỉ hiện khi người dùng có quyền này (ẩn cho gọn; core vẫn chặn thật). */
+  permission?: Permission;
 }
 
 export const PRIMARY_NAV: NavItem[] = [
   { href: "/", label: "Hôm nay", icon: Sun },
   { href: "/tasks", label: "Tất cả task", short: "Task", icon: ListTodo },
-  { href: "/team", label: "Team", short: "Team", icon: Users },
+  { href: "/team", label: "Team", short: "Team", icon: Users, permission: "team:read" },
   { href: "/projects", label: "Dự án", icon: FolderKanban },
   { href: "/notes", label: "Sổ tay", icon: BookOpen },
   { href: "/vault", label: "Két bảo mật", short: "Két", icon: Shield },
@@ -49,7 +53,7 @@ export const SECONDARY_NAV: NavItem[] = [
   { href: "/roadmap", label: "Lộ trình", icon: Map },
   { href: "/docs", label: "Tài liệu", icon: FileText },
   { href: "/api-docs", label: "API", icon: Terminal },
-  { href: "/system", label: "Hệ thống", icon: Settings },
+  { href: "/system", label: "Hệ thống", icon: Settings, permission: "system:read" },
   { href: "/data", label: "Dữ liệu", icon: Database },
 ];
 

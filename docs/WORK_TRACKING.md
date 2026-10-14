@@ -25,6 +25,6 @@ Spec DRAFT → User duyệt (CHỐT) → code (backend-dev/frontend-dev) → rev
 
 ## Ảnh chụp ngày 2026-10-13 (nhánh `feat/auth-multiuser`)
 - **Đang làm:** epic đăng nhập đa người dùng (`docs/specs/auth-multiuser.md`, CHỐT): ~107 file thay đổi chưa commit, gồm migration `b2f7a9c1d4e6` (users, ownership) và `e8a3c6f2b1d7` (`tasks.reporter`); epic Jira reporter (`docs/specs/jira-reporter.md`, CHỐT) code xong, commit sau auth; giảm request/`/team` lai và skill `nextjs-rendering` (chưa commit).
-- **Chờ:** `docs/specs/user-timezone.md` ghi DRAFT dù code đã vào `main` (spec lỗi thời, cần cập nhật); `docs/specs/proxmox-deploy.md` DRAFT còn Q1, Q6.
+- **Chờ:** `docs/specs/user-timezone.md` đã được đánh dấu bị thay thế một phần (múi giờ chọn được đã gỡ 2026-10-13); `docs/specs/proxmox-deploy.md` DRAFT còn Q1, Q6.
 - **Xong (đã vào main):** đồng bộ Jira theo người, dải tóm tắt task và tab Tham dự dự án, múi giờ chọn được, sửa CI Trivy, hạ tầng Proxmox dev.
 - **Treo:** thiếu `pyjwt` trong `pyproject.toml`/`uv.lock`, 3 lỗi E501, `dev-vm-backend-test.sh` hỏng; `make smoke`/`gen-types` chưa chạy; bản Python sửa project theo Company chưa làm; nâng `xlsx` (CVE); nhánh `feat/*` cũ chưa dọn.

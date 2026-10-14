@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import os
 import uuid
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -85,16 +85,6 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(skip)
 
 
-@pytest.fixture(autouse=True)
-def _reset_display_tz_cache() -> Iterator[None]:
-    """Cache múi giờ là trạng thái cấp tiến trình (TTL 10s): reset để test không rò sang nhau."""
-    from app.services import clock
-
-    clock.invalidate_display_tz_cache()
-    yield
-    clock.invalidate_display_tz_cache()
-
-
 @pytest.fixture(scope="session")
 def migrated_db() -> None:
     """Dựng schema bằng Alembic một lần cho cả phiên test."""
@@ -136,7 +126,6 @@ async def create_persona(
     aliases: tuple[str, ...] = (),
     *,
     status: object | None = None,
-    timezone: str | None = None,
 ) -> Persona:
     """Tạo user trực tiếp bằng SQLAlchemy (không qua /auth/login) và trả `Persona`."""
     from app.core.auth import CurrentUser
@@ -151,7 +140,6 @@ async def create_persona(
             email=email,
             role=role,
             status=status,
-            timezone=timezone,
             google_sub=f"sub-{uuid.uuid4().hex}" if status is UserStatus.ACTIVE else None,
         )
         s.add(user)
@@ -165,7 +153,6 @@ async def create_persona(
             email=email,
             name=None,
             role=role,
-            timezone=timezone,
             aliases=frozenset(aliases),
         )
     )

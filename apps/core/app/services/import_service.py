@@ -62,7 +62,7 @@ from app.models.import_audit import ImportAudit, ImportRun
 from app.models.note import Note
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
-from app.models.user import User, UserAlias
+from app.models.user import UserAlias
 from app.schemas.common import normalize_tags
 from app.schemas.imports import (
     DataFileEnvelope,
@@ -77,7 +77,7 @@ from app.schemas.imports import (
     KeyChange,
     Replacement,
 )
-from app.schemas.settings import normalize_names, normalize_timezone, normalize_urls
+from app.schemas.settings import normalize_names, normalize_urls
 from app.services import audit_service, settings_service, user_service
 from app.services.errors import ConflictError, ValidationError
 from app.services.jsonable import jsonable
@@ -1302,21 +1302,16 @@ def _parse_settings(ctx: _Ctx, envelope: DataFileEnvelope) -> dict[SettingKey, A
             ctx.error(
                 "setting", "setting_invalid", f"{where} không hợp lệ: {exc}.{hint}", id_=key.value
             )
-    # Múi giờ: sai chỉ là CẢNH BÁO và bỏ qua khoá này (không làm hỏng cả lần nhập), khác hai
-    # khoá trên vì đây là tuỳ chọn hiển thị, không liên quan an toàn (SSRF) hay quyền sở hữu.
-    raw_tz = envelope.display_timezone
-    if raw_tz is None:
-        raw_tz = meta.get("display_timezone")
-    if raw_tz is not None:
-        try:
-            out[SettingKey.DISPLAY_TIMEZONE] = normalize_timezone(raw_tz)
-        except ValueError as exc:
-            ctx.warn(
-                "setting",
-                "setting_invalid",
-                f"display_timezone không hợp lệ, bỏ qua: {exc}.",
-                id_=SettingKey.DISPLAY_TIMEZONE.value,
-            )
+    # Múi giờ nay chỉ là env của server: file cũ vẫn có thể mang field này nên được chấp nhận
+    # (không 422) nhưng bỏ qua, kèm một cảnh báo để người nhập biết nó không có tác dụng.
+    if envelope.display_timezone is not None or meta.get("display_timezone") is not None:
+        ctx.warn(
+            "setting",
+            "setting_ignored",
+            "display_timezone trong file bị bỏ qua: múi giờ do server quyết định "
+            "(DISPLAY_TIMEZONE).",
+            id_=SettingKey.DISPLAY_TIMEZONE.value,
+        )
     return out
 
 
@@ -1325,17 +1320,16 @@ class _UserSettingsPlan:
     """Phần cài đặt của file đi vào HỒ SƠ NGƯỜI NHẬP (không vào app_settings)."""
 
     aliases: list[str] = field(default_factory=list)
-    timezone: str | None = None
 
 
 async def _plan_user_settings(
     ctx: _Ctx, session: AsyncSession, wanted: dict[SettingKey, Any]
 ) -> _UserSettingsPlan:
-    """`meta.current_users` -> alias Jira của người nhập; `display_timezone` -> múi giờ của họ.
+    """`meta.current_users` -> alias Jira của người nhập; 
 
     Thêm, không xoá: tên đã là alias của chính người nhập thì bỏ qua (unchanged); tên đang thuộc
     NGƯỜI KHÁC bị bỏ qua kèm cảnh báo `alias_taken` (alias quyết định quyền sửa task work nên
-    nhập file không được cướp). Múi giờ chỉ đặt khi người nhập chưa chọn.
+    nhập file không được cướp).
     """
     plan = _UserSettingsPlan()
     counts = ctx.counts_of("setting")
@@ -1368,23 +1362,6 @@ async def _plan_user_settings(
             counts.created += 1
             ctx.audit.append(
                 _audit("setting", entity_id, ImportAction.CREATED, None, ["current_users"])
-            )
-        else:
-            counts.unchanged += 1
-    if SettingKey.DISPLAY_TIMEZONE in wanted:
-        counts.received += 1
-        current_tz = await session.scalar(select(User.timezone).where(User.id == importer_id))
-        if current_tz is None:
-            plan.timezone = wanted[SettingKey.DISPLAY_TIMEZONE]
-            counts.created += 1
-            ctx.audit.append(
-                _audit(
-                    "setting",
-                    setting_entity_id(SettingKey.DISPLAY_TIMEZONE),
-                    ImportAction.CREATED,
-                    None,
-                    ["value"],
-                )
             )
         else:
             counts.unchanged += 1
@@ -1933,8 +1910,6 @@ async def import_datafile(
             await user_service.add_aliases(
                 session, ctx.importer.id, AliasSource.JIRA, user_settings.aliases
             )
-        if user_settings.timezone is not None:
-            await user_service.set_timezone(session, ctx.importer.id, user_settings.timezone)
 
     result = await _finish(
         session,

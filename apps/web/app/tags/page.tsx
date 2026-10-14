@@ -21,6 +21,6 @@ export default async function TagsPage() {
       </div>
     );
   } catch (error) {
-    return <ApiErrorPanel message={error instanceof Error ? error.message : String(error)} />;
+    return <ApiErrorPanel error={error} />;
   }
 }

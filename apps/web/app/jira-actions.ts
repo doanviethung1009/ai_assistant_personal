@@ -1,5 +1,6 @@
 "use server";
 
+import { requirePermission, requireSession, toActionAuthError, type ActionAuthCode } from "@/lib/auth-guard";
 import { revalidatePath } from "next/cache";
 import {
   CoreApiError,
@@ -174,6 +175,8 @@ async function readJsonCapped(res: Response, budget: { used: number }): Promise<
  * (Authorization không bao giờ bị gửi sang host khác), và không trả/log body của Jira.
  */
 export async function syncJiraAction(formData: FormData) {
+  const auth = await requireSession();
+  if (!auth.ok) return auth;
   if (!IS_LOCAL) {
     return { ok: false, error: "Chế độ api dùng nút \"Cào ngay\" ở kết nối Jira đã lưu (trang Dữ liệu)." };
   }
@@ -557,6 +560,7 @@ export async function syncJiraAction(formData: FormData) {
 export interface ConnectionResult {
   ok: boolean;
   error?: string;
+  code?: ActionAuthCode;
   /** Mã HTTP của core, để UI nhận ra 503 (thiếu INTEGRATION_SECRET_KEY) và 409 (trùng tên). */
   status?: number;
   connection?: IntegrationConnection;
@@ -571,6 +575,8 @@ function str(v: unknown, max: number): string | undefined {
 
 /** Đổi lỗi core thành thông báo an toàn: 403/409/503 tự viết, lỗi khác cắt ~500 ký tự và gỡ token. */
 function connectionError(error: unknown, token?: string): ConnectionResult {
+  const authError = toActionAuthError(error);
+  if (authError) return authError.code === "forbidden" ? { ...authError, status: 403, error: "Bạn không có quyền quản lý kết nối" } : authError;
   if (error instanceof CoreApiError) {
     if (error.status === 403) {
       return { ok: false, status: 403, error: "Core từ chối yêu cầu (sai khoá truy cập của web tới core). Kiểm tra CORE_API_KEY." };
@@ -649,6 +655,8 @@ function parseFields(input: unknown): ParsedFields | string {
  * cũ sang host lạ.
  */
 export async function saveIntegrationAction(input: unknown): Promise<ConnectionResult> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return auth;
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   const parsed = parseFields(input);
   if (typeof parsed === "string") return { ok: false, error: parsed };
@@ -686,6 +694,8 @@ export async function saveIntegrationAction(input: unknown): Promise<ConnectionR
 
 /** Xoá token đang lưu của một kết nối (kết nối vẫn còn, phải nhập token mới mới dùng được). */
 export async function clearIntegrationTokenAction(id: unknown): Promise<ConnectionResult> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return auth;
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
   try {
@@ -699,6 +709,8 @@ export async function clearIntegrationTokenAction(id: unknown): Promise<Connecti
 
 /** Xoá kết nối cùng token đã mã hoá. KHÔNG hoàn tác. */
 export async function deleteIntegrationAction(id: unknown): Promise<ConnectionResult> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return auth;
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
   try {
@@ -727,6 +739,8 @@ export interface MigrateItemResult {
 export async function migrateLocalIntegrationsAction(
   items: unknown,
 ): Promise<{ ok: boolean; error?: string; results: MigrateItemResult[] }> {
+  const auth = await requirePermission("integration:manage");
+  if (!auth.ok) return { ...auth, results: [] };
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api", results: [] };
   if (!Array.isArray(items) || items.length === 0 || items.length > MAX_LOCAL_ITEMS) {
     return { ok: false, error: `Cần 1-${MAX_LOCAL_ITEMS} cấu hình`, results: [] };
@@ -789,17 +803,18 @@ export async function migrateLocalIntegrationsAction(
 
 export type SyncActionResult =
   | { ok: true; result: IntegrationSyncResult }
-  | { ok: false; error: string; status?: number };
+  | { ok: false; error: string; status?: number; code?: ActionAuthCode };
 
-const SECRET_RE = /^[\x20-\x7e]{1,256}$/;
 const SINCE_RE = /^\d{4}-\d{2}-\d{2}(?:[T ][0-9:.]+(?:Z|[+-]\d{2}:?\d{2})?)?$/;
 
 /** Thông báo TỰ VIẾT cho lỗi sync: không echo detail của core (có thể chứa input hay chi tiết Jira). */
 function syncError(error: unknown): SyncActionResult {
+  const authError = toActionAuthError(error);
+  if (authError) return { ok: false, error: authError.error, code: authError.code };
   if (error instanceof CoreApiError) {
     const status = error.status;
     const msgs: Record<number, string> = {
-      403: "Sai mật khẩu nhập/đồng bộ (hoặc core chưa cấu hình IMPORT_COMMIT_SECRET).",
+      // 401/403 đã được toActionAuthError xử lý ở trên (có `code`), nên không có nhánh ở đây.
       409: "Không đồng bộ được: đang có lượt đồng bộ khác chạy cho kết nối này, hoặc kết nối chưa có token. Đợi lượt kia xong hoặc nhập token.",
       422: "Core từ chối tham số: ngày bắt đầu, JQL hoặc host Jira không hợp lệ (chỉ hỗ trợ Jira Cloud).",
       502: "Core không gọi được Jira hoặc Jira trả lỗi. Kiểm tra URL, email, token và quyền.",
@@ -815,16 +830,15 @@ function syncError(error: unknown): SyncActionResult {
 /**
  * Cào Jira cho một kết nối đã lưu, qua core (chế độ api). Core giữ token, web không bao giờ thấy nó.
  *
- * `secret` là IMPORT_COMMIT_SECRET: chỉ đi vào header, không log, không echo. `since` tuỳ chọn
+ * Quyền chạy do core kiểm theo role. `since` tuỳ chọn
  * (YYYY-MM-DD hoặc ISO) để thu hẹp khi JQL quá rộng (chạm trần 100 trang). Có thể kéo dài hàng
  * phút nên UI phải khoá nút khi đang chạy.
  */
-export async function syncIntegrationAction(id: unknown, secret: unknown, since?: unknown, assignees?: unknown, role?: unknown): Promise<SyncActionResult> {
+export async function syncIntegrationAction(id: unknown, since?: unknown, assignees?: unknown, role?: unknown): Promise<SyncActionResult> {
+  const auth = await requirePermission("integration:sync");
+  if (!auth.ok) return auth;
   if (IS_LOCAL) return { ok: false, error: "Chỉ dùng được khi DATA_SOURCE=api" };
   if (typeof id !== "string" || !UUID_RE.test(id)) return { ok: false, error: "id không hợp lệ" };
-  if (typeof secret !== "string" || !SECRET_RE.test(secret)) {
-    return { ok: false, error: "Cần nhập mật khẩu (1-256 ký tự ASCII hiển thị được)." };
-  }
   let sinceValue: string | undefined;
   if (since !== undefined && since !== null && since !== "") {
     if (typeof since !== "string" || since.length > 40 || !SINCE_RE.test(since) || Number.isNaN(Date.parse(since))) {
@@ -837,7 +851,7 @@ export async function syncIntegrationAction(id: unknown, secret: unknown, since?
     if (picked === null) return { ok: false, error: ASSIGNEE_ERROR };
     const parsedRole = parsePeopleRole(role);
     if (parsedRole === null) return { ok: false, error: ROLE_ERROR };
-    const result = await syncIntegration(id, secret, sinceValue, splitByRole(picked, parsedRole));
+    const result = await syncIntegration(id, sinceValue, splitByRole(picked, parsedRole));
     revalidatePath("/data");
     revalidatePath("/", "layout");
     return { ok: true, result };

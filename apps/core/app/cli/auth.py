@@ -5,6 +5,11 @@ Chạy trong container `api` (orchestrator nối vào Makefile):
   python -m app.cli.auth bootstrap --owner <email-admin> [--dry-run]
   python -m app.cli.auth invite --email <email> [--role member|lead|admin] [--name <tên>]
   python -m app.cli.auth token --email <email> [--ttl 60]
+  python -m app.cli.auth revoke --email <email>
+  python -m app.cli.auth disable --email <email>
+  python -m app.cli.auth enable --email <email>
+  python -m app.cli.auth alias --email <email> (--alias <tên> | --set "a,b" | --remove "a,b")
+                               [--source jira]
 
 ══════════════════════════════════════════════════════════════════════
  `token` in ra một JWT hợp lệ cho user. Ai chạy được lệnh này (vào được container core) vốn
@@ -52,7 +57,6 @@ class BootstrapReport:
     notes: int
     aliases_added: list[str]
     aliases_skipped: list[str]
-    timezone_set: str | None
 
 
 async def _count_null_owner(session: AsyncSession, table: str, extra: str = "") -> int:
@@ -98,7 +102,7 @@ async def bootstrap(session: AsyncSession, owner_email: str, *, dry_run: bool) -
             )
         ).rowcount
 
-    # 3. Sao chép (không xoá) cài đặt cũ: current_users -> alias Jira, display_timezone -> múi giờ.
+    # 3. Sao chép (không xoá) cài đặt cũ: current_users -> alias Jira.
     names = await settings_service.get_value(session, SettingKey.CURRENT_USERS)
     added: list[str] = []
     skipped: list[str] = []
@@ -110,12 +114,6 @@ async def bootstrap(session: AsyncSession, owner_email: str, *, dry_run: bool) -
             added, skipped = await user_service.add_aliases(
                 session, owner.id, AliasSource.JIRA, clean
             )
-    tz = await settings_service.get_value(session, SettingKey.DISPLAY_TIMEZONE)
-    timezone_set: str | None = None
-    if isinstance(tz, str) and owner.timezone is None:
-        timezone_set = tz
-        if not dry_run:
-            await user_service.set_timezone(session, owner.id, tz)
 
     if not dry_run:
         # 4. Dữ liệu đã có chủ hết: biến hai CHECK NOT VALID thành VALID (thất bại thì rollback
@@ -139,7 +137,6 @@ async def bootstrap(session: AsyncSession, owner_email: str, *, dry_run: bool) -
         notes=notes,
         aliases_added=added,
         aliases_skipped=skipped,
-        timezone_set=timezone_set,
     )
 
 
@@ -157,8 +154,6 @@ async def _cmd_bootstrap(args: argparse.Namespace) -> int:
     print(f"{prefix}alias Jira thêm cho chủ: {len(report.aliases_added)}")
     for name in report.aliases_skipped:
         print(f"CẢNH BÁO: alias {name!r} đã thuộc user khác, bỏ qua")
-    if report.timezone_set:
-        print(f"{prefix}múi giờ của chủ: {report.timezone_set}")
     if not args.dry_run:
         print("Đã VALIDATE hai CHECK ck_tasks_personal_has_owner và ck_notes_owner_required.")
         print(
@@ -208,6 +203,116 @@ async def _cmd_token(args: argparse.Namespace) -> int:
 
 
 # ═══════════════════════════════════════════════════════════════════════
+#  revoke, disable, enable, alias
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def _require_user(session: AsyncSession, email: str) -> User:
+    """Khoá dòng user (tránh hai lệnh tăng `session_version` đè nhau) hoặc báo lỗi mã 2."""
+    user = await user_service.get_by_email(session, email, lock=True)
+    if user is None:
+        raise CliError("Không có user với email này")
+    return user
+
+
+async def _cmd_revoke(args: argparse.Namespace) -> int:
+    async with SessionFactory() as session:
+        user = await _require_user(session, args.email)
+        user.session_version += 1
+        audit_service.record(
+            session,
+            AuditAction.SESSIONS_REVOKED,
+            target_type="user",
+            target_id=user.id,
+            details={"via": "cli"},
+        )
+        await session.commit()
+    print(f"Đã thu hồi mọi phiên của {user.email}.")
+    return EXIT_OK
+
+
+async def _cmd_disable(args: argparse.Namespace) -> int:
+    async with SessionFactory() as session:
+        user = await _require_user(session, args.email)
+        old = user.status
+        user.status = UserStatus.DISABLED
+        # Tăng cả sv: token đã cấp bị từ chối ngay cả khi sau này enable lại.
+        user.session_version += 1
+        audit_service.record(
+            session,
+            AuditAction.USER_STATUS_CHANGED,
+            target_type="user",
+            target_id=user.id,
+            details={"from": old.value, "to": user.status.value, "via": "cli"},
+        )
+        await session.commit()
+    print(f"Đã khoá {user.email} và thu hồi mọi phiên.")
+    return EXIT_OK
+
+
+async def _cmd_enable(args: argparse.Namespace) -> int:
+    async with SessionFactory() as session:
+        user = await _require_user(session, args.email)
+        old = user.status
+        # Chưa từng đăng nhập Google (không có google_sub) thì quay về "invited" để còn kích hoạt.
+        user.status = UserStatus.ACTIVE if user.google_sub else UserStatus.INVITED
+        audit_service.record(
+            session,
+            AuditAction.USER_STATUS_CHANGED,
+            target_type="user",
+            target_id=user.id,
+            details={"from": old.value, "to": user.status.value, "via": "cli"},
+        )
+        await session.commit()
+    print(f"Đã mở khoá {user.email}, trạng thái {user.status.value}.")
+    return EXIT_OK
+
+
+async def _cmd_alias(args: argparse.Namespace) -> int:
+    async with SessionFactory() as session:
+        user = await _require_user(session, args.email)
+        source = AliasSource(args.source)
+        removed: list[str] = []
+        skipped: list[str] = []
+        # `_require_user` đã khoá dòng user: thêm/gỡ song song với nhau được tuần tự hoá.
+        # Không tăng session_version: alias được đọc từ DB mỗi request, không nằm trong JWT.
+        if args.set_aliases is not None:
+            added, removed, skipped = await user_service.set_aliases(
+                session, user.id, source, args.set_aliases.split(",")
+            )
+        elif args.remove is not None:
+            removed = await user_service.remove_aliases(
+                session, user.id, source, args.remove.split(",")
+            )
+            added = []
+        else:
+            added, skipped = await user_service.add_aliases(session, user.id, source, [args.alias])
+        if added or removed:
+            audit_service.record(
+                session,
+                AuditAction.USER_ALIASES_CHANGED,
+                target_type="user",
+                target_id=user.id,
+                details={
+                    "source": args.source,
+                    "added": len(added),
+                    "removed": len(removed),
+                    "via": "cli",
+                },
+            )
+        await session.commit()
+    for name in added:
+        print(f"Đã thêm alias {name!r} cho {user.email}")
+    for name in removed:
+        print(f"Đã gỡ alias {name!r} khỏi {user.email}")
+    for name in skipped:
+        print(f"Bỏ qua alias {name!r}: đã tồn tại (của user này hoặc user khác)")
+    if args.set_aliases is not None or args.remove is not None:
+        print(f"Tổng: thêm {len(added)}, gỡ {len(removed)}")
+    return EXIT_OK
+
+
+# ═══════════════════════════════════════════════════════════════════════
 #  Điểm vào
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -231,6 +336,28 @@ def build_parser() -> argparse.ArgumentParser:
     tok.add_argument("--email", required=True)
     tok.add_argument("--ttl", type=int, default=60, help="giây, tối đa 120")
     tok.set_defaults(func=_cmd_token)
+
+    for name, func, helptext in (
+        ("revoke", _cmd_revoke, "đăng xuất mọi thiết bị (tăng session_version)"),
+        ("disable", _cmd_disable, "khoá user và thu hồi phiên"),
+        ("enable", _cmd_enable, "mở khoá user (active nếu đã có google_sub, ngược lại invited)"),
+    ):
+        cmd = sub.add_parser(name, help=helptext)
+        cmd.add_argument("--email", required=True)
+        cmd.set_defaults(func=func)
+
+    ali = sub.add_parser("alias", help="thêm/đặt/gỡ alias (tên trong nguồn ngoài) cho user")
+    ali.add_argument("--email", required=True)
+    mode = ali.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--alias", help="thêm một tên (giữ các tên khác)")
+    mode.add_argument(
+        "--set",
+        dest="set_aliases",
+        help='thay TOÀN BỘ alias bằng danh sách "a,b" (thêm cái thiếu, gỡ cái thừa)',
+    )
+    mode.add_argument("--remove", help='gỡ một hay vài tên, phân cách dấu phẩy: "a,b"')
+    ali.add_argument("--source", choices=[a.value for a in AliasSource], default="jira")
+    ali.set_defaults(func=_cmd_alias)
     return parser
 
 

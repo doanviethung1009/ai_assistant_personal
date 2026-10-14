@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useState, useTransition } from "react";
 
 import { purgeTaskAction, restoreTaskAction } from "@/app/actions";
@@ -21,6 +22,7 @@ function remainingTone(days: number | null): string {
 export function TrashItem({ task }: { task: Task }) {
   const tz = useDisplayTz();
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
 
@@ -28,6 +30,7 @@ export function TrashItem({ task }: { task: Task }) {
     setError(null);
     startTransition(async () => {
       const result = await action();
+      if (gate(result)) return;
       if (!result.ok) setError(result.error ?? "Thao tác thất bại");
     });
   }

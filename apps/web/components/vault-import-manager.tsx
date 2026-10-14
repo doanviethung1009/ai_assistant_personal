@@ -1,11 +1,13 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useRef, useState, useTransition } from "react";
 import { importVaultAction } from "@/app/vault-actions";
 
 export function VaultImportManager() {
   const [result, setResult] = useState<{ ok: boolean; error?: string } | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const formRef = useRef<HTMLFormElement>(null);
 
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
@@ -16,6 +18,7 @@ export function VaultImportManager() {
 
     startTransition(async () => {
       const response = await importVaultAction(formData);
+      if (gate(response)) return;
       setResult(response);
       if (response.ok) {
         formRef.current?.reset();

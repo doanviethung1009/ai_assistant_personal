@@ -8,11 +8,14 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
     "gen:types": "openapi-typescript ${CORE_API_URL:-http://api:8000}/openapi.json -o lib/generated/openapi.d.ts"
   },
   "dependencies": {
+    "jose": "6.2.12",
     "lucide-react": "^1.52.0",
-    "next": "^15.1.0",
+    "next": "^15.5.0",
+    "next-auth": "5.0.0-beta.32",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^9.0.1",
@@ -26,6 +29,7 @@
     "@types/react-dom": "^19.0.0",
     "openapi-typescript": "^7.13.0",
     "tailwindcss": "^4.0.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "3.2.4"
   }
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import { useActionAuth } from "@/lib/use-action-auth";
 import { useRef, useState, useTransition } from "react";
 
 import { importDataAction, type ImportActionResult } from "@/app/actions";
@@ -35,6 +36,7 @@ export function DataImport({
   const [mode, setMode] = useState<"merge" | "replace">("merge");
   const [result, setResult] = useState<ImportActionResult | null>(null);
   const [pending, startTransition] = useTransition();
+  const gate = useActionAuth();
   const formRef = useRef<HTMLFormElement>(null);
 
   const accept = (visibleKinds.find((item) => item.value === kind) ?? KINDS[0]).accept;
@@ -49,6 +51,7 @@ export function DataImport({
 
     startTransition(async () => {
       const response = await importDataAction(formData);
+      if (gate(response)) return;
       setResult(response);
       if (response.ok) formRef.current?.reset();
     });
