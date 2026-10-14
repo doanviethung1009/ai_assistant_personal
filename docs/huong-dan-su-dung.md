@@ -49,7 +49,7 @@ không dùng bộ lọc của tab Danh sách.
 
 Có thể lọc **thời gian**: 7, 30, 90 ngày gần đây (gồm cả hôm nay), hoặc tự nhập khoảng ngày
 (chọn "Tuỳ chọn khoảng ngày"; bỏ trống một ô nghĩa là không giới hạn phía đó). Ngày tính theo
-múi giờ bạn đã chọn. Mốc thời gian là **ngày hoạt động**: ngày hoàn thành với task đã xong, ngày
+múi giờ của server. Mốc thời gian là **ngày hoạt động**: ngày hoàn thành với task đã xong, ngày
 cập nhật gần nhất với task còn lại. Khi lọc, cả số task của từng người lẫn tổng task của project
 đều chỉ tính các task có hoạt động trong khoảng đó, nên % là phần việc của người đó **trong kỳ**.
 Danh sách người để tích vẫn đủ mọi người, kể cả ai không có hoạt động trong kỳ.
@@ -371,13 +371,13 @@ Không phục hồi được. Nếu bạn có bản JSON sao lưu thì nhập l�
 vào, nhưng nhớ là task trong thùng rác của file nguồn sẽ bị bỏ qua.
 
 **Số "xong hôm nay" trông sai.**
-Kiểm tra múi giờ hiển thị. Mặc định là `Asia/Ho_Chi_Minh`. Tự chọn múi giờ của
-bạn ở trang **Dữ liệu** (tab Đồng bộ), có hiệu lực ngay, không cần khởi động lại.
-`NEXT_PUBLIC_DISPLAY_TZ` chỉ còn là múi giờ dự phòng khi web không gọi được API.
+Kiểm tra múi giờ hiển thị ở trang **Hệ thống**. Cả web lẫn API dùng chung một múi giờ
+của server: biến `TZ` trong `.env`, mặc định `Asia/Ho_Chi_Minh`. Muốn đổi thì sửa `TZ`
+rồi khởi động lại `api` và `web` (`make up`), không cần build lại image.
 
 **Task Jira báo quá hạn sớm hơn Jira.**
 Hạn Jira chỉ có ngày, không có giờ. Task có hạn hôm nay chỉ bị tính quá hạn khi
-sang ngày hôm sau theo múi giờ bạn chọn (trước đây là từ 00:00 UTC). Hạn đổi trên
+sang ngày hôm sau theo múi giờ server (trước đây là từ 00:00 UTC). Hạn đổi trên
 Jira sẽ được cập nhật ở lần sync sau, trừ khi bạn đã sửa hạn tay ở đây.
 
 **Nhập CSV báo bỏ qua nhiều dòng.**

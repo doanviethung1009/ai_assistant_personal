@@ -7,11 +7,10 @@
 
 - **Nhập là GHI ĐÈ, không xoá.** Bản ghi trong file mà đã có trong Postgres (cùng `id`, hoặc cùng khoá tự nhiên) sẽ bị **thay bằng nội dung file**. Bản ghi chỉ có trong Postgres thì giữ nguyên. Không có chế độ xoá hàng loạt.
 - **Rủi ro lớn nhất:** file cũ ghi đè trạng thái mới hơn trong Postgres (ví dụ bạn đã đổi trạng thái task qua web ở chế độ api, rồi nhập lại file cũ). Bước **Kiểm tra** luôn liệt kê từng bản ghi sẽ bị ghi đè kèm diff, và gắn nhãn "File cũ hơn dữ liệu hiện tại".
-- **Web chưa có đăng nhập.** Vì vậy nhập thật bắt buộc **mật khẩu** (`IMPORT_COMMIT_SECRET`). Kiểm tra thì không cần.
+- **Nhập thật cần quyền admin** (`data:import`), do core kiểm theo tài khoản đăng nhập; không còn mật khẩu `IMPORT_COMMIT_SECRET` (đã bỏ). Kiểm tra (dry-run) thì không cần quyền ghi. Lưu ý web chưa có đăng nhập (Auth.js) nên ở chế độ api core đang trả 401, xem `docs/AI_HANDOFF_STATE.md`.
 - **Hai kho không tự đồng bộ.** Đổi nguồn không xoá dữ liệu bên kia, nhưng bạn sẽ không thấy nó cho tới khi đổi lại.
 
-- **Mật khẩu nhập đi qua mạng dạng chữ thường** từ trình duyệt tới web. Dùng trên `localhost` thì không sao; khi chạy `make lan-up` trên wifi dùng chung, ai nghe lén được sẽ đọc được. Chỉ nhập thật trên máy của bạn.
-- **Dùng mật khẩu do `make env` sinh** (96 bit). Core tối thiểu 16 ký tự nhưng không kiểm độ mạnh; `aaaaaaaaaaaaaaaa` vẫn qua. Đặt tay thì không để khoảng trắng ở đầu hoặc cuối.
+- **Chỉ nhập thật trên máy của bạn hoặc qua HTTPS.** Khi chạy `make lan-up` trên wifi dùng chung, dữ liệu đi qua mạng dạng chữ thường.
 
 ## 2. Các bước
 
@@ -31,9 +30,9 @@
    make build
    ```
 3. **Tạo hoặc bổ sung `.env`** (chạy **ở thư mục gốc repo**, không phải `apps/web`, vì `Makefile` nằm ở gốc):
-   - Chưa có `.env`: `make env` sinh đủ khoá ngẫu nhiên và in `API_KEY` cùng `IMPORT_COMMIT_SECRET` ra màn hình (mật khẩu bạn sẽ gõ ở bước Nhập thật). `INTEGRATION_SECRET_KEY` **không** được in.
-   - Đã có `.env` từ trước: `make env-fill` chỉ thêm `IMPORT_COMMIT_SECRET` và `INTEGRATION_SECRET_KEY` nếu còn thiếu hoặc rỗng, **không đổi** biến đã có, và chỉ in tên biến. Muốn xem `IMPORT_COMMIT_SECRET` thì mở `.env` (quyền 600).
-   - **Sao lưu `.env`.** Mất `INTEGRATION_SECRET_KEY` thì mọi token Jira đã lưu mất, phải nhập lại. Chưa có `IMPORT_COMMIT_SECRET` thì core từ chối nhập thật.
+   - Chưa có `.env`: `make env` sinh đủ khoá ngẫu nhiên và in `API_KEY` ra màn hình. `INTEGRATION_SECRET_KEY` **không** được in.
+   - Đã có `.env` từ trước: `make env-fill` chỉ thêm `INTEGRATION_SECRET_KEY` và `CORE_JWT_SECRET` nếu còn thiếu hoặc rỗng, **không đổi** biến đã có, và chỉ in tên biến.
+   - **Sao lưu `.env`.** Mất `INTEGRATION_SECRET_KEY` thì mọi token Jira đã lưu mất, phải nhập lại. `IMPORT_COMMIT_SECRET` còn sót trong `.env` thì xoá đi: core chỉ ghi cảnh báo và bỏ qua nó.
 4. **Bật stack và đổi sang Postgres.** Api tự chạy migration khi khởi động:
    ```bash
    make up
@@ -51,7 +50,7 @@
 
 8. **Jira (tuỳ chọn, chỉ Jira Cloud `*.atlassian.net`):** trang Dữ liệu, tab **Đồng bộ**, mục kết nối Jira.
    1. Nếu trình duyệt còn cấu hình Jira cũ (lưu ở `localStorage`), bấm **Chuyển các kết nối này lên server**. Chỉ mục nào server nhận thành công mới bị xoá khỏi trình duyệt; mục lỗi hiện nút **Bỏ khỏi trình duyệt**. Hoặc tạo kết nối mới bằng form (token chỉ ghi, không bao giờ hiện lại, chỉ thấy 4 ký tự cuối).
-   2. Bấm **Cào ngay** ở kết nối, gõ mật khẩu nhập (`IMPORT_COMMIT_SECRET`). Lần đầu nên chạy không điền "Từ ngày"; về sau điền ngày để chỉ lấy phần thay đổi.
+   2. Bấm **Cào ngay** ở kết nối (cần tài khoản admin, không còn ô mật khẩu). Lần đầu nên chạy không điền "Từ ngày"; về sau điền ngày để chỉ lấy phần thay đổi.
    3. Task đã có trong Postgres giữ nguyên priority, hạn, người giao và project bạn đã sửa; chỉ task **mới** nhận các giá trị đó từ Jira. Task Jira bạn đã chuyển sang `personal` không bị đụng.
    4. Báo "chạm trần 100 trang": thu hẹp JQL (cấu hình kết nối) hoặc dùng "Từ ngày".
 
@@ -62,7 +61,7 @@
 | `make: *** No rule to make target 'env'` | Đang đứng ở `apps/web`, không phải thư mục gốc | `cd` về thư mục gốc repo |
 | api không khởi động, log có `ModuleNotFoundError` (`cryptography`, `httpcore`) | Image chưa build lại sau khi kéo code | `make build` rồi `make up` |
 | Tạo kết nối Jira báo 503 "thiếu khoá" | `.env` cũ không có `INTEGRATION_SECRET_KEY` | `make env-fill` rồi `make up` |
-| Nhập thật báo 403 | Sai mật khẩu, hoặc `.env` cũ chưa có `IMPORT_COMMIT_SECRET` | `make env-fill`, mở `.env` lấy mật khẩu |
+| Nhập thật báo 401/403 | Chưa đăng nhập, hoặc tài khoản không có quyền `data:import` (không phải admin) | Đăng nhập bằng tài khoản admin (`ADMIN_EMAILS`) |
 | "Cào ngay" báo 503 "nhập lại token" | `INTEGRATION_SECRET_KEY` đã đổi hoặc mất so với lúc lưu token | Nhập lại token của kết nối |
 | "Cào ngay" báo 409 | Đang có lần sync khác của kết nối này, hoặc kết nối chưa có token | Chờ lần kia xong; nhập token |
 | Kết nối Jira bị từ chối khi lưu | `base_url` không phải `https://<tên>.atlassian.net` (IP, cổng lạ, host khác) | Dùng đúng địa chỉ Jira Cloud; Jira tự cài đặt chưa hỗ trợ |
@@ -92,13 +91,13 @@ curl -X POST -H "X-API-Key: $API_KEY" -H "Content-Type: application/json" \
   --data-binary @data/builder-data.json \
   "http://localhost:8000/api/v1/import/datafile?dry_run=true"
 
-# Nhập thật: cần mã băm file của báo cáo trên, số bản ghi ghi đè, và mật khẩu
-curl -X POST -H "X-API-Key: $API_KEY" -H "X-Import-Secret: $IMPORT_COMMIT_SECRET" \
+# Nhập thật: cần mã băm file của báo cáo trên, số bản ghi ghi đè, và token của tài khoản admin
+curl -X POST -H "X-API-Key: $API_KEY" -H "Authorization: Bearer $TOKEN_ADMIN" \
   -H "Content-Type: application/json" --data-binary @data/builder-data.json \
   "http://localhost:8000/api/v1/import/datafile?dry_run=false&expect_replaced=<N>&expect_sha256=<file_sha256>"
 ```
 
-Lỗi thường gặp: `403` (sai mật khẩu hoặc chưa đặt `IMPORT_COMMIT_SECRET`), `409` (đang có lần nhập khác chạy), `413` (file lớn hơn 10 MB), `422` (thiếu `expect_*` khi nhập thật, hoặc JSON sai), và `committed=false` kèm `replace_count_mismatch` (dữ liệu đã đổi sau lần Kiểm tra) hoặc `file_changed_since_dry_run`.
+Lỗi thường gặp: `401/403` (thiếu token hoặc không phải admin), `409` (đang có lần nhập khác chạy), `413` (file lớn hơn 10 MB), `422` (thiếu `expect_*` khi nhập thật, hoặc JSON sai), và `committed=false` kèm `replace_count_mismatch` (dữ liệu đã đổi sau lần Kiểm tra) hoặc `file_changed_since_dry_run`.
 
 ## 5. Hoàn tác
 

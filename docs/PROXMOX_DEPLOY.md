@@ -390,7 +390,7 @@ Nếu Ansible báo `requires blocking IO on stdin/stdout/stderr`, chạy kèm `|
 
 1. **Gói nền** (`qemu-guest-agent`, `chrony`, `ufw`, `git`, `make`...). Guest agent để Proxmox thấy IP và tắt máy êm.
    `chrony` thay `systemd-timesyncd` (apt tự gỡ bản cũ), giữ đồng hồ đúng cho log và token.
-2. **Múi giờ** `Asia/Ho_Chi_Minh`, khớp `NEXT_PUBLIC_DISPLAY_TZ` của web.
+2. **Múi giờ** `Asia/Ho_Chi_Minh`, khớp biến `TZ` trong `.env` mà `api` và `web` cùng đọc.
 3. **`unattended-upgrades`**: chỉ vá bảo mật, **không tự reboot** (reboot bất ngờ làm sập stack).
 4. **Siết SSH** bằng file drop-in `/etc/ssh/sshd_config.d/99-hardening.conf` (tắt mật khẩu, tắt root, `MaxAuthTries 3`).
    File được kiểm cú pháp bằng `sshd -t` **trước khi ghi**: file lỗi thì sshd không lên và mất kết nối.
@@ -459,7 +459,7 @@ Vì nhánh đi `main → uat → prod` theo fast-forward (xem [git-workflow.md](
 3. **GitHub Environments**: tạo `staging` (không duyệt) và `production` (bắt buộc reviewer).
 4. **Sửa compose** (`docker-compose.prod.yml`): thêm `image: ghcr.io/doanviethung1009/ai-assistant-api:${IMAGE_TAG}`
    và tương tự cho `web`, giữ `build:` làm dự phòng.
-5. Lưu ý `NEXT_PUBLIC_DISPLAY_TZ` nhúng lúc build: image dùng chung nên múi giờ cố định ở bước build.
+5. Múi giờ lấy từ `TZ` trong `.env` lúc chạy, image dùng chung nên mỗi môi trường tự đặt `TZ` mà không phải build lại.
 
 Chưa triển khai; xem trạng thái ở mục 0.
 

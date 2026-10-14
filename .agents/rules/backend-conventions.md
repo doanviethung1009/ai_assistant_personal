@@ -21,13 +21,15 @@ thêm model mới, đừng tự suy luận lại từ đầu.
   `_jsonable()` trong `task_service.py`. UUID, datetime, date, Enum đều
   không tự serialize được.
 - **Khái niệm "hôm nay" luôn quy đổi qua `services/clock.py`.** DB lưu UTC.
-  Múi giờ do người dùng chọn (lưu `app_settings`, env chỉ là mặc định), nên KHÔNG
-  đọc `settings.display_timezone` trực tiếp: dùng `clock.display_tz()`. Query nào
+  Múi giờ là MỘT giá trị của server (`settings.display_timezone`, env `DISPLAY_TIMEZONE`,
+  rồi `TZ`, mặc định `Asia/Ho_Chi_Minh`), không có lựa chọn theo user hay theo DB.
+  Vẫn gọi `clock.display_tz()` thay vì đọc `settings` trực tiếp để có một chỗ duy nhất
+  (và một ZoneInfo đã cache) cho mọi phép tính ngày. Query nào
   group theo ngày phải bọc `func.timezone(clock.display_tz().key, ...)` trước khi
   lấy `date()`, nếu không sẽ lệch với `reference_date`.
 - **Quá hạn tính theo ngày địa phương với hạn cả ngày.** Task có `due_all_day`
-  (Jira `duedate` chỉ có ngày) quá hạn khi ngày hạn < hôm nay theo múi giờ người
-  dùng, không phải `due_at < now`. Dùng `_overdue_clause`/`_due_soon_clause` trong
+  (Jira `duedate` chỉ có ngày) quá hạn khi ngày hạn < hôm nay theo múi giờ server,
+  không phải `due_at < now`. Dùng `_overdue_clause`/`_due_soon_clause` trong
   `task_service.py`, đừng tự viết lại điều kiện.
 - **Không `create_all`.** Schema chỉ đổi qua Alembic.
 - **Ràng buộc unique phải là partial index.** `UNIQUE (source, external_id)` có

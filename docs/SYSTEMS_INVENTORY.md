@@ -133,7 +133,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 
 | Thứ | Vị trí | Ai được xem |
 |---|---|---|
-| `.env` ứng dụng (API_KEY, mật khẩu DB, LITELLM_*, GRAFANA, IMPORT_COMMIT_SECRET, INTEGRATION_SECRET_KEY) | Trên từng VM, `600` | Người có SSH vào VM đó |
+| `.env` ứng dụng (API_KEY, mật khẩu DB, LITELLM_*, GRAFANA, INTEGRATION_SECRET_KEY) | Trên từng VM, `600` | Người có SSH vào VM đó |
 | Token Proxmox đọc/ghi | `infra/proxmox/.env.pve`, `.env.pve.deploy` (máy dev, gitignore) | Chủ máy dev |
 | Khóa SSH `ai_assistant_deploy` | `~/.ssh` máy dev | Chủ máy dev |
 | Khóa quản trị node `isec_admin` | `~/.ssh` của từng quản trị viên | Từng người |
@@ -154,7 +154,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 |---|---|---|---|
 | 1 | **Chưa có job backup** (node và DB) | Cao | Tạo job `vzdump` cho 203 và 202; chép `backups/` ra ngoài node (PROXMOX_OPERATIONS.md mục 5) |
 | 2 | **Prod chưa deploy stack**; nhánh `prod` trên VM đang là bản rất cũ | Cao | Thăng cấp `main → uat → prod` (cần bạn quyết, có `git push`), rồi `scripts/deploy.sh` |
-| 3 | **Staging/prod thiếu `IMPORT_COMMIT_SECRET`, `INTEGRATION_SECRET_KEY`** | Cao | `make env-fill` trên VM trước khi deploy |
+| 3 | **Staging/prod thiếu `INTEGRATION_SECRET_KEY`, `CORE_JWT_SECRET`** | Cao | `make env-fill` trên VM trước khi deploy |
 | 4 | Runner CI tự host và GitHub Environments/Secrets chưa tạo → workflow Deploy chưa chạy được | Trung bình | Dựng LXC `ai-ci-01`; RAM node sát giới hạn (tắt dev khi không dùng) |
 | 5 | Build images: image api đã đẩy được; **web chưa có image** (job bị hủy khi Trivy của api fail); lỗi Trivy chưa rõ nguyên nhân | Trung bình | PR #29 đã thêm `fail-fast: false` + `continue-on-error`; chạy lại `Build images` và đọc log Trivy |
 | 6 | **Giám sát hạ tầng**: chưa có cảnh báo cho node/VM (RAM, thin pool, đĩa) | Trung bình | `prometheus-pve-exporter` + profile `monitoring`; tạm thời kiểm tay hằng tuần |

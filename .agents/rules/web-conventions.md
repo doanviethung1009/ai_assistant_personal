@@ -50,7 +50,7 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
 - **Đổi cấu trúc file JSON thì phải tăng `SCHEMA_VERSION` và viết bước
   migrate.** Xem `store/json-file.ts`. Thêm field mà không backfill thì dữ
   liệu cũ đọc lên là `undefined`, và code so sánh `=== null` sẽ hiểu sai.
-  Hiện tại đang ở **v8** (v8 thêm `reporter` cho task; v7 thêm `due_all_day` cho task và `meta.display_timezone`; v4 từng tách mảng log ra file riêng, nay đã gỡ; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
+  Hiện tại đang ở **v8** (v8 thêm `reporter` cho task; v7 thêm `due_all_day` cho task và `meta.display_timezone`, nay đã gỡ nên file cũ có field này vẫn đọc được và bị bỏ qua; v4 từng tách mảng log ra file riêng, nay đã gỡ; v5 thêm `scope` cho task: work | personal, có bước migrate cả khi restore). Thêm mảng mới thì
   phải backfill thành `[]`, vì engine gọi `.filter()` ngay khi nạp.
 - **Quy tắc Lưu trữ JSON (Local Storage Split vs Group):** Khi phát sinh tính năng/dữ liệu mới, BẮT BUỘC ĐÁNH GIÁ ĐẶC TÍNH DỮ LIỆU trước khi thêm vào JSON.
   - **Để chung (`builder-data.json`):** Dành cho dữ liệu cốt lõi, có tính ràng buộc (relational), số lượng bản ghi được kiểm soát, thường xuyên cập nhật/xoá (Ví dụ: `tasks`, `projects`, `notes`).
@@ -75,16 +75,25 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   `NOTE_KIND_LABELS`, hay field tính riêng cho UI) vẫn khai tay trong
   `types.ts` như trước — chỉ phần trùng với schema backend là alias.
 - **Trang `/system` (Thông tin hệ thống) không bao giờ render secret thật.**
-  Trang này không có cơ chế đăng nhập riêng — ai mở được URL (kể cả qua LAN
-  nếu đã `make lan-up`) đều xem được mọi thứ ở đó. Field hiển thị PHẢI tới từ
+  Ở chế độ api trang này cần đăng nhập và quyền `system:read`; ở chế độ
+  file/memory KHÔNG có đăng nhập nên ai mở được URL (kể cả qua LAN nếu đã
+  `make lan-up`) đều xem được mọi thứ ở đó. Field hiển thị PHẢI tới từ
   `apps/core/app/schemas/system.py::SystemInfo` (đã được backend lọc chỉ còn
   field không nhạy cảm), không tự thêm biến môi trường mới vào component.
   Muốn thêm field thì sửa `SystemInfo` ở backend trước, chạy `make gen-types`,
   rồi mới render. Thông tin "nội bộ nhưng không mật" (URL nội bộ, tên biến
   đang dùng) bọc trong `<SensitiveToggle>` để không hiện ngay khi mở trang,
   nhưng đừng dùng nó để biện minh cho việc hiện secret thật sau một cú click.
-- **Múi giờ hiển thị lấy từ server, không còn hằng `DISPLAY_TZ`.** Mọi hàm trong
-  `lib/format.ts` nhận `tz` tường minh; component client dùng `useDisplayTz()`
-  (`lib/timezone-context.tsx`). `NEXT_PUBLIC_DISPLAY_TZ` chỉ là dự phòng khi API
-  không trả lời (`FALLBACK_TZ` trong `lib/api.ts`). Đừng quy đổi giờ bằng múi giờ
-  của browser: server render và client hydrate sẽ lệch.
+- **Múi giờ hiển thị = múi giờ server, đọc từ biến `TZ` lúc chạy.** Nguồn duy nhất là
+  hằng `DISPLAY_TZ` trong `lib/api.ts` (cùng biến `TZ` mà core đọc; mặc định cùng là
+  Asia/Ho_Chi_Minh, nhưng TZ sai tên thì core không khởi động còn web rơi về mặc định); không gọi API, không có ô chọn, không có `NEXT_PUBLIC_*`. Server Component dùng
+  `DISPLAY_TZ` trực tiếp, component client dùng `useDisplayTz()` (`lib/timezone-context.tsx`).
+  Mọi hàm trong `lib/format.ts` nhận `tz` tường minh. Đừng quy đổi giờ bằng múi giờ của
+  browser: server render và client hydrate sẽ lệch.
+- **Đăng nhập (chế độ api, `docs/specs/web-authjs-login.md`).** Mọi Server Action PHẢI mở đầu bằng
+  `requireSession()` hoặc `requirePermission(...)` rồi `if (!auth.ok) return ...` (test tĩnh
+  `tests/server-actions-guard.test.ts` bắt action quên guard). Khoá cache GET trong `lib/core-cache.ts`
+  PHẢI có `uid:sv`; không bao giờ cache `/api/v1/me`, `/integrations`, `/admin`. Bearer chỉ được gắn
+  trong `coreFetchRaw`. Lỗi 401/403 xử lý theo `code` của core (`lib/core-errors.ts`): chỉ `token_invalid`
+  và `user_inactive` mới đăng xuất, thiếu/sai API key hay core sập thì không. Trang chỉ đọc file (docs,
+  architecture...) vẫn phải kiểm phiên còn hiệu lực ở core (`getMe`), không chỉ dựa vào middleware.
