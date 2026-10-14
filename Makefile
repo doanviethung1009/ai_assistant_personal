@@ -336,7 +336,7 @@ reset: ## XOÁ TOÀN BỘ DỮ LIỆU rồi dựng lại từ đầu
 	@echo "  Đã dựng lại. Migration chạy tự động khi api khởi động."
 
 # ── Đăng nhập đa người dùng (CLI trong container api, xem app/cli/auth.py) ──
-.PHONY: auth-token auth-invite auth-bootstrap auth-revoke auth-disable auth-enable auth-alias auth-alias-set auth-alias-remove
+.PHONY: auth-token auth-invite auth-bootstrap auth-create-local auth-reset-password auth-unlock auth-revoke auth-disable auth-enable auth-alias auth-alias-set auth-alias-remove
 auth-token: ## In JWT cho một user active: make auth-token EMAIL=a@b.com [TTL=60] (dev, smoke test)
 	@$(API) python -m app.cli.auth token --email "$(EMAIL)" --ttl $(or $(TTL),60)
 
@@ -360,6 +360,15 @@ auth-alias-set: ## Thay TOÀN BỘ alias Jira của user: make auth-alias-set EM
 
 auth-alias-remove: ## Gỡ alias Jira của user: make auth-alias-remove EMAIL=a@b.com ALIASES="Tên 1,Tên 2"
 	$(API) python -m app.cli.auth alias --email "$(EMAIL)" --remove "$(ALIASES)"
+
+auth-create-local: ## Tạo tài khoản nội bộ (in mật khẩu tạm MỘT lần): make auth-create-local USERNAME=a.nguyen EMAIL=a@b.com [ROLE=member|lead|admin] [NAME="Tên"]
+	@$(API) python -m app.cli.auth create-local --username "$(USERNAME)" --email "$(EMAIL)" $(if $(ROLE),--role $(ROLE),) $(if $(NAME),--name "$(NAME)",)
+
+auth-reset-password: ## Đặt lại mật khẩu tài khoản nội bộ (in mật khẩu tạm MỘT lần): make auth-reset-password EMAIL=a@b.com
+	@$(API) python -m app.cli.auth reset-password --email "$(EMAIL)"
+
+auth-unlock: ## Mở khoá tài khoản nội bộ bị khoá do nhập sai: make auth-unlock EMAIL=a@b.com
+	$(API) python -m app.cli.auth unlock --email "$(EMAIL)"
 
 auth-bootstrap: ## Gán chủ cho dữ liệu cũ SAU make migrate: make auth-bootstrap OWNER=admin@b.com [DRY=1]
 	$(API) python -m app.cli.auth bootstrap --owner "$(OWNER)" $(if $(DRY),--dry-run,)

@@ -16,8 +16,7 @@
 #      ADMIN và đã đăng nhập Google ít nhất một lần (status active).
 #    - SMOKE_EMAIL_2 (tuỳ chọn): user thứ hai; có thì kiểm cô lập task cá nhân.
 #    - SMOKE_TOKEN (tuỳ chọn): JWT dựng sẵn, bỏ qua bước lấy token (hết hạn sau 120 giây).
-#  Nhóm "tài khoản nội bộ" tự tạo một user mật khẩu bằng `docker compose exec api python -m
-#  app.cli.auth create-local`, đi hết luồng đăng nhập/đổi mật khẩu rồi xoá user (cần admin smoke).
+#  Nhóm "tài khoản nội bộ" tự tạo một user mật khẩu bằng `make auth-create-local`, đi hết luồng đăng nhập/đổi mật khẩu rồi xoá user (cần admin smoke).
 # ═══════════════════════════════════════════════════════════════════════
 
 set -uo pipefail
@@ -689,9 +688,10 @@ echo "${DIM}tài khoản nội bộ${RESET}"
 
 LOCAL_NAME="smoke.${STAMP}"
 LOCAL_EMAIL="${LOCAL_NAME}@smoke.invalid"
-LOCAL_OUT="$(docker compose exec -T api python -m app.cli.auth create-local \
-  --username "$LOCAL_NAME" --email "$LOCAL_EMAIL" 2>/dev/null)"
+LOCAL_OUT="$(make -s auth-create-local USERNAME="$LOCAL_NAME" EMAIL="$LOCAL_EMAIL" 2>/dev/null)"
 LOCAL_TEMP="$(tail -n1 <<<"$LOCAL_OUT")"
+# Lấy id ngay từ dòng đầu của CLI ("... id <uuid>)."): trap cleanup dọn được kể cả khi đăng nhập fail.
+LOCAL_USER_ID="$(sed -n '1s/.*id \([0-9a-f-]\{36\}\)).*/\1/p' <<<"$LOCAL_OUT")"
 expect "CLI create-local in mật khẩu tạm 16 ký tự" "16" "${#LOCAL_TEMP}"
 
 req_nojwt POST /api/v1/auth/login/password "{\"identifier\":\"$LOCAL_NAME\",\"password\":\"sai-mat-khau-smoke\"}"
@@ -700,7 +700,6 @@ expect "đăng nhập sai báo invalid_credentials" "invalid_credentials" "$(jge
 
 req_nojwt POST /api/v1/auth/login/password "{\"identifier\":\"$LOCAL_NAME\",\"password\":\"$LOCAL_TEMP\"}"
 expect "đăng nhập bằng mật khẩu tạm trả 200" "200" "$STATUS"
-LOCAL_USER_ID="$(jget "$BODY" user_id)"
 LOCAL_TOKEN="$(mint_token "$LOCAL_EMAIL")"
 
 req_as "$LOCAL_TOKEN" GET /api/v1/me

@@ -76,13 +76,17 @@ done
 # Admin từ ADMIN_EMAILS ở trạng thái `invited` (chỉ Google login mới kích hoạt): chỉ trong DB tạm này.
 docker exec "$PG" psql -U app -d app -Atc "UPDATE users SET status='active', google_sub='smoke-sub-$RUN_ID' WHERE email='$SMOKE_EMAIL'" >/dev/null
 
-# Shim `make`: smoke chỉ gọi `make -s auth-token EMAIL=.. TTL=..`; chuyển vào container api tạm.
+# Shim `make`: smoke chỉ gọi `make -s auth-token` và `make -s auth-create-local`; chuyển vào container api tạm.
 mkdir -p shim
 cat > shim/make <<SHIM
 #!/usr/bin/env bash
-email=""; ttl=60
-for a in "\$@"; do case "\$a" in EMAIL=*) email="\${a#EMAIL=}";; TTL=*) ttl="\${a#TTL=}";; esac; done
-exec docker exec "$API" python -m app.cli.auth token --email "\$email" --ttl "\$ttl"
+target=""; email=""; ttl=60; username=""
+for a in "\$@"; do case "\$a" in auth-*) target="\${a#auth-}";; EMAIL=*) email="\${a#EMAIL=}";; TTL=*) ttl="\${a#TTL=}";; USERNAME=*) username="\${a#USERNAME=}";; esac; done
+case "\$target" in
+  token) exec docker exec "$API" python -m app.cli.auth token --email "\$email" --ttl "\$ttl" ;;
+  create-local) exec docker exec "$API" python -m app.cli.auth create-local --username "\$username" --email "\$email" ;;
+  *) echo "shim make: chưa hỗ trợ target '\$target'" >&2; exit 2 ;;
+esac
 SHIM
 chmod +x shim/make
 printf 'API_KEY=%s\nAPI_PORT=%s\nADMIN_EMAILS=%s\n' "$APIKEY" "$PORT" "$SMOKE_EMAIL" > .env
