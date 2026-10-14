@@ -42,15 +42,15 @@ fill_if_missing() {
 
 if [[ -f .env ]]; then
   if [[ "${1:-}" == "--fill-missing" ]]; then
-    fill_if_missing IMPORT_COMMIT_SECRET "$(openssl rand -hex 12)"
     fill_if_missing INTEGRATION_SECRET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
     fill_if_missing CORE_JWT_SECRET "$(openssl rand -hex 32)"
+    fill_if_missing AUTH_SECRET "$(openssl rand -base64 32)"
     chmod 600 .env
     echo "  Khởi động lại api để nhận biến mới: make up"
     exit 0
   fi
   echo "  .env đã tồn tại, không ghi đè."
-  echo "  Thiếu IMPORT_COMMIT_SECRET, INTEGRATION_SECRET_KEY hoặc CORE_JWT_SECRET (.env cũ)? Chạy: make env-fill"
+  echo "  Thiếu INTEGRATION_SECRET_KEY, CORE_JWT_SECRET hoặc AUTH_SECRET (.env cũ)? Chạy: make env-fill"
   echo "  Muốn sinh lại toàn bộ: mv .env .env.bak && bash scripts/gen-env.sh"
   exit 0
 fi
@@ -67,14 +67,13 @@ set_var API_KEY "$(openssl rand -hex 32)"
 set_var LITELLM_MASTER_KEY "sk-$(openssl rand -hex 24)"
 set_var LITELLM_SALT_KEY "$(openssl rand -hex 24)"
 set_var GRAFANA_ADMIN_PASSWORD "$(openssl rand -hex 12)"
-# Mật khẩu gõ tay mỗi lần "Nhập thật" JSON vào Postgres (ghi đè, không hoàn tác bằng UI).
-# Không có biến này thì core từ chối nhập thật. Xem docs/specs/import-json-to-postgres.md.
-set_var IMPORT_COMMIT_SECRET "$(openssl rand -hex 12)"
 # Khoá Fernet mã hoá token Jira trước khi lưu ở Postgres (base64 url-safe của 32 byte).
 # Không in ra màn hình: mất khoá thì phải nhập lại token, nên hãy sao lưu .env.
 set_var INTEGRATION_SECRET_KEY "$(openssl rand -base64 32 | tr '+/' '-_')"
 # Khoá ký JWT HS256 web->core (>= 32 ký tự, KHÁC API_KEY). Thiếu thì core không khởi động.
 set_var CORE_JWT_SECRET "$(openssl rand -hex 32)"
+# Khoá Auth.js ký cookie phiên của web (KHÁC CORE_JWT_SECRET và API_KEY).
+set_var AUTH_SECRET "$(openssl rand -base64 32)"
 
 chmod 600 .env
 
@@ -82,9 +81,5 @@ echo "  Đã tạo .env với khoá ngẫu nhiên (quyền 600)."
 echo "  API key dùng để gọi core API trực tiếp:"
 echo ""
 grep '^API_KEY=' .env | sed 's/^/    /'
-echo ""
-echo "  Mật khẩu khi nhập thật dữ liệu JSON vào Postgres (trang Dữ liệu, tab Nhập):"
-echo ""
-grep '^IMPORT_COMMIT_SECRET=' .env | sed 's/^/    /'
 echo ""
 echo "  Muốn dùng LLM thì điền ANTHROPIC_API_KEY / OPENAI_API_KEY / GEMINI_API_KEY."
