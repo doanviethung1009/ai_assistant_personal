@@ -34,6 +34,10 @@ if [[ ! -f .env ]]; then
 fi
 # shellcheck disable=SC1091
 set -a; source .env; set +a
+# Worktree của task: cổng riêng trong .env.worktree phải thắng .env
+# (xem docs/agents/WORKFLOW.md).
+# shellcheck disable=SC1091
+[[ -f .env.worktree ]] && { set -a; source .env.worktree; set +a; }
 
 BASE="http://localhost:${API_PORT:-8000}"
 KEY="${API_KEY:?API_KEY chưa có trong .env}"
