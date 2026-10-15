@@ -221,11 +221,17 @@ def map_issue(
     fallback_project_key: str | None = None,
     fallback_project_name: str | None = None,
     notes: list[str] | None = None,
+    project_from_field: set[str] | None = None,
 ) -> TaskUpsert:
     """Một issue -> TaskUpsert.
 
     `notes`: nếu truyền, nhận các câu cảnh báo tự viết (tag bị bỏ, assignee bị cắt) để
     người gọi đưa vào `warnings` của kết quả sync.
+
+    `project_from_field`: nếu truyền, khoá issue được thêm vào đây khi project suy ra từ
+    custom field Company/Team (không phải từ project Jira hay tiền tố khoá). Chỉ những
+    issue này mới được phép đổi project của task ĐÃ CÓ; thiếu field (đổi quyền, bị cắt)
+    thì không được kéo cả loạt task về project của Jira.
 
     Raises:
         MappingError: thiếu/sai khoá issue hoặc dữ liệu không dựng được TaskUpsert.
@@ -308,6 +314,8 @@ def map_issue(
         except ValueError:
             continue
         project_name = _cap(candidate_name or project_key, _MAX_NAME)
+        if project_from_field is not None and candidate_key == extracted:
+            project_from_field.add(key)
         break
 
     assignee = clean_text(_obj(fields.get("assignee")).get("displayName")) or None
@@ -360,12 +368,13 @@ def map_issue(
 
 # Điểm lệch có chủ đích so với bản TS (và cách Jira sync dùng upsert):
 # - Trường CHỈ GHI KHI TẠO (create_only trong integration_sync_service): priority,
-#   assignee, project_key. Khớp bản TS (task có sẵn không bị đổi các trường này) để giá trị
-#   User sửa tay không bị sync ghi đè và task cũ không bị chuyển project. Status, title,
+#   assignee. Khớp bản TS để giá trị User sửa tay không bị sync ghi đè. Status, title,
 #   external_url và tags (gộp) vẫn được áp khi cập nhật.
 # - reporter: LUÔN cập nhật theo Jira, không create-only. Reporter không sửa tay được
 #   (không có trong TaskUpdate) nên không có gì để giữ; create-only sẽ khiến task cũ không
 #   bao giờ có reporter.
+# - project: KHÔNG create-only. Task cũ đổi project khi Jira trả giá trị Company/Team
+#   (project_from_field); không có giá trị đó thì giữ project hiện tại. Khớp jira-actions.ts.
 # - priority: bản TS luôn đặt `medium` khi tạo; ở đây ánh xạ từ tên priority của Jira
 #   (Highest/Critical/Blocker -> urgent ... Lowest -> low), tên lạ thì mặc định của task mới.
 # - due_at/due_all_day: luôn gửi (null khi Jira không có hạn). Khi cập nhật, hạn chỉ bị ghi

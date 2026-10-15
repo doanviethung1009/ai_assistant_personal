@@ -875,3 +875,24 @@ def test_overlong_reporter_is_truncated_with_note() -> None:
     )
     assert item.reporter is not None and len(item.reporter) == 200
     assert any("reporter" in n for n in notes)
+
+
+def test_project_from_field_marks_only_issues_with_company_value() -> None:
+    # Chỉ issue có Company/Team mới được đổi project của task đã có; issue không có thì
+    # project rơi về project Jira và KHÔNG được đánh dấu (tránh kéo cả loạt về một project).
+    marked: set[str] = set()
+    with_company = map_issue(
+        _issue(customfield_1={"value": "MAG"}),
+        base_url=BASE,
+        field_names={"customfield_1": "Company"},
+        project_from_field=marked,
+    )
+    assert with_company.project_key == "MAG"
+    assert marked == {with_company.external_id}
+
+    marked.clear()
+    without = map_issue(
+        _issue(), base_url=BASE, field_names={"customfield_1": "Company"}, project_from_field=marked
+    )
+    assert without.project_key == "DBA"
+    assert marked == set()

@@ -320,7 +320,10 @@ def _same_host(url: str | None, host: str) -> bool:
 
 
 def _wanted_values(
-    p: _Prepared, project_ids: dict[str, uuid.UUID], create_only: frozenset[str] = frozenset()
+    p: _Prepared,
+    project_ids: dict[str, uuid.UUID],
+    create_only: frozenset[str] = frozenset(),
+    project_update_guard: Callable[[TaskUpsert], bool] | None = None,
 ) -> dict[str, Any]:
     """Giá trị mong muốn của các trường mà client có gửi (cho cập nhật).
 
@@ -338,7 +341,11 @@ def _wanted_values(
             values["due_all_day"] = bool(p.item.due_all_day)
         elif p.item.due_all_day is not None:
             values["due_all_day"] = p.item.due_all_day
-    if "project_key" in sent and "project_key" not in create_only:
+    if (
+        "project_key" in sent
+        and "project_key" not in create_only
+        and (project_update_guard is None or project_update_guard(p.item))
+    ):
         values["project_id"] = project_ids[p.project_key] if p.project_key else None
     return values
 
@@ -397,6 +404,7 @@ async def upsert_batch(
     create_only: frozenset[str] = frozenset(),
     owner_host: str | None = None,
     due_baseline: DueBaseline | None = None,
+    project_update_guard: Callable[[TaskUpsert], bool] | None = None,
 ) -> TaskUpsertResult:
     """Upsert một lô task của một nguồn tích hợp, idempotent, trong MỘT transaction.
 
@@ -429,6 +437,9 @@ async def upsert_batch(
     `create_only`: tên trường (`priority`, `due_at`, `assignee`, `project_key`...) chỉ được
     ghi khi TẠO task, không bao giờ ghi đè task đã có. Jira sync dùng để giữ giá trị User
     đã sửa tay (cùng ngữ nghĩa chế độ file); route upsert-batch không truyền, giữ hành vi cũ.
+
+    `project_update_guard`: khi có, project của task ĐÃ CÓ chỉ đổi cho item mà guard trả True
+    (Jira dùng: chỉ khi project đến từ custom field Company). Task mới luôn nhận project.
 
     `due_baseline`: bật luật "hạn chỉ ghi đè khi User chưa sửa tay" (đừng đưa `due_at` vào
     `create_only` cùng lúc). Hàm này suy từ `raw_payload` cũ ra hạn mà nguồn đã đặt lần
@@ -518,7 +529,7 @@ async def upsert_batch(
             )
             continue
 
-        wanted = _wanted_values(p, project_ids, create_only)
+        wanted = _wanted_values(p, project_ids, create_only, project_update_guard)
         if _resolve_due(task, wanted, p.item, due_baseline, p.payload is not None):
             kept_manual_due += 1
         diff = _apply_changes(
