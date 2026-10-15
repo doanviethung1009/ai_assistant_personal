@@ -33,7 +33,7 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   từ page hay component.
 - **Thêm trang mới thì khai báo trong `lib/nav.ts`,** không sửa `layout.tsx`.
   Việc hàng ngày vào `PRIMARY_NAV`, tài liệu về dự án vào `SECONDARY_NAV`.
-  Nav là phẳng, không dropdown — đừng thêm lại menu bấm mới mở.
+  `components/main-nav.tsx` gom mục thành các nhóm `CollapsibleSection` (bấm để mở/đóng; nhóm "Quản trị" chỉ hiện khi có quyền `user:manage`); mục mới vẫn chỉ khai trong `lib/nav.ts`.
 - **Sơ đồ ở `components/architecture-diagrams.tsx` tính toạ độ tay.** Giữ
   khoảng cách tối thiểu 20px giữa các hộp, cho mũi tên đi gấp khúc qua vùng
   trống. `DiagramDefs` chỉ được render một lần cho mỗi trang.
@@ -97,3 +97,11 @@ xuyên suốt backend+frontend nằm ở skill `add-entity`.
   trong `coreFetchRaw`. Lỗi 401/403 xử lý theo `code` của core (`lib/core-errors.ts`): chỉ `token_invalid`
   và `user_inactive` mới đăng xuất, thiếu/sai API key hay core sập thì không. Trang chỉ đọc file (docs,
   architecture...) vẫn phải kiểm phiên còn hiệu lực ở core (`getMe`), không chỉ dựa vào middleware.
+- **Tài khoản nội bộ và trang admin (`docs/specs/admin-users-local-login.md`).** Mật khẩu tạm (tạo user, đặt lại)
+  chỉ đi qua kết quả Server Action tới client component rồi hiện một lần: không đưa vào Server Component, URL,
+  `searchParams`, cookie, log hay toast, và response phải `no-store`. `/api/v1/admin` nằm trong
+  `UNCACHED_PREFIXES` (PII, hai admin cần thấy ngay). Callback `jwt` của Auth.js bỏ qua `trigger === "update"`
+  (client gọi `POST /api/auth/session` được, không để nó đổi `uid`/`sv`). Core trả 403
+  `password_change_required` khi bị ép đổi mật khẩu: Server Action trả `{ ok:false, code }` và client
+  `router.refresh()` (layout `PasswordGate` hiện form đổi). Form tạo/mời user gửi `aliases` ("Tên trên Jira");
+  response có `aliases_skipped` (user VẪN được tạo) thì UI phải cảnh báo rõ, không được nuốt.

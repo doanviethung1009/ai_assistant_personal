@@ -144,6 +144,44 @@ Quy tắc `upsert-batch`:
 - Xung đột với thao tác đồng thời (khoá dòng, lock `builder:import`) trả 409, thử lại được.
 - Xoay khoá: đặt khoá mới ở `INTEGRATION_SECRET_KEY` và khoá cũ ở `INTEGRATION_SECRET_KEY_OLD`.
 
+## 9. API Đăng nhập nội bộ và Quản trị người dùng
+
+Base path: `/api/v1`. Mọi route cần `X-API-Key`; trừ `/auth/*` đều cần thêm JWT từng người (web ký, 60 giây). Spec: `docs/specs/admin-users-local-login.md`. Lỗi có dạng `{"detail": str, "code"?: str}`.
+
+### 9.1. Đăng nhập và tài khoản của tôi
+
+| Method | Path | Xác thực | Chức năng | Lỗi chính |
+|---|---|---|---|---|
+| `POST` | `/auth/login/password` | chỉ API key | Đăng nhập tài khoản nội bộ: `{identifier, password, client_ip?}` (identifier có `@` là email, không có là username). Trả `LoginResult` như `/auth/login` | 403 `invalid_credentials` (sai mật khẩu, không có tài khoản, đang bị khoá: một thông báo chung), 403 `password_login_disabled` (khi `PASSWORD_LOGIN_ENABLED=false`), 429 |
+| `POST` | `/auth/login` | chỉ API key | Đăng nhập Google. Email trùng tài khoản nội bộ bị từ chối | 403 `account_mismatch` |
+| `GET` | `/me` | JWT | Hồ sơ; thêm `auth_provider`, `username`, `must_change_password` | 401 |
+| `POST` | `/me/password` | JWT | Tự đổi mật khẩu `{current_password, new_password}`; thành công thì `sv+1` (đăng xuất thiết bị khác). Được phép khi đang bị ép đổi | 409 `not_local_account`, 422 `current_password_invalid` \| `weak_password`, 429 |
+
+Quy tắc: mật khẩu băm argon2id; sai 5 lần liên tiếp thì khoá 15 phút; mật khẩu tạm hết hạn sau 72 giờ và buộc đổi ở lần đăng nhập đầu. Khi `must_change_password`, mọi route khác (kể cả `/admin/*`) trả 403 `password_change_required` cho tới khi đổi xong. Mật khẩu không bao giờ nằm trong response, log hay audit.
+
+### 9.2. Quản trị (`/admin`, cần quyền `user:manage`)
+
+| Method | Path | Chức năng | Lỗi chính |
+|---|---|---|---|
+| `GET` | `/admin/users` | Danh sách phân trang (`q`, `role`, `status`, `auth_provider`, `locked`, `limit` ≤ 200 mặc định 50, `offset`); mỗi dòng có `aliases`, `is_env_admin` | 403 |
+| `POST` | `/admin/users` | Mời một email Google: `{email, role, name?, aliases?}`. Trả `UserInvited` (= `UserAdminRead` + `aliases_skipped`) | 409 `email_exists` |
+| `POST` | `/admin/users/local` | Tạo tài khoản nội bộ: `{username, email, name?, role, aliases?}`. Trả 201 `{user, temporary_password, aliases_skipped}`, `Cache-Control: no-store`; mật khẩu tạm chỉ hiện một lần | 409 `email_exists` \| `username_exists` |
+| `GET` / `PATCH` | `/admin/users/{id}` | Xem / đổi `role`, `status`, `name`, `email`, `username` (hai trường cuối chỉ tài khoản nội bộ) | 409 `self_lockout` \| `last_admin` \| `env_admin` \| `not_local_account` |
+| `POST` | `/admin/users/{id}/reset-password` | Cấp lại mật khẩu tạm (chỉ nội bộ, `sv+1`) | 409 `not_local_account` \| `self_action` |
+| `POST` | `/admin/users/{id}/unlock` | Mở khoá tạm (204) | 404 |
+| `POST` | `/admin/users/{id}/revoke-sessions` | Thu hồi mọi phiên (`sv+1`, 204) | 404 |
+| `PUT` | `/admin/users/{id}/aliases` | Thay toàn bộ alias Jira `{aliases: [{source:"jira", alias}]}` (≤ 20) | 409 `alias_taken` |
+| `DELETE` | `/admin/users/{id}` | Xoá user chưa có dữ liệu (204) | 409 `has_data` \| `self_lockout` \| `last_admin` \| `env_admin` |
+| `GET` | `/admin/audit-log` | Nhật ký phân trang, lọc `action`, `actor_user_id`, `target_id`, `since`, `until` | 403, 422 |
+
+**Alias lúc tạo/mời:** `aliases` là tên hiển thị của người đó trên Jira (khớp với `assignee`/`reporter` khi sync). Alias đang thuộc người khác **không làm hỏng yêu cầu**: user vẫn được tạo, tên bị bỏ qua nằm trong `aliases_skipped` để UI cảnh báo.
+
+Quy tắc khoá admin (một nơi, `user_service`): không hạ/khoá/xoá admin hoạt động cuối cùng (`last_admin`), không tự hạ/khoá/xoá chính mình (`self_lockout`), không đụng email trong `ADMIN_EMAILS` (`env_admin`).
+
+### 9.3. CLI phá kính (`python -m app.cli.auth`, qua `make`)
+
+`create-local`, `reset-password`, `unlock` (mật khẩu tạm in một lần ra stdout), cùng `enable|disable|revoke|alias|invite|token|bootstrap`. CLI dùng chung `user_service` với API nên ghi audit giống nhau (`via:"cli"`), nhưng không bị chặn bởi `last_admin`/`self_lockout` (chỉ cảnh báo). Biến môi trường: `PASSWORD_LOGIN_ENABLED` (mặc định `true`, `false` là công tắc tắt đăng nhập mật khẩu khi bị tấn công dò).
+
 ---
 
 > 💡 **Lưu ý quan trọng cho AI Agent (LLM):**
