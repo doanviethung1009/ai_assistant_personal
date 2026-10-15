@@ -82,6 +82,22 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "MULTI_AGENT_SYSTEM.md"),
   },
   {
+    slug: "agents-workflow",
+    title: "Quy trình đa session (worktree, TASKS.md)",
+    description:
+      "Nhiều session Claude Code song song không conflict: mỗi task một nhánh, worktree, DB và cổng riêng; vòng đời task, xử lý conflict, checklist trước PR.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "agents", "WORKFLOW.md"),
+  },
+  {
+    slug: "agents-handoff-template",
+    title: "Mẫu handoff cuối session",
+    description:
+      "Khung file docs/agents/handoffs/YYYY-MM-DD-T<N>.md: đã làm gì, quyết định, file đã sửa, việc dở, rủi ro, lệnh tiếp tục.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "agents", "handoffs", "_TEMPLATE.md"),
+  },
+  {
     slug: "work-tracking",
     title: "Quản lý công việc: đang làm / đã xong / treo",
     description: "Mô hình trạng thái, cách dùng agent work-tracker và skill work-tracking, kèm ảnh chụp tiến độ hiện tại.",
@@ -187,6 +203,30 @@ export const DOCS: DocEntry[] = [
     file: path.join(".agents", "rules", "comment-style.md"),
   },
   {
+    slug: "rule-migrations",
+    title: "Vùng nhạy cảm: migration và model",
+    description:
+      "Mỗi migration một file có timestamp, không sửa migration đã merge, chỉ migrate DB của worktree. Tự nạp khi mở migration/model.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "migrations.md"),
+  },
+  {
+    slug: "rule-root-config",
+    title: "Vùng nhạy cảm: cấu hình gốc",
+    description:
+      "Makefile, compose, lockfile, CLAUDE.md, TASKS.md: chỉ sửa khi task ghi rõ. Tự nạp khi mở các file này.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "root-config.md"),
+  },
+  {
+    slug: "rule-core-shared",
+    title: "Vùng nhạy cảm: module lõi dùng chung",
+    description:
+      "core/, db/, lib/types.ts, lib/api.ts, actions.ts, auth: chỉ thêm, không đổi chữ ký có sẵn. Tự nạp khi mở các file này.",
+    category: "3. Quy ước Code & Rules",
+    file: path.join(".agents", "rules", "core-shared.md"),
+  },
+  {
     slug: "llm-training-data-plan",
     title: "Đề xuất dữ liệu training LLM từ trace",
     description: "Hướng dùng dữ liệu hook ghi vết để làm eval, few-shot và (sau cùng) fine-tune; điều kiện chặn là chính sách dữ liệu Jira.",
@@ -224,6 +264,46 @@ export const DOCS: DocEntry[] = [
       "Chọn nơi lọc theo kích thước dữ liệu, giảm request vào core, làm click filter mượt.",
     category: "4. Kỹ năng AI (Skills)",
     file: path.join(".agents", "skills", "nextjs-rendering", "SKILL.md"),
+  },
+  {
+    slug: "skill-start-task",
+    title: "Skill: bắt đầu task",
+    description:
+      "Claim task trong TASKS.md, tạo nhánh + worktree + Docker/DB/cổng riêng.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "start-task", "SKILL.md"),
+  },
+  {
+    slug: "skill-finish-task",
+    title: "Skill: hoàn tất task, mở PR",
+    description:
+      "Kiểm phạm vi, lint, test, rebase lên origin/main, mở PR, chuyển sang review, viết handoff.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "finish-task", "SKILL.md"),
+  },
+  {
+    slug: "skill-handoff",
+    title: "Skill: viết handoff",
+    description:
+      "File bàn giao cuối session để session sau tiếp tục được.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "handoff", "SKILL.md"),
+  },
+  {
+    slug: "skill-sync-main",
+    title: "Skill: đồng bộ với main",
+    description:
+      "Fetch, rebase lên origin/main, migrate DB riêng, chạy test.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "sync-main", "SKILL.md"),
+  },
+  {
+    slug: "skill-cleanup-task",
+    title: "Skill: dọn task sau merge",
+    description:
+      "Xoá Docker riêng (hỏi trước khi xoá DB), worktree, nhánh; chuyển task sang done.",
+    category: "4. Kỹ năng AI (Skills)",
+    file: path.join(".agents", "skills", "cleanup-task", "SKILL.md"),
   },
   {
     slug: "project-review",

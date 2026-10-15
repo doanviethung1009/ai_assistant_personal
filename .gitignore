@@ -46,6 +46,11 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 
+# Worktree của task: .env.worktree đã bị `.env.*` ở trên che; ghi rõ để
+# không ai thêm ngoại lệ nhầm. Thư mục worktree nằm NGOÀI repo (../<repo>-T<N>)
+# nên không cần ignore.
+.env.worktree
+
 # Claude Code: cài đặt cá nhân, không commit
 .claude/settings.local.json
 CLAUDE.local.md

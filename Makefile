@@ -8,7 +8,21 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
+# ── Worktree của task (multi-session, xem docs/agents/WORKFLOW.md) ────
+# Worktree tạo bởi scripts/agents/new-worktree.sh có file .env.worktree
+# (tên compose project, tên DB, cổng riêng). Nạp và export để docker compose
+# và các script con (smoke, test) nhận giá trị của worktree, đè lên .env.
+# Checkout không có file này chạy y như cũ.
+ifneq (,$(wildcard .env.worktree))
+include .env.worktree
+export TASK_ID COMPOSE_PROJECT_NAME POSTGRES_DB WEB_PORT API_PORT POSTGRES_PORT REDIS_PORT AUTH_URL CORS_ORIGINS
+# -p tách container/volume/network theo task; file override đổi tên container cố định.
+DC := docker compose -p $(COMPOSE_PROJECT_NAME) -f docker-compose.yml -f docker-compose.worktree.yml
+else
 DC := docker compose
+endif
+# Export để scripts/test-backend.sh dùng cùng lệnh compose với Makefile.
+export DC
 API := $(DC) exec -T api
 
 .PHONY: help
@@ -44,6 +58,10 @@ up: ## Dựng profile core (postgres, redis, api, web). EXPOSE_LAN=true trong .e
 	@echo "  Web   http://localhost:$${WEB_PORT:-3000}"
 	@echo "  API   http://localhost:$${API_PORT:-8000}/docs"
 	@echo ""
+
+.PHONY: up-backend
+up-backend: ## Chỉ dựng postgres, redis, api (không web) và chờ healthcheck. Dùng cho worktree task
+	$(DC) up -d --wait postgres redis api
 
 .PHONY: down
 down: ## Dừng stack, giữ nguyên dữ liệu

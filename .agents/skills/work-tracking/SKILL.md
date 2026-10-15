@@ -14,6 +14,9 @@ git branch --no-merged main
 git log --oneline main..HEAD
 git log --oneline -15
 grep -n "Trạng thái" docs/specs/*.md
+scripts/agents/task-board.sh show          # bảng TASKS.md trên main (multi-session)
+scripts/agents/list-worktrees.sh           # worktree đang mở, DB, cổng
+ls -t docs/agents/handoffs/ | head          # handoff mới nhất của từng task
 ```
 Rồi đọc các mục cuối `docs/AI_HANDOFF_STATE.md` (mục có chữ "chưa commit", "chưa merge", "Chưa làm", "Việc còn lại").
 

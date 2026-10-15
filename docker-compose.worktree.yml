@@ -1,0 +1,30 @@
+# ═══════════════════════════════════════════════════════════════════════
+#  Override cho worktree của một task (multi-session). KHÔNG dùng tay.
+#
+#  Makefile tự thêm file này khi thư mục có `.env.worktree` (do
+#  scripts/agents/new-worktree.sh sinh), kèm `-p $COMPOSE_PROJECT_NAME`.
+#
+#  Vì sao cần: docker-compose.yml đặt tên cứng cho container
+#  (builder-postgres...) và network (builder-ai-net). Hai stack cùng tên thì
+#  stack sau chiếm/đè container của stack trước. Ở đây đổi mọi tên cố định
+#  sang tên theo project của task (builder-t12-postgres...). Volume không cần
+#  đổi: compose tự gắn prefix project (builder-t12_postgres_data), nên mỗi
+#  task có DB riêng trên volume riêng.
+#
+#  Cổng và tên DB không nằm ở đây mà lấy từ biến môi trường (.env.worktree).
+#  Service thuộc profile llm/monitoring giữ tên gốc: không chạy trong worktree.
+# ═══════════════════════════════════════════════════════════════════════
+
+services:
+  postgres:
+    container_name: ${COMPOSE_PROJECT_NAME:?thiếu COMPOSE_PROJECT_NAME}-postgres
+  redis:
+    container_name: ${COMPOSE_PROJECT_NAME:?thiếu COMPOSE_PROJECT_NAME}-redis
+  api:
+    container_name: ${COMPOSE_PROJECT_NAME:?thiếu COMPOSE_PROJECT_NAME}-api
+  web:
+    container_name: ${COMPOSE_PROJECT_NAME:?thiếu COMPOSE_PROJECT_NAME}-web
+
+networks:
+  default:
+    name: ${COMPOSE_PROJECT_NAME:?thiếu COMPOSE_PROJECT_NAME}-net

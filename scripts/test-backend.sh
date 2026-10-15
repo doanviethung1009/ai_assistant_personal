@@ -17,7 +17,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-DC="docker compose"
+# Makefile export DC (thêm -p và file override khi chạy trong worktree của task).
+DC="${DC:-docker compose}"
 
 # Tạo DB test nếu chưa có (chạy trong container postgres, nơi có sẵn
 # POSTGRES_USER và POSTGRES_DB).
