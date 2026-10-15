@@ -84,6 +84,8 @@ services:
       # Email admin ban đầu (phân cách dấu phẩy) và domain Google Workspace được phép đăng nhập.
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
       GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
+      # Công tắc khẩn cấp đăng nhập bằng mật khẩu ở core (false = POST /auth/login/password trả 403).
+      PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-true}
       # (IMPORT_COMMIT_SECRET đã bỏ: nhập thật và cào Jira nay cần quyền `data:import` của admin.)
       # Khoá Fernet (32 byte base64 url-safe) mã hoá token tích hợp (Jira...) trước khi lưu ở Postgres.
       # KHÁC API_KEY. Rỗng thì tạo/sửa kết nối trả 503. MẤT KHOÁ = phải nhập lại mọi token;
@@ -156,6 +158,8 @@ services:
       GOOGLE_ALLOWED_HD: ${GOOGLE_ALLOWED_HD:-}
       # true chỉ khi có reverse proxy ghi đè X-Forwarded-For; nếu không client tự đặt IP để né giới hạn đăng nhập.
       TRUST_FORWARDED_FOR: ${TRUST_FORWARDED_FOR:-false}
+      # Công tắc khẩn cấp đăng nhập bằng mật khẩu (khi bị brute-force). Core có công tắc riêng cùng tên.
+      PASSWORD_LOGIN_ENABLED: ${PASSWORD_LOGIN_ENABLED:-true}
       # Số proxy tin cậy đứng trước web (Caddy = 1); lấy IP client từ bên phải X-Forwarded-For theo số hop này.
       TRUSTED_PROXY_HOPS: ${TRUSTED_PROXY_HOPS:-1}
       # Cùng giá trị với service api (xem SYNC_URL_EXTRA_HOSTS ở trên).

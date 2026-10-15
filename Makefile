@@ -388,10 +388,19 @@ devvm-tunnel: ## Mở SSH tunnel localhost:8001 -> API VM dev
 	ssh -i $(DEVVM_KEY) -o BatchMode=yes -o ExitOnForwardFailure=yes -fN -L $(DEVVM_PORT):127.0.0.1:8000 $(DEVVM_HOST)
 
 .PHONY: devvm-web
-devvm-web: devvm-tunnel ## Chạy web trên host trỏ vào API VM dev (tắt next dev đang chạy ở :3000 trước)
-	cd apps/web && DATA_SOURCE=api CORE_API_URL=http://127.0.0.1:$(DEVVM_PORT) \
-	  CORE_API_KEY="$$(ssh -i $(DEVVM_KEY) -o BatchMode=yes $(DEVVM_HOST) 'grep ^API_KEY= /srv/builder-ai/dev/.env | cut -d= -f2-')" \
-	  npm run dev
+devvm-web: devvm-tunnel ## Chạy web trên host (DATA_SOURCE=api) trỏ vào API VM dev; đăng nhập bằng tài khoản nội bộ. Tắt next dev ở :3000 trước
+	@# Khoá đọc từ .env của VM lúc chạy và CHỈ nằm trong env của tiến trình (không ghi file):
+	@# API_KEY (X-API-Key) và CORE_JWT_SECRET (phải TRÙNG core để core nhận JWT web ký).
+	@# AUTH_SECRET sinh mới mỗi lần chạy (phiên đăng nhập local mất khi khởi động lại, đúng ý dev).
+	@# Cần tài khoản: trên VM chạy `make auth-create-local USERNAME=... EMAIL=... ROLE=admin`.
+	@SECRETS="$$(ssh -i $(DEVVM_KEY) -o BatchMode=yes $(DEVVM_HOST) "grep -E '^(API_KEY|CORE_JWT_SECRET)=' /srv/builder-ai/dev/.env")"; \
+	  API_KEY_VALUE="$$(printf '%s\n' "$$SECRETS" | sed -n 's/^API_KEY=//p')"; \
+	  JWT_VALUE="$$(printf '%s\n' "$$SECRETS" | sed -n 's/^CORE_JWT_SECRET=//p')"; \
+	  [ -n "$$API_KEY_VALUE" ] && [ -n "$$JWT_VALUE" ] || { echo "Không đọc được API_KEY/CORE_JWT_SECRET từ VM dev"; exit 1; }; \
+	  cd apps/web && DATA_SOURCE=api CORE_API_URL=http://127.0.0.1:$(DEVVM_PORT) \
+	    CORE_API_KEY="$$API_KEY_VALUE" CORE_JWT_SECRET="$$JWT_VALUE" \
+	    AUTH_SECRET="$$(openssl rand -hex 32)" AUTH_URL=http://localhost:3000 AUTH_TRUST_HOST=true \
+	    npm run dev
 
 .PHONY: devvm-down
 devvm-down: ## Đóng tunnel
