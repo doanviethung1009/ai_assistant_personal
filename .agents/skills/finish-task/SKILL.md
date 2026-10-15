@@ -1,6 +1,6 @@
 ---
 name: finish-task
-description: Đóng gói task đang làm trong worktree để mở Pull Request - kiểm phạm vi, lint, test, rebase lên origin/main, push (hỏi User), mở PR bằng gh, chuyển TASKS.md sang review, viết handoff. Dùng KHI User bảo "xong task", "mở PR", "finish task", "đẩy lên review" trong worktree của một task T<N>. Không dùng trên checkout chính hay nhánh main.
+description: Đóng gói task đang làm trong worktree để mở Pull Request - kiểm phạm vi, lint, test, cập nhật theo origin/main (rebase nếu nhánh chưa push, merge nếu đã push), push (hỏi User), mở PR bằng gh, chuyển TASKS.md sang review, viết handoff. Dùng KHI User bảo "xong task", "mở PR", "finish task", "đẩy lên review" trong worktree của một task T<N>. Không dùng trên checkout chính hay nhánh main.
 ---
 
 # Hoàn tất task và mở PR
@@ -34,15 +34,22 @@ make smoke               # khi có đổi apps/core
 ```
 Đổi `apps/web`: thêm `cd apps/web && npx vitest run` nếu có test liên quan.
 
-## Bước 3 - Rebase lên origin/main
+## Bước 3 - Cập nhật theo origin/main
+Chọn cách theo việc nhánh đã từng push hay chưa (rebase nhánh đã push buộc phải push ép, mà hook chặn):
 ```bash
-git rebase origin/main
+git fetch origin
+git ls-remote --exit-code --heads origin "$(git branch --show-current)" >/dev/null 2>&1 && echo PUSHED || echo LOCAL
 ```
-- Conflict ở file trong phạm vi: sửa, `git add`, `git rebase --continue`.
-- Conflict ở file ngoài phạm vi: `git rebase --abort`, ghi `task-board.sh coord`, hỏi User. Không tự chọn phía.
+- `LOCAL` (chưa từng push): `git rebase origin/main` để lịch sử thẳng.
+  - Conflict ở file trong phạm vi: sửa, `git add`, `git rebase --continue`.
+  - Conflict ở file ngoài phạm vi: `git rebase --abort`, ghi `task-board.sh coord`, hỏi User. Không tự chọn phía.
+- `PUSHED` (đã push, có thể đã có PR hoặc người khác đã kéo về): **không rebase**, dùng `git merge origin/main`. Push thường, không cần push ép.
+  - Conflict ở file trong phạm vi: sửa, `git add`, `git commit` (giữ message merge mặc định).
+  - Conflict ở file ngoài phạm vi: `git merge --abort`, ghi `task-board.sh coord`, hỏi User. Không tự chọn phía.
+  - PR được squash khi merge nên commit merge không làm bẩn `main`.
 - Có migration: `make history` phải đúng một head; xong `make migrate` rồi chạy lại Bước 2.
 
-Rebase **lên `origin/main`**, không lên `main` local (main local mang commit bảng chưa push).
+Luôn cập nhật theo **`origin/main`**, không theo `main` local (main local mang commit bảng chưa push).
 
 ## Bước 4 - Review độc lập
 Gọi subagent `code-reviewer` trên diff `origin/main...HEAD` (thêm `db-reviewer` nếu có migration, `security-auditor` nếu chạm auth/Vault/RBAC/Server Action). Sửa lỗi nghiêm trọng trước khi push.
@@ -50,7 +57,7 @@ Gọi subagent `code-reviewer` trên diff `origin/main...HEAD` (thêm `db-review
 ## Bước 5 - Push và mở PR (HỎI USER TRƯỚC)
 Hỏi User: "Push nhánh `<branch>` và mở PR?". Chỉ làm khi User đồng ý.
 ```bash
-git push -u origin HEAD        # sau rebase nhánh đã push trước: git push --force-with-lease (hỏi User, hook có thể chặn)
+git push -u origin HEAD        # nhánh đã push thì Bước 3 dùng merge, nên push thường là đủ
 gh pr create --base main --title "<type>(<scope>): <mô tả> [T<N>]" --body-file <file body>
 ```
 Body PR gồm: Task T<N> và mô tả, tóm tắt thay đổi, cách test, rủi ro/migration, link handoff, và dòng attribution theo quy định của session.

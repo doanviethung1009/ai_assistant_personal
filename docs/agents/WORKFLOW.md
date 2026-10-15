@@ -71,7 +71,7 @@ todo ──claim──► claimed ──code──► in-progress ──PR──
 | 3. Mở session trong worktree | User | Cách khuyên dùng: mở task từ agent view rồi `/start-task` (bỏ qua bước này). Từ checkout chính: `cd ../ai_assistant_personal-T12 && claude` |
 | 4. Code và test | thợ | commit nhỏ, `make lint`, `make test`, `make smoke` |
 | 5. Cập nhật theo main | thợ | skill `sync-main` (khi main có thay đổi liên quan) |
-| 6. Mở PR | thợ | skill `finish-task` (lint, test, rebase, push sau khi User đồng ý, PR, trạng thái `review`, handoff) |
+| 6. Mở PR | thợ | skill `finish-task` (lint, test, rebase hoặc merge origin/main, push sau khi User đồng ý, PR, trạng thái `review`, handoff) |
 | 7. Review và merge | điều phối và User | subagent `code-reviewer`, merge trên GitHub |
 | 8. Dọn | điều phối | skill `cleanup-task` (xoá Docker, worktree, nhánh; trạng thái `done`) |
 
@@ -99,8 +99,8 @@ Session nào kết thúc giữa chừng cũng phải chạy skill `handoff` đ�
 
 | Tình huống | Cách xử lý |
 |---|---|
-| Rebase báo conflict ở file trong phạm vi task | Sửa, chạy lại `make lint` và `make test`, `git rebase --continue` |
-| Conflict ở file ngoài phạm vi (task khác sở hữu) | `git rebase --abort`, ghi `task-board.sh coord`, hỏi User. Không tự chọn phía |
+| Rebase/merge báo conflict ở file trong phạm vi task | Sửa, chạy lại `make lint` và `make test`, rồi `git rebase --continue` (hoặc `git commit` nếu đang merge) |
+| Conflict ở file ngoài phạm vi (task khác sở hữu) | `git rebase --abort` (hoặc `git merge --abort`), ghi `task-board.sh coord`, hỏi User. Không tự chọn phía |
 | Hai nhánh cùng sinh migration từ một `down_revision` (Alembic báo *multiple heads*) | Nhánh merge SAU sửa `down_revision` của migration mình trỏ vào head mới, chạy lại `make migrate` trên DB riêng. Không dùng `alembic merge` khi chưa hỏi User |
 | `task-board.sh claim` báo task đã có người nhận | Chọn task khác, hoặc hỏi User. Không sửa tay bảng |
 | `task-board.sh` báo `main` đang checkout ở worktree X | Đổi worktree X sang nhánh khác (`git switch <nhánh>`), chạy lại |
@@ -110,7 +110,7 @@ Session nào kết thúc giữa chừng cũng phải chạy skill `handoff` đ�
 
 - [ ] `git diff --stat origin/main...HEAD` chỉ có file trong phạm vi task (hoặc đã ghi phối hợp và User đồng ý).
 - [ ] Không đổi `TASKS.md` trong nhánh (bảng chỉ đổi qua `task-board.sh`).
-- [ ] Đã rebase lên `origin/main` mới nhất, không còn conflict.
+- [ ] Đã cập nhật theo `origin/main` mới nhất (rebase nếu nhánh chưa push, merge nếu đã push), không còn conflict.
 - [ ] `make lint` qua; `make test` qua; có đổi backend thì `make smoke` qua.
 - [ ] Migration mới (nếu có): một head duy nhất (`make history`), có `downgrade()`, đã `make migrate` trên DB riêng.
 - [ ] Docs liên quan đã cập nhật; file `.md` mới đã đăng ký trong `apps/web/lib/docs.ts`.
