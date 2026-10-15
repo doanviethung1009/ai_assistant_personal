@@ -34,7 +34,7 @@ from typing import Any, Final
 import httpx
 
 from app.services.errors import DomainError, ValidationError
-from app.services.jira_mapping import COMPANY_FIELD, CUSTOM_TAG_FIELD
+from app.services.jira_mapping import COMPANY_FIELD, CUSTOM_TAG_FIELD, clean_person_name
 from app.services.ssrf_guard import NetworkUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -131,8 +131,8 @@ def build_jql(
       nào từ client được nối vào JQL.
     """
     jql = (config_jql or "").strip()
-    picked = [a.strip() for a in (assignees or []) if a and a.strip()]
-    picked_reporters = [a.strip() for a in (reporters or []) if a and a.strip()]
+    picked = [n for n in (clean_person_name(a) for a in (assignees or [])) if n]
+    picked_reporters = [n for n in (clean_person_name(a) for a in (reporters or [])) if n]
     has_people = bool(picked or picked_reporters)
     if jql:
         lowered = jql.lower()

@@ -92,6 +92,18 @@ def clean_text(value: Any, *, multiline: bool = False) -> str:
     return "".join(out).strip()
 
 
+def clean_person_name(value: Any) -> str:
+    """Tên người sạch; rỗng nếu chỉ còn khoảng trắng/ký tự vô hình (kể cả ZWJ/ZWNJ).
+
+    Vì sao: `clean_text` giữ ZWJ/ZWNJ cho emoji, nên tên toàn ZWJ vẫn "có chữ" và lọt
+    thành assignee/reporter không nhìn thấy được.
+    """
+    text = clean_text(value)
+    if all(ch.isspace() or ch in _KEEP_CF for ch in text):
+        return ""
+    return text
+
+
 def _obj(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -318,7 +330,7 @@ def map_issue(
             project_from_field.add(key)
         break
 
-    assignee = clean_text(_obj(fields.get("assignee")).get("displayName")) or None
+    assignee = clean_person_name(_obj(fields.get("assignee")).get("displayName")) or None
     if assignee is not None and len(assignee) > MAX_ASSIGNEE_LEN:
         # Cắt thay vì để TaskUpsert từ chối cả issue vì một tên quá dài.
         assignee = assignee[:MAX_ASSIGNEE_LEN].strip()
@@ -326,7 +338,7 @@ def map_issue(
             notes.append("tên assignee quá dài nên bị cắt")
 
     # Chỉ đọc displayName: không đụng emailAddress/accountId/avatarUrls (PII).
-    reporter = clean_text(_obj(fields.get("reporter")).get("displayName")) or None
+    reporter = clean_person_name(_obj(fields.get("reporter")).get("displayName")) or None
     if reporter is not None and len(reporter) > MAX_REPORTER_LEN:
         reporter = reporter[:MAX_REPORTER_LEN].strip()
         if notes is not None:

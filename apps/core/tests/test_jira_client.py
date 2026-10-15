@@ -896,3 +896,57 @@ def test_project_from_field_marks_only_issues_with_company_value() -> None:
     )
     assert without.project_key == "DBA"
     assert marked == set()
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Tên người toàn ký tự vô hình, displayName reporter, trần JQL
+# ═══════════════════════════════════════════════════════════════════════
+
+_BLANK_NAMES = [" ", "\u00a0", "\u200b", "\u200d", " \u00a0\u200b\u200c ", "\ufeff"]
+
+
+@pytest.mark.parametrize("blank", _BLANK_NAMES)
+def test_blank_person_names_are_dropped_from_jql(blank: str) -> None:
+    jql = build_jql("DBA", [], None, [blank, "Lan"], [blank])
+    assert jql == '(project in ("DBA")) AND assignee in ("Lan") ORDER BY updated DESC'
+
+
+@pytest.mark.parametrize("blank", _BLANK_NAMES)
+def test_only_blank_names_do_not_count_as_people(blank: str) -> None:
+    with pytest.raises(ValidationError):
+        build_jql(None, [], None, [blank], [blank])
+
+
+@pytest.mark.parametrize("blank", _BLANK_NAMES)
+def test_map_blank_assignee_and_reporter_become_none(blank: str) -> None:
+    item = map_issue(
+        _issue(assignee={"displayName": blank}, reporter={"displayName": blank}),
+        base_url=BASE,
+        field_names={},
+    )
+    assert item.assignee is None and item.reporter is None
+
+
+def test_map_reporter_display_name_is_cleaned_and_capped() -> None:
+    notes: list[str] = []
+    item = map_issue(
+        _issue(reporter={"displayName": "  \u200bLan\x07 Phạm\u00a0 " + "x" * 400}),
+        base_url=BASE,
+        field_names={},
+        notes=notes,
+    )
+    assert item.reporter is not None
+    assert item.reporter.startswith("Lan Phạm") and len(item.reporter) == 200
+    assert "\x07" not in item.reporter and "\u200b" not in item.reporter
+    assert any("reporter" in n for n in notes)
+
+
+def test_jql_length_limit_is_on_the_final_query() -> None:
+    assert jira_client.MAX_JQL_LEN == 4000
+    exact = "project = " + "a" * (4000 - len("project = "))
+    assert build_jql(exact, [], None) == exact
+    with pytest.raises(ValidationError, match="JQL quá dài"):
+        build_jql(exact + "b", [], None)
+    # Vừa trần khi chỉ có JQL kết nối, nhưng vượt khi cộng thêm điều kiện người/since.
+    with pytest.raises(ValidationError, match="JQL quá dài"):
+        build_jql(exact, [], 5, ["Lan"])

@@ -288,9 +288,9 @@ async def test_batches_of_at_most_1000(client: httpx.AsyncClient, jira, monkeypa
     sizes: list[int] = []
     real = integration_sync_service._write_batch
 
-    async def spy(items, actor, owner_host, actor_user_id=None):  # type: ignore[no-untyped-def]
-        sizes.append(len(items))
-        return await real(items, actor, owner_host, actor_user_id)
+    async def spy(*args, **kwargs):  # type: ignore[no-untyped-def]
+        sizes.append(len(args[0]))
+        return await real(*args, **kwargs)
 
     monkeypatch.setattr(integration_sync_service, "_write_batch", spy)
     jira(lambda r: _page(*[_issue(f"DBA-{i}") for i in range(1, 1202)]))
@@ -894,6 +894,11 @@ async def test_sync_reporter_and_assignee_build_or_jql(client: httpx.AsyncClient
         "reporter=",
         "reporter=a%01b",
         "reporter=" + "x" * 101,
+        "reporter=%C2%A0",
+        "reporter=%E2%80%8B",
+        "reporter=%20%20",
+        "assignee=%E2%80%8D",
+        "assignee=%C2%A0%E2%80%8B",
     ],
 )
 async def test_sync_reporter_param_validation(client: httpx.AsyncClient, jira, query: str) -> None:  # type: ignore[no-untyped-def]

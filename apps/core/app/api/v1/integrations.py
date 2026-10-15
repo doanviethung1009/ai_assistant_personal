@@ -10,7 +10,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query, Request, status
-from pydantic import Field
+from pydantic import AfterValidator, Field
 
 from app.api.deps import CurrentUserDep, SessionDep, require_permission
 from app.core.permissions import Permission
@@ -24,11 +24,26 @@ from app.schemas.integration import (
 )
 from app.services import audit_service, integration_sync_service
 from app.services import integration_service as service
+from app.services.jira_mapping import clean_person_name
 
 # Tên người: không ký tự điều khiển (Jira sẽ trả 400 và log khó đọc).
 _NAME_PATTERN = r"^[^\x00-\x1f]+$"
+
+
+def _reject_blank_name(value: str) -> str:
+    """422 nếu tên chỉ gồm khoảng trắng/ký tự vô hình (NBSP, zero-width...); trả về bản đã strip."""
+    cleaned = clean_person_name(value)
+    if not cleaned:
+        raise ValueError("tên không được rỗng")
+    return cleaned
+
+
 # Tên người trong query lọc sync (assignee/reporter dùng chung để hai tham số không lệch).
-PersonName = Annotated[str, Field(min_length=1, max_length=100, pattern=_NAME_PATTERN)]
+PersonName = Annotated[
+    str,
+    Field(min_length=1, max_length=100, pattern=_NAME_PATTERN),
+    AfterValidator(_reject_blank_name),
+]
 
 router = APIRouter(prefix="/integrations", tags=["integrations"])
 
