@@ -20,6 +20,7 @@ import type {
   TaskSource,
   TaskStatus,
 } from "../types";
+import { neutralizeCsvCell, restoreCsvCell } from "../text-safety";
 import { parseScope, scopeOf } from "../task-scope";
 import { makeNote, makeTask, normalizeTags, nowIso, summary, uuid } from "./engine";
 import type { StoredNote, StoredTask } from "./types";
@@ -28,7 +29,9 @@ const BOM = "\uFEFF";
 
 // ── Sinh CSV ───────────────────────────────────────────────────────────
 
-function escapeField(value: string): string {
+function escapeField(raw: string): string {
+  // Chặn formula injection trước khi quote (mọi CSV xuất ra đều đi qua đây).
+  const value = neutralizeCsvCell(raw);
   // Chỉ bọc ngoặc kép khi cần: có dấu phẩy, ngoặc kép, hoặc xuống dòng
   if (/[",\r\n]/.test(value)) {
     return `"${value.replace(/"/g, '""')}"`;
@@ -81,7 +84,7 @@ export function parseCsv(input: string): string[][] {
       continue;
     }
     if (char === ",") {
-      row.push(field);
+      row.push(restoreCsvCell(field));
       field = "";
       index += 1;
       continue;
@@ -92,7 +95,7 @@ export function parseCsv(input: string): string[][] {
       continue;
     }
     if (char === "\n") {
-      row.push(field);
+      row.push(restoreCsvCell(field));
       rows.push(row);
       row = [];
       field = "";
@@ -105,7 +108,7 @@ export function parseCsv(input: string): string[][] {
   }
 
   if (field !== "" || row.length > 0) {
-    row.push(field);
+    row.push(restoreCsvCell(field));
     rows.push(row);
   }
 

@@ -72,16 +72,23 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
 
   const filters = parseFilters(await searchParams);
   const key = hrefFor(filters, filters.page);
+  // Gợi ý alias dùng chung cho dialog tạo/mời và bảng; hỏng thì bỏ qua, không làm hỏng trang.
+  const canSeeAssignees = hasPermission(me.permissions, "team:read");
+  // KHÔNG await ở đây: promise chạy song song với listAdminUsersApi (Promise.all trong UsersData) và
+  // dialog đọc nó bằng use() trong Suspense, nên shell không bị chặn và không nối tiếp getMe → assignees → list.
+  const assignees: Promise<string[]> = canSeeAssignees
+    ? getAssigneesApi().catch(() => [] as string[])
+    : Promise.resolve([]);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight">Người dùng</h1>
-        <CreateUserDialog />
+        <CreateUserDialog assigneesPromise={assignees} />
       </div>
       <UserFiltersShell values={filters}>
         <Suspense key={key} fallback={<TableSkeleton />}>
-          <UsersData filters={filters} meId={me.id} canSeeAssignees={hasPermission(me.permissions, "team:read")} />
+          <UsersData filters={filters} meId={me.id} assignees={assignees} />
         </Suspense>
       </UserFiltersShell>
     </div>
@@ -91,17 +98,16 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: P
 async function UsersData({
   filters,
   meId,
-  canSeeAssignees,
+  assignees,
 }: {
   filters: UserFilterValues & { page: number };
   meId: string;
-  canSeeAssignees: boolean;
+  assignees: Promise<string[]>;
 }) {
   let data;
-  let assignees: string[] = [];
+  let assigneeList: string[];
   try {
-    // Song song, không waterfall. Gợi ý alias hỏng thì bỏ qua, không làm hỏng cả trang.
-    [data, assignees] = await Promise.all([
+    [data, assigneeList] = await Promise.all([
       listAdminUsersApi({
         q: filters.q || undefined,
         role: filters.role || undefined,
@@ -110,7 +116,7 @@ async function UsersData({
         locked: filters.locked,
         page: filters.page,
       }),
-      canSeeAssignees ? getAssigneesApi().catch(() => []) : Promise.resolve([] as string[]),
+      assignees,
     ]);
   } catch (error) {
     return <ApiErrorPanel error={error} />;
@@ -118,7 +124,7 @@ async function UsersData({
 
   return (
     <div className="space-y-4">
-      <UserTable users={data.items} meId={meId} assignees={assignees} nowMs={Date.now()} />
+      <UserTable users={data.items} meId={meId} assignees={assigneeList} nowMs={Date.now()} />
       <PaginationBar
         page={filters.page}
         total={data.total}

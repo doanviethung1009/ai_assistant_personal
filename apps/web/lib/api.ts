@@ -24,6 +24,7 @@ import type {
   IntegrationUpdateBody,
   LocalUserCreateBody,
   LocalUserCreated,
+  UserInvited,
   LoginClaims,
   LoginResult,
   MeRead,
@@ -322,8 +323,8 @@ export function getAdminUserApi(id: string): Promise<UserAdmin> {
   return coreFetch<UserAdmin>(`/api/v1/admin/users/${pathId(id)}`);
 }
 
-export function inviteGoogleUserApi(body: GoogleUserInviteBody): Promise<UserAdmin> {
-  return coreFetch<UserAdmin>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(body) });
+export function inviteGoogleUserApi(body: GoogleUserInviteBody): Promise<UserInvited> {
+  return coreFetch<UserInvited>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(body) });
 }
 
 /** Trả kèm mật khẩu tạm HIỆN MỘT LẦN: caller không được log, cache hay đưa vào Server Component. */

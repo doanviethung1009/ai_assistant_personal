@@ -2,6 +2,8 @@
 
 import { useId, useState } from "react";
 
+import { splitAliasText } from "@/lib/alias-input";
+
 /**
  * Sửa alias Jira của MỘT người dùng (thay toàn bộ). Nhập cách nhau bằng dấu phẩy hoặc xuống dòng;
  * `suggestions` là các assignee đã thấy trong task (gợi ý, không bắt buộc). Kiểm tra thật (độ dài,
@@ -32,7 +34,7 @@ export function AliasEditor({
         list={listId}
         value={text}
         onChange={(e) => setText(e.target.value)}
-        maxLength={4000}
+        maxLength={4100}
         className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-3 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]"
       />
       <datalist id={listId}>
@@ -46,8 +48,7 @@ export function AliasEditor({
           disabled={disabled}
           onClick={() =>
             onSave(
-              text
-                .split(/[,\n]/)
+              splitAliasText(text)
                 .map((s) => s.trim())
                 .filter(Boolean),
             )

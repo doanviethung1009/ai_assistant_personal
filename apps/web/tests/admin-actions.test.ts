@@ -88,7 +88,7 @@ describe("Server Action quản trị", () => {
       temporary_password: "Tmp-Secret-Pw-1234",
     });
     const result = await a.createLocalUserAction(form({ username: " C.Nguyen ", email: "C@X.vn", role: "member", name: "Cường" }));
-    expect(result).toEqual({ ok: true, username: "c.nguyen", email: "c@x.vn", temporaryPassword: "Tmp-Secret-Pw-1234" });
+    expect(result).toEqual({ ok: true, username: "c.nguyen", email: "c@x.vn", temporaryPassword: "Tmp-Secret-Pw-1234", aliasesSkipped: [] });
     expect(api.createLocalUserApi).toHaveBeenCalledWith({ username: "c.nguyen", email: "c@x.vn", role: "member", name: "Cường" });
     expect(revalidatePath).toHaveBeenCalledWith("/admin/users");
     expect(JSON.stringify(revalidatePath.mock.calls)).not.toContain("Tmp-Secret");
@@ -150,6 +150,45 @@ describe("Server Action quản trị", () => {
     api.updateAdminUserApi.mockResolvedValue({});
     expect(await a.updateUserAction(TARGET, { role: "lead", status: "disabled" })).toEqual({ ok: true });
     expect(api.updateAdminUserApi).toHaveBeenCalledWith(TARGET, { role: "lead", status: "disabled" });
+  });
+
+  it("tạo local: gửi aliases đã chuẩn hoá, trả aliasesSkipped CÙNG mật khẩu tạm", async () => {
+    const a = await actions();
+    api.createLocalUserApi.mockResolvedValue({
+      user: { username: "c.nguyen", email: "c@x.vn" },
+      temporary_password: "Tmp-Secret-Pw-1234",
+      aliases_skipped: ["Bình"],
+    });
+    const fd = form({ username: "c.nguyen", email: "c@x.vn", role: "member" });
+    for (const v of [" An ", "An", "", "Bình"]) fd.append("aliases", v);
+    const result = await a.createLocalUserAction(fd);
+    expect(result).toMatchObject({ ok: true, temporaryPassword: "Tmp-Secret-Pw-1234", aliasesSkipped: ["Bình"] });
+    expect(api.createLocalUserApi).toHaveBeenCalledWith({ username: "c.nguyen", email: "c@x.vn", role: "member", aliases: ["An", "Bình"] });
+  });
+
+  it("mời Google: gửi aliases, trả aliasesSkipped; alias sai bị chặn trước khi gọi core", async () => {
+    const a = await actions();
+    api.inviteGoogleUserApi.mockResolvedValue({ aliases_skipped: ["X", "Y"] });
+    const fd = form({ email: "g@x.vn", role: "member" });
+    fd.append("aliases", "X");
+    expect(await a.inviteGoogleUserAction(fd)).toEqual({ ok: true, aliasesSkipped: ["X", "Y"] });
+    expect(api.inviteGoogleUserApi).toHaveBeenCalledWith({ email: "g@x.vn", role: "member", aliases: ["X"] });
+
+    api.inviteGoogleUserApi.mockClear();
+    api.inviteGoogleUserApi.mockResolvedValue({});
+    expect(await a.inviteGoogleUserAction(form({ email: "g@x.vn" }))).toEqual({ ok: true, aliasesSkipped: [] });
+    expect(api.inviteGoogleUserApi).toHaveBeenCalledWith({ email: "g@x.vn", role: "member" });
+
+    api.inviteGoogleUserApi.mockClear();
+    for (const bad of ["a\nb", "x".repeat(201)]) {
+      const f = form({ email: "g@x.vn" });
+      f.append("aliases", bad);
+      expect(await a.inviteGoogleUserAction(f)).toMatchObject({ ok: false, code: "invalid" });
+    }
+    const many = form({ email: "g@x.vn" });
+    for (let i = 0; i < 21; i++) many.append("aliases", `n${i}`);
+    expect(await a.inviteGoogleUserAction(many)).toMatchObject({ ok: false });
+    expect(api.inviteGoogleUserApi).not.toHaveBeenCalled();
   });
 
   it("alias: cắt khoảng trắng, bỏ trùng/rỗng, từ chối ký tự điều khiển, > 20 và > 200 ký tự", async () => {

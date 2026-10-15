@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { Suspense, use, useId, useState, useTransition } from "react";
 
 import { createLocalUserAction, inviteGoogleUserAction } from "@/app/admin/actions";
 import { TempPasswordReveal } from "@/components/admin/temp-password-reveal";
+import { normalizeAliases, skippedAliasesMessage, splitAliasText } from "@/lib/alias-input";
 import { useActionAuth } from "@/lib/use-action-auth";
 import { USER_ROLES, USER_ROLE_LABELS } from "@/lib/types";
 
@@ -16,14 +17,19 @@ const INPUT =
  * Nút "Thêm người dùng" + hộp thoại hai tab: tài khoản nội bộ (core sinh mật khẩu tạm) và mời Google.
  * Mật khẩu tạm đi thẳng từ kết quả Server Action vào state của component này rồi sang
  * TempPasswordReveal; không qua URL, Server Component hay lưu trữ nào (xem cảnh báo ở đó).
+ * Ô "Tên trên Jira" gửi lặp field `aliases`; alias đang thuộc người khác bị core bỏ qua (user VẪN được
+ * tạo) và hiện cảnh báo, riêng tạo local thì cảnh báo nằm CẠNH mật khẩu tạm, không thay nó.
  * Không optimistic: cần kết quả thật của server (trùng username/email, mật khẩu tạm).
  */
-export function CreateUserDialog() {
+export function CreateUserDialog({ assigneesPromise }: { assigneesPromise?: Promise<string[]> }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<Tab>("local");
   const [role, setRole] = useState("member");
   const [error, setError] = useState<string | null>(null);
-  const [reveal, setReveal] = useState<{ username: string; password: string } | null>(null);
+  const [reveal, setReveal] = useState<{ username: string; password: string; notice?: string } | null>(null);
+  const [aliasText, setAliasText] = useState("");
+  const [inviteNotice, setInviteNotice] = useState<string | null>(null);
+  const listId = useId();
   const [pending, startTransition] = useTransition();
   const handleAuth = useActionAuth();
 
@@ -31,10 +37,19 @@ export function CreateUserDialog() {
     setOpen(false);
     setError(null);
     setReveal(null);
+    setInviteNotice(null);
+    setAliasText("");
   }
 
   function submit(formData: FormData) {
     setError(null);
+    const parsed = normalizeAliases(splitAliasText(aliasText));
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    formData.delete("aliases");
+    for (const alias of parsed.aliases) formData.append("aliases", alias);
     startTransition(async () => {
       if (tab === "local") {
         const result = await createLocalUserAction(formData);
@@ -43,14 +58,23 @@ export function CreateUserDialog() {
           return;
         }
         setOpen(false);
-        setReveal({ username: result.username, password: result.temporaryPassword });
+        setReveal({
+          username: result.username,
+          password: result.temporaryPassword,
+          ...(result.aliasesSkipped.length ? { notice: skippedAliasesMessage(result.aliasesSkipped) } : {}),
+        });
       } else {
         const result = await inviteGoogleUserAction(formData);
         if (!result.ok) {
           if (!handleAuth(result)) setError(result.error);
           return;
         }
-        close();
+        if (result.aliasesSkipped.length) {
+          setOpen(false);
+          setInviteNotice(skippedAliasesMessage(result.aliasesSkipped, "được mời"));
+        } else {
+          close();
+        }
       }
     });
   }
@@ -124,6 +148,27 @@ export function CreateUserDialog() {
                   ))}
                 </select>
               </label>
+              <label className="block text-sm">
+                <span className="text-[var(--color-ink-muted)]">Tên trên Jira (tuỳ chọn, cách nhau bằng dấu phẩy, tối đa 20)</span>
+                <input
+                  list={listId}
+                  value={aliasText}
+                  onChange={(e) => setAliasText(e.target.value)}
+                  // 4100 = 20 alias x 200 ký tự + dấu phẩy; core vẫn kiểm từng mục.
+                  maxLength={4100}
+                  className={INPUT}
+                  autoComplete="off"
+                />
+                {/* Gợi ý chỉ đọc khi dialog mở, trong Suspense: không chặn shell trang. Giới hạn đã chấp
+                    nhận: datalist + dấu phẩy nên chọn một gợi ý sẽ thay CẢ chuỗi đang gõ (không làm chip). */}
+                {assigneesPromise ? (
+                  <Suspense fallback={null}>
+                    <AssigneeOptions id={listId} promise={assigneesPromise} />
+                  </Suspense>
+                ) : (
+                  <datalist id={listId} />
+                )}
+              </label>
               {tab === "local" && role === "admin" ? (
                 <p className="text-xs text-[var(--color-warn)]">
                   Lưu ý: tài khoản nội bộ không có xác thực hai lớp (2FA). Quản trị viên chính nên dùng Google.
@@ -148,8 +193,51 @@ export function CreateUserDialog() {
       ) : null}
 
       {reveal ? (
-        <TempPasswordReveal title="Mật khẩu tạm" username={reveal.username} password={reveal.password} onClose={close} />
+        <TempPasswordReveal
+          title="Mật khẩu tạm"
+          username={reveal.username}
+          password={reveal.password}
+          {...(reveal.notice ? { notice: reveal.notice } : {})}
+          onClose={close}
+        />
+      ) : null}
+
+      {inviteNotice ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4" role="presentation">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="invite-notice-title"
+            aria-describedby="invite-notice-desc"
+            onKeyDown={(e) => {
+              if (e.key === "Escape") close();
+            }}
+            className="w-full max-w-md rounded-xl border border-[var(--color-border)] bg-[var(--color-surface-raised)] p-6 shadow-xl"
+          >
+            <h2 id="invite-notice-title" className="text-lg font-semibold">Đã thêm lời mời</h2>
+            <p id="invite-notice-desc" className="mt-3 rounded-md border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/10 px-3 py-2 text-sm text-[var(--color-warn)]">
+              {inviteNotice}
+            </p>
+            <div className="mt-5 flex justify-end">
+              <button type="button" autoFocus onClick={close} className="rounded-md bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-white hover:opacity-90">
+                Đã hiểu
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </>
+  );
+}
+
+/** Đọc promise gợi ý alias bằng use(); promise đã có .catch ở page nên không ném lỗi. */
+function AssigneeOptions({ id, promise }: { id: string; promise: Promise<string[]> }) {
+  const assignees = use(promise);
+  return (
+    <datalist id={id}>
+      {assignees.slice(0, 200).map((s) => (
+        <option key={s} value={s} />
+      ))}
+    </datalist>
   );
 }

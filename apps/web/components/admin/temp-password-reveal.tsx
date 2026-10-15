@@ -15,11 +15,14 @@ export function TempPasswordReveal({
   title,
   username,
   password,
+  notice,
   onClose,
 }: {
   title: string;
   username: string;
   password: string;
+  /** Cảnh báo phụ (vd. alias bị bỏ qua), hiện CẠNH mật khẩu chứ không thay nó. */
+  notice?: string;
   onClose: () => void;
 }) {
   return (
@@ -47,6 +50,14 @@ export function TempPasswordReveal({
           Chỉ hiện một lần. Gửi cho người dùng qua kênh an toàn. Họ phải đổi mật khẩu ngay lần đăng nhập đầu và
           mật khẩu tạm hết hạn sau 72 giờ.
         </p>
+        {notice ? (
+          <p
+            role="alert"
+            className="mt-3 rounded-md border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/10 px-3 py-2 text-xs text-[var(--color-warn)]"
+          >
+            {notice}
+          </p>
+        ) : null}
         <div className="mt-5 flex justify-end">
           <button
             type="button"

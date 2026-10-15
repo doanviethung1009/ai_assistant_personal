@@ -738,7 +738,10 @@ export interface paths {
         /** Danh sách người dùng */
         get: operations["list_users_api_v1_admin_users_get"];
         put?: never;
-        /** Mời một email Google (trạng thái invited) */
+        /**
+         * Mời một email Google (trạng thái invited)
+         * @description `aliases` (tuỳ chọn): alias Jira gán ngay. Tên đang thuộc user khác bị bỏ qua và nằm trong `aliases_skipped` của response.
+         */
         post: operations["invite_google_user_api_v1_admin_users_post"];
         delete?: never;
         options?: never;
@@ -1076,6 +1079,8 @@ export interface components {
             role: components["schemas"]["UserRole"];
             /** Name */
             name?: string | null;
+            /** Aliases */
+            aliases?: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1279,12 +1284,16 @@ export interface components {
             name?: string | null;
             /** @default member */
             role: components["schemas"]["UserRole"];
+            /** Aliases */
+            aliases?: string[];
         };
         /** LocalUserCreated */
         LocalUserCreated: {
             user: components["schemas"]["UserAdminRead"];
             /** Temporary Password */
             temporary_password: string;
+            /** Aliases Skipped */
+            aliases_skipped?: string[];
         };
         /**
          * LoginRequest
@@ -2512,6 +2521,48 @@ export interface components {
             email?: string | null;
             /** Username */
             username?: string | null;
+        };
+        /**
+         * UserInvited
+         * @description Response mời Google: `UserAdminRead` cộng `aliases_skipped`. Là lớp con nên client cũ
+         *     (chỉ đọc các trường của `UserAdminRead`) không bị phá.
+         */
+        UserInvited: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Username */
+            username: string | null;
+            /** Name */
+            name: string | null;
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            auth_provider: components["schemas"]["AuthProvider"];
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Locked Until */
+            locked_until: string | null;
+            /** Failed Login Count */
+            failed_login_count: number;
+            /** Last Login At */
+            last_login_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Invited By */
+            invited_by: string | null;
+            /** Aliases */
+            aliases: components["schemas"]["AliasRead"][];
+            /** Is Env Admin */
+            is_env_admin: boolean;
+            /** Aliases Skipped */
+            aliases_skipped?: string[];
         };
         /**
          * UserRole
@@ -4169,7 +4220,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["UserAdminRead"];
+                    "application/json": components["schemas"]["UserInvited"];
                 };
             };
             /** @description Validation Error */

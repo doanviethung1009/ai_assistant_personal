@@ -13,6 +13,7 @@ import {
   updateAdminUserApi,
 } from "@/lib/api";
 import { requirePermission, toActionAuthError } from "@/lib/auth-guard";
+import { cleanSkippedAliases, normalizeAliases } from "@/lib/alias-input";
 import { CoreApiError } from "@/lib/core-errors";
 import { USER_ROLES, type AliasItem, type UserAdminUpdate, type UserRole } from "@/lib/types";
 
@@ -34,7 +35,6 @@ export type AdminResult<T extends object = object> = ({ ok: true } & T) | AdminF
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const USERNAME_RE = /^[a-z0-9][a-z0-9._-]{2,63}$/;
 const CONTROL_RE = /[\x00-\x1f\x7f]/;
-const MAX_ALIASES = 20;
 
 /** Thông báo cho mã lỗi nghiệp vụ của core. `alias_taken` dùng detail của core (có email người giữ). */
 const CODE_MESSAGES: Record<string, string> = {
@@ -87,8 +87,18 @@ function bad(error: string): AdminFailure {
 
 // ── Tạo / mời ───────────────────────────────────────────────────
 
+/** Đọc các giá trị lặp của field `aliases` trong FormData rồi chuẩn hoá (kiểm tra thật nằm ở đây). */
+function formAliases(formData: FormData) {
+  return normalizeAliases(formData.getAll("aliases"));
+}
+
+export interface InvitedGoogleUser {
+  /** Alias đang thuộc người khác nên bị core bỏ qua; user VẪN được mời. */
+  aliasesSkipped: string[];
+}
+
 /** Mời tài khoản Google theo email (trạng thái `invited` tới khi họ đăng nhập lần đầu). */
-export async function inviteGoogleUserAction(formData: FormData): Promise<AdminResult> {
+export async function inviteGoogleUserAction(formData: FormData): Promise<AdminResult<InvitedGoogleUser>> {
   const auth = await requirePermission("user:manage");
   if (!auth.ok) return auth;
   const email = str(formData, "email").toLowerCase();
@@ -97,13 +107,21 @@ export async function inviteGoogleUserAction(formData: FormData): Promise<AdminR
   if (!validEmail(email)) return bad("Email không hợp lệ.");
   if (!validRole(role)) return bad("Vai trò không hợp lệ.");
   if (!validName(name)) return bad("Tên tối đa 200 ký tự, không chứa ký tự điều khiển.");
+  const parsed = formAliases(formData);
+  if (!parsed.ok) return bad(parsed.error);
+  let invited;
   try {
-    await inviteGoogleUserApi({ email, role, ...(name ? { name } : {}) });
+    invited = await inviteGoogleUserApi({
+      email,
+      role,
+      ...(name ? { name } : {}),
+      ...(parsed.aliases.length ? { aliases: parsed.aliases } : {}),
+    });
   } catch (error) {
     return failure(error);
   }
   revalidatePath("/admin/users");
-  return { ok: true };
+  return { ok: true, aliasesSkipped: cleanSkippedAliases(invited?.aliases_skipped) };
 }
 
 export interface CreatedLocalUser {
@@ -111,6 +129,8 @@ export interface CreatedLocalUser {
   email: string;
   /** Hiện MỘT lần ở client; xem cảnh báo đầu file. */
   temporaryPassword: string;
+  /** Alias đang thuộc người khác nên bị core bỏ qua; user VẪN được tạo. */
+  aliasesSkipped: string[];
 }
 
 /** Tạo tài khoản nội bộ; core sinh mật khẩu tạm và chỉ trả một lần trong response này. */
@@ -127,14 +147,28 @@ export async function createLocalUserAction(formData: FormData): Promise<AdminRe
   if (!validEmail(email)) return bad("Email không hợp lệ.");
   if (!validRole(role)) return bad("Vai trò không hợp lệ.");
   if (!validName(name)) return bad("Tên tối đa 200 ký tự, không chứa ký tự điều khiển.");
+  const parsed = formAliases(formData);
+  if (!parsed.ok) return bad(parsed.error);
   let created;
   try {
-    created = await createLocalUserApi({ username, email, role, ...(name ? { name } : {}) });
+    created = await createLocalUserApi({
+      username,
+      email,
+      role,
+      ...(name ? { name } : {}),
+      ...(parsed.aliases.length ? { aliases: parsed.aliases } : {}),
+    });
   } catch (error) {
     return failure(error);
   }
   revalidatePath("/admin/users");
-  return { ok: true, username: created.user.username ?? username, email: created.user.email, temporaryPassword: created.temporary_password };
+  return {
+    ok: true,
+    username: created.user.username ?? username,
+    email: created.user.email,
+    temporaryPassword: created.temporary_password,
+    aliasesSkipped: cleanSkippedAliases(created.aliases_skipped),
+  };
 }
 
 // ── Sửa / thao tác ─────────────────────────────────────────────────
@@ -247,19 +281,9 @@ export async function setAliasesAction(id: string, aliases: string[]): Promise<A
   const auth = await requirePermission("user:manage");
   if (!auth.ok) return auth;
   if (typeof id !== "string" || !UUID_RE.test(id)) return bad("Mã người dùng không hợp lệ.");
-  if (!Array.isArray(aliases)) return bad("Danh sách alias không hợp lệ.");
-  const clean: AliasItem[] = [];
-  const seen = new Set<string>();
-  for (const raw of aliases) {
-    if (typeof raw !== "string") return bad("Danh sách alias không hợp lệ.");
-    const alias = raw.trim();
-    if (!alias) continue;
-    if (alias.length > 200 || CONTROL_RE.test(alias)) return bad("Alias tối đa 200 ký tự, không chứa ký tự điều khiển.");
-    if (seen.has(alias)) continue;
-    seen.add(alias);
-    clean.push({ source: "jira", alias });
-  }
-  if (clean.length > MAX_ALIASES) return bad(`Tối đa ${MAX_ALIASES} alias.`);
+  const parsed = normalizeAliases(aliases);
+  if (!parsed.ok) return bad(parsed.error);
+  const clean: AliasItem[] = parsed.aliases.map((alias) => ({ source: "jira", alias }));
   try {
     await setUserAliasesApi(id, clean);
   } catch (error) {

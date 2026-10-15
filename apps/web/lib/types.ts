@@ -266,6 +266,8 @@ export type UserAdminUpdate = Schemas["UserAdminUpdate"];
 export type GoogleUserInviteBody = Schemas["GoogleUserInvite"];
 export type LocalUserCreateBody = Schemas["LocalUserCreate"];
 export type LocalUserCreated = Schemas["LocalUserCreated"];
+/** Response mời Google: UserAdminRead + aliases_skipped. */
+export type UserInvited = Schemas["UserInvited"];
 export type TemporaryPassword = Schemas["TemporaryPassword"];
 export type AliasItem = Schemas["AliasItem"];
 export type AuditAction = Schemas["AuditAction"];
