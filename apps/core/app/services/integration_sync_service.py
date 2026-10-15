@@ -54,7 +54,8 @@ logger = logging.getLogger(__name__)
 
 _LOCK_NAMESPACE = "builder:integration-sync:"
 # Trường chỉ ghi khi TẠO task (không đè task đã có): giữ giá trị User sửa tay, và task cũ
-# không bị đổi người giao. Project KHÔNG nằm đây: đổi theo Company, xem `project_from_field`. Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
+# không bị đổi người giao. Project KHÔNG nằm đây: đổi theo Company, xem `project_from_field`.
+# Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
 CREATE_ONLY = frozenset({"priority", "assignee"})
 # Tên project do Jira điều khiển; trần số project MỚI mỗi lần sync để dữ liệu Jira (hoặc kẻ
 # giả Jira) không tràn danh sách project cục bộ.
