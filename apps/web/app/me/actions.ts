@@ -17,6 +17,13 @@ export interface ChangePasswordState {
   reasons?: string[];
 }
 
+/** Core trả "Mật khẩu mới không đạt: r1; r2": bỏ tiêu đề (đã có ở `error`), chỉ giữ danh sách lý do. */
+function weakReasons(message: string): string[] {
+  const i = message.indexOf(": ");
+  const body = i >= 0 ? message.slice(i + 2) : message;
+  return body.split("; ").filter(Boolean).slice(0, 8);
+}
+
 /**
  * Tự đổi mật khẩu (kể cả lần đầu khi bị ép đổi). Thành công thì core tăng session_version nên MỌI
  * phiên cũ chết, kể cả cookie của chính trình duyệt này; vì vậy đăng nhập lại ngay bằng mật khẩu mới
@@ -60,7 +67,7 @@ export async function changeMyPasswordAction(
       }
       if (error.code === "weak_password") {
         // detail của core liệt kê LÝ DO (không có mật khẩu), phân cách bằng "; " sau khi api.ts gộp.
-        return { ok: false, code: error.code, error: "Mật khẩu mới chưa đạt yêu cầu.", reasons: error.message.split("; ").slice(0, 8) };
+        return { ok: false, code: error.code, error: "Mật khẩu mới chưa đạt yêu cầu.", reasons: weakReasons(error.message) };
       }
       if (error.code === "not_local_account") {
         return { ok: false, code: error.code, error: "Tài khoản Google đổi mật khẩu ở Google." };

@@ -1,36 +1,13 @@
 import { redirect } from "next/navigation";
 
 import { authEnabled, readAuthConfig } from "@/lib/auth-config";
+import { loginErrorMessage } from "@/lib/login-message";
 import { safeCallbackPath } from "@/lib/redirect-safety";
 import { PasswordLoginForm } from "@/components/password-login-form";
 import { loginWithGoogleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-// Ba mã "chưa được cấp quyền" dùng chung một câu: không cho kẻ lạ dò xem email nào đã được mời.
-const NOT_AUTHORIZED = "Tài khoản này chưa được cấp quyền truy cập. Liên hệ quản trị viên.";
-const GENERIC_FAILURE = "Đăng nhập không thành công, vui lòng thử lại.";
-const ERROR_MESSAGES: Record<string, string> = {
-  not_invited: NOT_AUTHORIZED,
-  disabled: NOT_AUTHORIZED,
-  account_mismatch: NOT_AUTHORIZED,
-  denied: NOT_AUTHORIZED,
-  email_unverified: "Email Google chưa được xác minh. Hãy xác minh email rồi thử lại.",
-  hd_not_allowed: "Tài khoản Google này không thuộc tổ chức được phép đăng nhập.",
-  session: "Phiên đăng nhập đã hết hiệu lực. Vui lòng đăng nhập lại.",
-  rate_limited: "Thử đăng nhập quá nhiều lần. Chờ một phút rồi thử lại.",
-  unavailable: "Chưa kết nối được máy chủ dữ liệu. Thử lại sau ít phút.",
-  config: "Cấu hình khoá giữa web và core không khớp. Báo quản trị viên.",
-  // Mật khẩu: MỌI thất bại thật (sai, khoá, tắt tài khoản, mật khẩu tạm hết hạn, không có user) dùng một câu.
-  invalid_credentials:
-    "Sai thông tin đăng nhập hoặc tài khoản tạm bị khoá. Thử lại sau ít phút hoặc liên hệ quản trị viên.",
-  password_login_disabled: "Đăng nhập bằng mật khẩu đang tạm tắt. Liên hệ quản trị viên.",
-};
-
-/** Mã lỗi hiển thị: Auth.js đưa lỗi Credentials lên URL dạng `error=CredentialsSignin&code=<mã>`. */
-function errorKey(error?: string, code?: string): string | undefined {
-  return error === "CredentialsSignin" ? (code ?? "invalid_credentials") : error;
-}
 
 /** Trang đăng nhập: KHÔNG gọi core (chỉ form POST sang Auth.js). */
 export default async function LoginPage({
@@ -40,7 +17,6 @@ export default async function LoginPage({
 }) {
   if (!authEnabled()) redirect("/");
   const { error: rawError, code, callbackUrl } = await searchParams;
-  const error = errorKey(rawError, code);
   const callback = safeCallbackPath(callbackUrl, process.env.AUTH_URL);
   // Mã lạ (mã nội bộ của Auth.js: OAuthCallbackError, Configuration, state cookie hết hạn...) ra câu
   // "thử lại" chung, không lộ chi tiết; chỉ các mã "không được mời" mới nói chưa được cấp quyền.
@@ -49,7 +25,7 @@ export default async function LoginPage({
   // Cấu hình hỏng thì middleware đã rewrite sang /config-error; ở đây chỉ phòng thủ.
   const googleEnabled = cfg.ok && cfg.googleEnabled;
   const passwordEnabled = cfg.ok && cfg.passwordEnabled;
-  const message = error ? (ERROR_MESSAGES[error] ?? GENERIC_FAILURE) : null;
+  const message = loginErrorMessage(rawError, code);
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center px-4">

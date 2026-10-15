@@ -16,6 +16,10 @@ export interface UserFilterValues {
 const SELECT =
   "rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1.5 text-sm outline-none focus:border-[var(--color-accent)]";
 
+function filterKey(v: UserFilterValues): string {
+  return JSON.stringify([v.q, v.role, v.status, v.auth_provider, v.locked]);
+}
+
 /**
  * Thanh lọc + vùng bảng. Bộ lọc ghi vào URL bằng router.replace trong startTransition (thấy được
  * ngay, bảng cũ mờ đi thay vì trắng trang) và luôn về page=1. Ô tìm kiếm debounce 300 ms để một lần
@@ -28,13 +32,30 @@ export function UserFiltersShell({ values, children }: { values: UserFilterValue
   // Giữ bản sao cục bộ: giữa lúc bấm và lúc URL mới về, các ô không bật ngược về giá trị cũ.
   const [local, setLocal] = useState(values);
   const q = local.q;
+  // Bản mới nhất của bộ lọc: setTimeout của onQuery chạy sau 300 ms, closure `local` lúc gõ đã cũ nên
+  // đổi select trong khoảng đó sẽ bị ghi đè nếu đọc từ closure.
+  const latest = useRef(values);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // URL đổi mà KHÔNG do chính shell đẩy lên (Back/Forward, "Xoá lọc") thì kéo state cục bộ về theo URL.
+  // Không dùng `key` để remount: ô tìm kiếm sẽ mất focus giữa lúc đang gõ mỗi khi debounce đẩy URL.
+  const lastPushed = useRef(filterKey(values));
+  const urlKey = filterKey(values);
+  useEffect(() => {
+    if (urlKey === lastPushed.current) return;
+    lastPushed.current = urlKey;
+    latest.current = values;
+    setLocal(values);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlKey]);
 
   useEffect(() => () => {
     if (timer.current) clearTimeout(timer.current);
   }, []);
 
   function push(next: UserFilterValues) {
+    latest.current = next;
+    lastPushed.current = filterKey({ ...next, q: next.q.trim() });
     setLocal(next);
     const params = new URLSearchParams();
     if (next.q.trim()) params.set("q", next.q.trim());
@@ -47,9 +68,10 @@ export function UserFiltersShell({ values, children }: { values: UserFilterValue
   }
 
   function onQuery(value: string) {
-    setLocal((prev) => ({ ...prev, q: value }));
+    latest.current = { ...latest.current, q: value };
+    setLocal(latest.current);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => push({ ...local, q: value }), 300);
+    timer.current = setTimeout(() => push({ ...latest.current, q: value }), 300);
   }
 
   return (

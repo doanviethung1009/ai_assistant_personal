@@ -60,6 +60,7 @@ export function UserTable({
     id: string,
     patch: Patch | null,
     call: () => Promise<AdminResult>,
+    selfRevoke = false,
   ) {
     setError(null);
     startTransition(async () => {
@@ -67,7 +68,10 @@ export function UserTable({
       const result = await call();
       if (!result.ok) {
         if (!handleAuth(result)) setError(result.error);
+        return;
       }
+      // Thu hồi phiên của CHÍNH MÌNH: phiên hiện tại đã chết ở core, đi qua /auth/expired để xoá cookie (spec 4.2).
+      if (selfRevoke) window.location.assign("/auth/expired");
     });
   }
 
@@ -215,7 +219,7 @@ export function UserTable({
                           disabled={pending}
                           onClick={() => {
                             if (window.confirm(`Thu hồi mọi phiên đăng nhập của ${user.email}?`)) {
-                              run(user.id, null, () => revokeSessionsAction(user.id));
+                              run(user.id, null, () => revokeSessionsAction(user.id), user.id === meId);
                             }
                           }}
                         >
