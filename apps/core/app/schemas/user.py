@@ -5,7 +5,7 @@ import uuid
 from pydantic import BaseModel, Field
 
 from app.core.permissions import Permission
-from app.models.enums import AliasSource, UserRole, UserStatus
+from app.models.enums import AliasSource, AuthProvider, UserRole, UserStatus
 
 
 class AliasRead(BaseModel):
@@ -24,3 +24,7 @@ class MeRead(BaseModel):
     effective_timezone: str = Field(description="Múi giờ của server")
     aliases: list[AliasRead]
     permissions: list[Permission]
+    auth_provider: AuthProvider
+    username: str | None
+    # true: web phải thay nội dung bằng form đổi mật khẩu; core chặn mọi route khác.
+    must_change_password: bool

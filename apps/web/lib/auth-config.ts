@@ -10,8 +10,13 @@ export type AuthConfig =
       ok: true;
       authSecret: string;
       authUrl: string;
+      /** Rỗng khi `googleEnabled` = false (chỉ dùng đăng nhập mật khẩu). */
       googleId: string;
       googleSecret: string;
+      /** Có đủ AUTH_GOOGLE_ID và AUTH_GOOGLE_SECRET thì mới khai provider Google và hiện nút. */
+      googleEnabled: boolean;
+      /** PASSWORD_LOGIN_ENABLED !== "false": công tắc khi có sự cố brute-force (core có công tắc riêng). */
+      passwordEnabled: boolean;
       coreJwtSecret: string;
       allowedHd: string[];
       secureCookies: boolean;
@@ -34,8 +39,17 @@ export function readAuthConfig(env: Readonly<Record<string, string | undefined>>
 
   const authSecret = get("AUTH_SECRET");
   const authUrl = get("AUTH_URL");
-  const googleId = get("AUTH_GOOGLE_ID");
-  const googleSecret = get("AUTH_GOOGLE_SECRET");
+  // Google là TUỲ CHỌN (có đăng nhập mật khẩu): cả hai biến vắng = tắt Google. Chỉ có một trong hai là
+  // cấu hình dở, báo thiếu biến còn lại thay vì lặng lẽ tắt.
+  const googleId = env.AUTH_GOOGLE_ID?.trim() ?? "";
+  const googleSecret = env.AUTH_GOOGLE_SECRET?.trim() ?? "";
+  if (googleId && !googleSecret) missing.push("AUTH_GOOGLE_SECRET");
+  if (googleSecret && !googleId) missing.push("AUTH_GOOGLE_ID");
+  const googleEnabled = Boolean(googleId && googleSecret);
+  const passwordEnabled = env.PASSWORD_LOGIN_ENABLED?.trim().toLowerCase() !== "false";
+  if (!googleEnabled && !passwordEnabled) {
+    missing.push("AUTH_GOOGLE_ID + AUTH_GOOGLE_SECRET (hoặc bật PASSWORD_LOGIN_ENABLED): không còn cách đăng nhập nào");
+  }
   const coreJwtSecret = env.CORE_JWT_SECRET ?? "";
   if (coreJwtSecret.length < MIN_SECRET_LENGTH) missing.push("CORE_JWT_SECRET (tối thiểu 32 ký tự)");
   if (env.AUTH_TRUST_HOST?.trim().toLowerCase() !== "true") missing.push("AUTH_TRUST_HOST (phải là true)");
@@ -68,6 +82,8 @@ export function readAuthConfig(env: Readonly<Record<string, string | undefined>>
     authUrl,
     googleId,
     googleSecret,
+    googleEnabled,
+    passwordEnabled,
     coreJwtSecret,
     allowedHd,
     secureCookies: authUrl.startsWith("https://"),

@@ -73,7 +73,7 @@ sequenceDiagram
 
 | Cột | Kiểu | Mặc định | Ý nghĩa |
 |---|---|---|---|
-| `auth_provider` | `varchar(16) NOT NULL` | `'google'` | `google` \| `local`. Dòng cũ thành `google`, không cần backfill |
+| `auth_provider` | `varchar(32) NOT NULL` | `'google'` | `google` \| `local`. Dòng cũ thành `google`, không cần backfill |
 | `username` | `varchar(64) NULL` | | Chỉ tài khoản `local`. Lưu chữ thường |
 | `password_hash` | `varchar(255) NULL` | | Chuỗi mã hoá PHC của argon2id (`$argon2id$v=19$m=...`), ~100 ký tự |
 | `must_change_password` | `boolean NOT NULL` | `false` | `true` sau khi admin tạo/đặt lại |
@@ -343,7 +343,7 @@ CLI **không** đi qua `last_admin`/`self_lockout` (người có shell là chủ
 - [ ] `uv run alembic heads` → một head, migration mới có `down_revision = "e8a3c6f2b1d7"`. `alembic upgrade head && alembic downgrade -1 && alembic upgrade head && alembic check` → exit 0. Downgrade khi có một user `local` active → không lỗi, user đó thành `disabled`.
 - [ ] `uv run pytest -q` toàn bộ pass, gồm:
   - `test_passwords_unit.py`: hash bắt đầu `$argon2id$v=19$m=65536,t=3,p=4$`; hai lần băm cùng mật khẩu khác nhau; chính sách từ chối 11 ký tự, 129 ký tự, `password1234` (danh sách phổ biến), mật khẩu chứa username, ký tự `\x00`; nhận 12 ký tự tiếng Việt có dấu cách; mật khẩu tạm 16 ký tự đúng bảng chữ.
-  - `test_password_login.py`: đúng → 200 `LoginResult`, `audit_log` có `login_success` `details.method="password"`; sai → 403 `invalid_credentials`; identifier không tồn tại → 403 cùng `detail`/`code` và `verify` được gọi đúng 1 lần (mock đếm); 5 lần sai → lần 6 với mật khẩu **đúng** vẫn 403, có `login_locked`; `/unlock` → 200; user `disabled` + mật khẩu đúng → 403 cùng thông báo; mật khẩu tạm quá 72 giờ (sửa `password_changed_at`) → 403; email của user `local` đăng nhập qua `/auth/login` (Google) → 403 `account_mismatch`, `google_sub` vẫn NULL; `PASSWORD_LOGIN_ENABLED=false` → 403 `password_login_disabled`; 11 request/phút cùng identifier → 429; `audit_log.details` không bao giờ có khoá `password`, `identifier` hay giá trị mật khẩu (quét mọi dòng sau test).
+  - `test_password_login.py`: đúng → 200 `LoginResult`, `audit_log` có `login_success` `details.method="password"`; sai → 403 `invalid_credentials`; identifier không tồn tại → 403 cùng `detail`/`code` và `verify` được gọi đúng 1 lần (mock đếm); 5 lần sai → lần 6 với mật khẩu **đúng** vẫn 403, có `login_locked`; `/unlock` → 204; user `disabled` + mật khẩu đúng → 403 cùng thông báo; mật khẩu tạm quá 72 giờ (sửa `password_changed_at`) → 403; email của user `local` đăng nhập qua `/auth/login` (Google) → 403 `account_mismatch`, `google_sub` vẫn NULL; `PASSWORD_LOGIN_ENABLED=false` → 403 `password_login_disabled`; 11 request/phút cùng identifier → 429; `audit_log.details` không bao giờ có khoá `password`, `identifier` hay giá trị mật khẩu (quét mọi dòng sau test).
   - `must_change_password=true`: `GET /me` 200 (có `must_change_password: true`), `POST /me/password` 200, **mọi** route khác 403 `password_change_required` (test duyệt `app.routes`, trừ `/health/*`, `/auth/*`, `/me`, `/me/password`); đổi xong → JWT cũ (sv cũ) 401 `user_inactive`, JWT với `sv` mới 200 và route khác 200.
   - `/me/password`: sai mật khẩu hiện tại → 422 `current_password_invalid` (không phải 401); mật khẩu mới yếu → 422 `weak_password`; tài khoản Google → 409 `not_local_account`.
   - `test_admin_users.py`: member/lead gọi mọi `/admin/*` → 403; 120 user → `limit=50` trả 50, `total=120`, `offset=100` trả 20; lọc `q`, `role`, `status`, `auth_provider`, `locked`; tạo local → 201 có `temporary_password`, header `Cache-Control: no-store`, `GET` sau đó không có field mật khẩu/hash nào (kiểm key của JSON); đăng nhập bằng mật khẩu tạm được; trùng email/username → 409; tự hạ role → 409 `self_lockout`; hạ admin hoạt động cuối (người khác) → 409 `last_admin`; hai request hạ quyền chéo chạy đồng thời (`asyncio.gather`) → đúng một thành công; email `ADMIN_EMAILS` → 409 `env_admin`; reset mật khẩu → `sv+1`, JWT cũ 401; reset cho Google → 409 `not_local_account`; reset chính mình → 409 `self_action`; xoá user có task (kể cả trong thùng rác) → 409 `has_data`; alias trùng → 409 `alias_taken`; mỗi thao tác ghi đúng một dòng audit với action ở bảng 4.2.
@@ -377,7 +377,7 @@ CLI **không** đi qua `last_admin`/`self_lockout` (người có shell là chủ
 7. Đổi role B thành lead → B tải lại trang thấy menu Team (không cần đăng nhập lại).
 8. `make logs-api` khi mở `/admin/users` lần đầu: đúng 1 `GET /api/v1/admin/users` + `GET /api/v1/me` + tối đa 1 `GET /api/v1/tasks/assignees`; đổi bộ lọc: 1 request `/admin/users`.
 9. Đặt `PASSWORD_LOGIN_ENABLED=false` (core và web) → form mật khẩu biến mất ở `/login`, Google vẫn dùng được.
-10. Google với email trùng user nội bộ → "chưa được cấp quyền", `audit_log` `reason=account_mismatch`, `details.provider="local"`.
+10. Google với email trùng user nội bộ → "chưa được cấp quyền", `audit_log` `reason=provider_local`, `details.provider="local"` (client vẫn nhận `account_mismatch`).
 
 ### 7.5. Review
 

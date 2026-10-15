@@ -54,8 +54,9 @@ logger = logging.getLogger(__name__)
 
 _LOCK_NAMESPACE = "builder:integration-sync:"
 # Trường chỉ ghi khi TẠO task (không đè task đã có): giữ giá trị User sửa tay, và task cũ
-# không bị chuyển project. Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
-CREATE_ONLY = frozenset({"priority", "assignee", "project_key"})
+# không bị đổi người giao. Project KHÔNG nằm đây: đổi theo Company, xem `project_from_field`.
+# Cùng ngữ nghĩa chế độ file (apps/web/app/jira-actions.ts).
+CREATE_ONLY = frozenset({"priority", "assignee"})
 # Tên project do Jira điều khiển; trần số project MỚI mỗi lần sync để dữ liệu Jira (hoặc kẻ
 # giả Jira) không tràn danh sách project cục bộ.
 MAX_NEW_PROJECTS = 50
@@ -154,7 +155,11 @@ async def _exclusive(connection_id: uuid.UUID) -> AsyncIterator[None]:
 
 
 async def _write_batch(
-    items: list[TaskUpsert], actor: str, owner_host: str, actor_user_id: uuid.UUID | None = None
+    items: list[TaskUpsert],
+    actor: str,
+    owner_host: str,
+    actor_user_id: uuid.UUID | None = None,
+    project_from_field: set[str] | None = None,
 ) -> TaskUpsertResult:
     async with SessionFactory() as session:
         try:
@@ -167,6 +172,7 @@ async def _write_batch(
                 create_only=CREATE_ONLY,
                 owner_host=owner_host,
                 due_baseline=jira_mapping.previous_due,
+                project_update_guard=lambda item: item.external_id in (project_from_field or ()),
             )
             await session.commit()
         except BaseException:
@@ -212,6 +218,9 @@ class _Progress:
     error_overflow: int = 0
     warning_overflow: int = 0
     new_projects: set[str] = field(default_factory=set)
+    # Khoá issue có project suy từ custom field Company/Team: chỉ những issue này được đổi
+    # project của task đã có.
+    project_from_field: set[str] = field(default_factory=set)
 
     @property
     def written(self) -> int:
@@ -260,6 +269,7 @@ async def _cap_new_projects(
             if len(progress.new_projects) < MAX_NEW_PROJECTS:
                 progress.new_projects.add(key)
             else:
+                progress.project_from_field.discard(item.external_id)
                 item = item.model_copy(
                     update={
                         "project_key": fallback_key,
@@ -292,7 +302,13 @@ async def _flush(
     if not items:
         return
     chunk = await _cap_new_projects(items, origin, progress, snapshot)
-    result = await _write_batch(chunk, f"integration:{snapshot.name}", owner_host, actor_user_id)
+    result = await _write_batch(
+        chunk,
+        f"integration:{snapshot.name}",
+        owner_host,
+        actor_user_id,
+        progress.project_from_field,
+    )
     progress.added += result.added
     progress.updated += result.updated
     progress.unchanged += result.unchanged
@@ -431,6 +447,7 @@ async def _run(
                                 fallback_project_key=snapshot.project_key,
                                 fallback_project_name=snapshot.project_name,
                                 notes=notes,
+                                project_from_field=progress.project_from_field,
                             )
                         except jira_mapping.MappingError as exc:
                             progress.error(SyncMessage(index=index, reason=str(exc)))

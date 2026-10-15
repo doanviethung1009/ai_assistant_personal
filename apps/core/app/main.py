@@ -82,7 +82,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["X-API-Key", "Content-Type"],
 )
 
@@ -107,6 +107,9 @@ _NO_ECHO_PREFIXES = (
     "/api/v1/integrations",
     # Claim Google (email, sub) trong body đăng nhập: 422 không được echo lại.
     "/api/v1/auth",
+    # Mật khẩu hiện tại/mới trong body đổi mật khẩu; admin tạo user và nhận mật khẩu tạm.
+    "/api/v1/me/password",
+    "/api/v1/admin",
     # raw_payload của nguồn ngoài có thể mang token/cookie: không echo lại trong 422.
     "/api/v1/tasks/upsert-batch",
 )

@@ -1,8 +1,9 @@
-"""Người dùng đăng nhập bằng Google và alias (tên trong hệ thống nguồn) của họ.
+"""Người dùng (đăng nhập Google hoặc tài khoản nội bộ bằng mật khẩu) và alias của họ.
 
-Core là nơi QUYẾT ĐỊNH quyền: web chỉ xác thực với Google rồi chuyển claim đã xác minh cho
-`POST /auth/login`. Không lưu access_token, refresh_token, id_token hay ảnh đại diện của Google;
-chỉ giữ `google_sub` (khoá định danh ổn định), email và tên.
+Core là nơi QUYẾT ĐỊNH quyền. Tài khoản `google`: web xác thực với Google rồi chuyển claim đã
+xác minh cho `POST /auth/login`; không lưu access_token, refresh_token, id_token hay ảnh đại
+diện, chỉ giữ `google_sub` (khoá định danh ổn định), email và tên. Tài khoản `local`: admin tạo,
+core giữ hash argon2id và tự so mật khẩu (`POST /auth/login/password`).
 """
 
 from __future__ import annotations
@@ -11,6 +12,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -24,11 +26,11 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, enum_column
-from app.models.enums import AliasSource, UserRole, UserStatus
+from app.models.enums import AliasSource, AuthProvider, UserRole, UserStatus
 
 
 class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Một tài khoản. Tạo bởi lời mời (admin/CLI/`ADMIN_EMAILS`), không có tự đăng ký.
+    """Một tài khoản. Tạo bởi admin/CLI/`ADMIN_EMAILS`, không có tự đăng ký.
 
     `session_version` tăng lên để thu hồi mọi phiên đang chạy: JWT web->core mang `sv` và core
     so với giá trị này ở MỌI request, nên có hiệu lực ngay, không phải chờ cookie hết hạn.
@@ -56,6 +58,28 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # gỡ bằng migration riêng sau.
     timezone: Mapped[str | None] = mapped_column(String(64), default=None)
     session_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    # Một tài khoản chỉ có MỘT cách đăng nhập; không chuyển đổi, không gắn thêm cách thứ hai.
+    auth_provider: Mapped[AuthProvider] = mapped_column(
+        enum_column(AuthProvider, "auth_provider"),
+        default=AuthProvider.GOOGLE,
+        server_default=AuthProvider.GOOGLE.value,
+    )
+    # Chỉ tài khoản `local`, lưu chữ thường, không có `@` (để phân biệt với email khi đăng nhập).
+    username: Mapped[str | None] = mapped_column(String(64), default=None)
+    # ═══════════════════════════════════════════════════════════════════
+    #  `password_hash` KHÔNG BAO GIỜ được đưa vào schema đọc, log hay audit.
+    # ═══════════════════════════════════════════════════════════════════
+    password_hash: Mapped[str | None] = mapped_column(String(255), default=None)
+    # true sau khi admin tạo/đặt lại: core chặn mọi route trừ /me và /me/password.
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false"
+    )
+    # Lần đặt mật khẩu gần nhất; mật khẩu tạm hết hạn tính từ mốc này.
+    password_changed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), default=None
+    )
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     invited_by: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), default=None
     )
@@ -69,6 +93,8 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         UniqueConstraint("email", name="uq_users_email"),
         # NULL được lặp: nhiều user `invited` chưa có sub.
         UniqueConstraint("google_sub", name="uq_users_google_sub"),
+        # NULL được lặp: chỉ tài khoản `local` có username.
+        UniqueConstraint("username", name="uq_users_username"),
         # CHECK tường minh vì enum_column() không sinh CHECK và `alembic check` không so CHECK.
         CheckConstraint(
             "email = lower(btrim(email)) AND position('@' in email) > 1",
@@ -76,9 +102,31 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         CheckConstraint("role IN ('admin', 'lead', 'member')", name="role_valid"),
         CheckConstraint("status IN ('invited', 'active', 'disabled')", name="status_valid"),
-        # Tài khoản đã kích hoạt phải gắn sub: không có đường "active" mà không qua Google.
-        CheckConstraint("status <> 'active' OR google_sub IS NOT NULL", name="active_has_sub"),
+        # Tài khoản Google đã kích hoạt phải gắn sub; tài khoản nội bộ không có sub.
+        CheckConstraint(
+            "status <> 'active' OR auth_provider = 'local' OR google_sub IS NOT NULL",
+            name="active_has_sub",
+        ),
         CheckConstraint("session_version >= 0", name="session_version_non_negative"),
+        CheckConstraint("auth_provider IN ('google', 'local')", name="auth_provider_valid"),
+        CheckConstraint(
+            "username IS NULL OR username ~ '^[a-z0-9][a-z0-9._-]{2,63}$'",
+            name="username_format",
+        ),
+        CheckConstraint(
+            "auth_provider <> 'local' OR (username IS NOT NULL AND password_hash IS NOT NULL)",
+            name="local_credentials",
+        ),
+        CheckConstraint(
+            "auth_provider <> 'google' OR (password_hash IS NULL AND username IS NULL "
+            "AND must_change_password = false)",
+            name="google_no_password",
+        ),
+        CheckConstraint("auth_provider <> 'local' OR google_sub IS NULL", name="local_no_sub"),
+        CheckConstraint(
+            "auth_provider <> 'local' OR status <> 'invited'", name="local_not_invited"
+        ),
+        CheckConstraint("failed_login_count >= 0", name="failed_login_non_negative"),
     )
 
     def __repr__(self) -> str:

@@ -10,6 +10,7 @@ describe("classifyCoreError (bảng 3.4)", () => {
     [new CoreApiError("x", 401), "config"],
     [new CoreApiError("x", 403, "forbidden"), "forbidden"],
     [new CoreApiError("x", 403), "config"],
+    [new CoreApiError("x", 403, "password_change_required"), "password_change_required"],
     [new CoreApiError("x", 404), "other"],
     [new CoreApiError("x", 502), "other"],
     [new Error("ECONNREFUSED"), "other"],

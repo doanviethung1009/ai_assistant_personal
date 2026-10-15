@@ -24,7 +24,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from app.core.config import settings
 from app.core.permissions import Permission, permissions_for
 from app.db.session import SessionFactory
-from app.models.enums import AliasSource, UserRole, UserStatus
+from app.models.enums import AliasSource, AuthProvider, UserRole, UserStatus
 from app.models.user import User
 from app.services.errors import ForbiddenError, UnauthorizedError
 
@@ -62,6 +62,12 @@ class CurrentUser:
     role: UserRole
     # Alias nguồn Jira của user, so khớp chính xác (phân biệt hoa thường) với Task.assignee.
     aliases: frozenset[str]
+    # Mặc định cho test/CLI dựng tay; `current_user` luôn điền giá trị thật từ DB.
+    auth_provider: AuthProvider = AuthProvider.GOOGLE
+    username: str | None = None
+    # true: mới được cấp/đặt lại mật khẩu, chỉ được gọi /me và /me/password (xem
+    # `require_password_current`).
+    must_change_password: bool = False
 
     @property
     def permissions(self) -> frozenset[Permission]:
@@ -179,6 +185,9 @@ async def current_user(
             name=user.name,
             role=user.role,
             aliases=frozenset(a.alias for a in user.aliases if a.source is AliasSource.JIRA),
+            auth_provider=user.auth_provider,
+            username=user.username,
+            must_change_password=user.must_change_password,
         )
 
 
@@ -198,3 +207,17 @@ def require_permission(permission: Permission) -> Callable[..., Awaitable[Curren
         return user
 
     return _check
+
+
+async def require_password_current(user: CurrentUserDep) -> CurrentUser:
+    """403 `password_change_required` khi tài khoản còn bị ép đổi mật khẩu.
+
+    Gắn vào `active_router` (api/v1/router.py) nên MỌI route mới mặc định bị chặn; chỉ
+    `GET /me` và `POST /me/password` nằm ngoài. Đây là lớp chặn thật: web chỉ thay giao diện
+    bằng form đổi mật khẩu, kẻ gọi thẳng core bằng mật khẩu tạm vẫn không đọc được dữ liệu.
+    """
+    if user.must_change_password:
+        raise ForbiddenError(
+            "Bạn phải đổi mật khẩu trước khi tiếp tục", code="password_change_required"
+        )
+    return user

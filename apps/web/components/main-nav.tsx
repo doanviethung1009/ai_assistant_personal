@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hasPermission, type PermissionSet } from "@/lib/permissions";
-import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, isItemActive, type NavItem } from "@/lib/nav";
+import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, ADMIN_NAV, isItemActive, type NavItem } from "@/lib/nav";
 
 import { useState } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
@@ -15,6 +15,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 export function MainNav({ permissions = [] }: { permissions?: PermissionSet }) {
   const pathname = usePathname();
   const allowed = (item: NavItem) => !item.permission || hasPermission(permissions, item.permission);
+  // Chế độ cục bộ ("all") không có đăng nhập nên cũng không có trang quản trị người dùng.
+  const adminItems = permissions === "all" ? [] : ADMIN_NAV.filter(allowed);
 
   return (
     <nav aria-label="Điều hướng chính" className="flex flex-col gap-7 px-4 py-6">
@@ -25,6 +27,16 @@ export function MainNav({ permissions = [] }: { permissions?: PermissionSet }) {
           </li>
         ))}
       </CollapsibleSection>
+
+      {adminItems.length > 0 ? (
+        <CollapsibleSection title="Quản trị" defaultOpen={true}>
+          {adminItems.map((item) => (
+            <li key={item.href}>
+              <SecondaryLink item={item} pathname={pathname} />
+            </li>
+          ))}
+        </CollapsibleSection>
+      ) : null}
 
       <CollapsibleSection title="Hệ sinh thái AI" defaultOpen={true}>
         {AI_NAV.map((item) => (

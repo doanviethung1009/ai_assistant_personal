@@ -96,6 +96,19 @@ def migrated_db() -> None:
     command.upgrade(cfg, "head")
 
 
+@pytest.fixture(autouse=True)
+def _fast_password_hasher(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Băm argon2 rẻ (t=1, m=8 KiB) cho mọi test: cấu hình thật (64 MiB x 3 vòng) làm mỗi lần
+    đăng nhập tốn ~100ms. Test khẳng định cấu hình thật dùng `passwords.PRODUCTION_HASHER`."""
+    from argon2 import PasswordHasher
+
+    from app.core import passwords
+
+    monkeypatch.setattr(
+        passwords, "_hasher", PasswordHasher(time_cost=1, memory_cost=8, parallelism=1)
+    )
+
+
 @dataclass
 class Persona:
     """Một user test đã nằm trong DB (active, đã gắn google_sub)."""
@@ -155,6 +168,64 @@ async def create_persona(
             role=role,
             aliases=frozenset(aliases),
         )
+    )
+
+
+@dataclass
+class LocalPersona(Persona):
+    """Tài khoản nội bộ test: giữ mật khẩu rõ để đăng nhập lại trong test."""
+
+    username: str = ""
+    password: str = ""
+
+
+async def create_local_persona(
+    username: str,
+    password: str = "correct-horse-battery",  # noqa: S107 - mật khẩu test
+    *,
+    role: object | None = None,
+    status: object | None = None,
+    must_change_password: bool = False,
+    password_changed_at: object | None = None,
+) -> LocalPersona:
+    """Tạo tài khoản nội bộ trực tiếp bằng SQLAlchemy với mật khẩu đã biết (hash rẻ)."""
+    from app.core import passwords
+    from app.core.auth import CurrentUser
+    from app.db.session import SessionFactory
+    from app.models.enums import AuthProvider, UserRole, UserStatus
+    from app.models.user import User
+    from app.services.clock import now_utc
+
+    role = role or UserRole.MEMBER
+    status = status or UserStatus.ACTIVE
+    email = f"{username}@test.local"
+    async with SessionFactory() as s:
+        user = User(
+            email=email,
+            role=role,
+            status=status,
+            auth_provider=AuthProvider.LOCAL,
+            username=username,
+            password_hash=await passwords.hash_password(password),
+            must_change_password=must_change_password,
+            password_changed_at=password_changed_at or now_utc(),
+        )
+        s.add(user)
+        await s.flush()
+        await s.commit()
+    return LocalPersona(
+        user=CurrentUser(
+            id=user.id,
+            email=email,
+            name=None,
+            role=role,
+            aliases=frozenset(),
+            auth_provider=AuthProvider.LOCAL,
+            username=username,
+            must_change_password=must_change_password,
+        ),
+        username=username,
+        password=password,
     )
 
 

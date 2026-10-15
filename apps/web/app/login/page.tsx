@@ -1,41 +1,31 @@
 import { redirect } from "next/navigation";
 
 import { authEnabled, readAuthConfig } from "@/lib/auth-config";
+import { loginErrorMessage } from "@/lib/login-message";
 import { safeCallbackPath } from "@/lib/redirect-safety";
+import { PasswordLoginForm } from "@/components/password-login-form";
 import { loginWithGoogleAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-// Ba mã "chưa được cấp quyền" dùng chung một câu: không cho kẻ lạ dò xem email nào đã được mời.
-const NOT_AUTHORIZED = "Tài khoản này chưa được cấp quyền truy cập. Liên hệ quản trị viên.";
-const GENERIC_FAILURE = "Đăng nhập không thành công, vui lòng thử lại.";
-const ERROR_MESSAGES: Record<string, string> = {
-  not_invited: NOT_AUTHORIZED,
-  disabled: NOT_AUTHORIZED,
-  account_mismatch: NOT_AUTHORIZED,
-  denied: NOT_AUTHORIZED,
-  email_unverified: "Email Google chưa được xác minh. Hãy xác minh email rồi thử lại.",
-  hd_not_allowed: "Tài khoản Google này không thuộc tổ chức được phép đăng nhập.",
-  session: "Phiên đăng nhập đã hết hiệu lực. Vui lòng đăng nhập lại.",
-  rate_limited: "Thử đăng nhập quá nhiều lần. Chờ một phút rồi thử lại.",
-  unavailable: "Chưa kết nối được máy chủ dữ liệu. Thử lại sau ít phút.",
-  config: "Cấu hình khoá giữa web và core không khớp. Báo quản trị viên.",
-};
 
 /** Trang đăng nhập: KHÔNG gọi core (chỉ form POST sang Auth.js). */
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; callbackUrl?: string }>;
+  searchParams: Promise<{ error?: string; code?: string; callbackUrl?: string }>;
 }) {
   if (!authEnabled()) redirect("/");
-  const { error, callbackUrl } = await searchParams;
+  const { error: rawError, code, callbackUrl } = await searchParams;
   const callback = safeCallbackPath(callbackUrl, process.env.AUTH_URL);
   // Mã lạ (mã nội bộ của Auth.js: OAuthCallbackError, Configuration, state cookie hết hạn...) ra câu
   // "thử lại" chung, không lộ chi tiết; chỉ các mã "không được mời" mới nói chưa được cấp quyền.
   const cfg = readAuthConfig();
   const warnings = cfg.ok ? cfg.warnings : [];
-  const message = error ? (ERROR_MESSAGES[error] ?? GENERIC_FAILURE) : null;
+  // Cấu hình hỏng thì middleware đã rewrite sang /config-error; ở đây chỉ phòng thủ.
+  const googleEnabled = cfg.ok && cfg.googleEnabled;
+  const passwordEnabled = cfg.ok && cfg.passwordEnabled;
+  const message = loginErrorMessage(rawError, code);
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center px-4">
@@ -62,15 +52,31 @@ export default async function LoginPage({
           </p>
         ) : null}
 
-        <form action={loginWithGoogleAction} className="mt-6">
-          <input type="hidden" name="callbackUrl" value={callback} />
-          <button
-            type="submit"
-            className="w-full rounded-md bg-[var(--color-accent)] px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
-          >
-            Đăng nhập với Google
-          </button>
-        </form>
+        {passwordEnabled ? <PasswordLoginForm callbackUrl={callback} /> : null}
+
+        {googleEnabled && passwordEnabled ? (
+          <div className="my-5 flex items-center gap-3 text-xs text-[var(--color-ink-muted)]" aria-hidden>
+            <span className="h-px flex-1 bg-[var(--color-border)]" />
+            hoặc
+            <span className="h-px flex-1 bg-[var(--color-border)]" />
+          </div>
+        ) : null}
+
+        {googleEnabled ? (
+          <form action={loginWithGoogleAction} className={passwordEnabled ? "" : "mt-6"}>
+            <input type="hidden" name="callbackUrl" value={callback} />
+            <button
+              type="submit"
+              className={`w-full rounded-md px-4 py-2.5 text-sm font-medium transition hover:opacity-90 ${
+                passwordEnabled
+                  ? "border border-[var(--color-border)] text-[var(--color-ink)] hover:bg-[var(--color-surface-hover)]"
+                  : "bg-[var(--color-accent)] text-white"
+              }`}
+            >
+              Đăng nhập với Google
+            </button>
+          </form>
+        ) : null}
       </div>
     </div>
   );

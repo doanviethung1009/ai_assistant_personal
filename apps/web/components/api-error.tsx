@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 
+import { ChangePasswordRequired } from "@/components/change-password-required";
 import { ForbiddenPanel } from "@/components/forbidden-panel";
 import { classifyCoreError } from "@/lib/core-errors";
 
@@ -17,6 +18,8 @@ export function ApiErrorPanel({ error, message }: { error?: unknown; message?: s
   if (kind === "unauthenticated") redirect("/login");
   if (kind === "session_expired") redirect("/auth/expired");
   if (kind === "forbidden") return <ForbiddenPanel />;
+  // Lớp phòng thủ thứ hai: PasswordGate ở layout là lớp chính, nhưng trang tự bắt lỗi vẫn phải hiện form đổi mật khẩu.
+  if (kind === "password_change_required") return <ChangePasswordRequired />;
 
   const text = message ?? (error instanceof Error ? error.message : String(error));
   const isConfig = kind === "config";

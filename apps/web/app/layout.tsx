@@ -5,6 +5,7 @@ import { Suspense } from "react";
 import { Menu } from "lucide-react";
 
 import { MainNav } from "@/components/main-nav";
+import { ChangePasswordRequired } from "@/components/change-password-required";
 import { UserMenu, UserMenuSkeleton } from "@/components/user-menu";
 import { DATA_SOURCE, DISPLAY_TZ, getMe } from "@/lib/api";
 import { authEnabled } from "@/lib/auth-config";
@@ -49,13 +50,40 @@ async function UserMenuLoader() {
  */
 async function NavLoader() {
   try {
-    return <MainNav permissions={(await getMe()).permissions} />;
+    const me = await getMe();
+    // Đang bị ép đổi mật khẩu: nav tối thiểu (mọi route khác bị core chặn, nội dung đã bị thay bằng form).
+    return <MainNav permissions={me.must_change_password ? [] : me.permissions} />;
   } catch (error) {
     const kind = classifyCoreError(error);
     if (kind === "session_expired") redirect("/auth/expired");
     if (kind === "unauthenticated") redirect("/login");
     return <MainNav />;
   }
+}
+
+/**
+ * Ép đổi mật khẩu lần đầu: nếu /me báo must_change_password thì form đổi mật khẩu thay cho `children`
+ * ở MỌI route (không cần pathname, không cần middleware gọi core). Lớp chặn thật là core (403
+ * password_change_required). getMe dùng chung React.cache với nav/menu nên không thêm lời gọi, nhưng
+ * trang con chỉ bắt đầu render sau khi /me trả về (một RTT, đã bắt đầu từ lúc layout render).
+ * Lỗi /me: để trang con tự xử lý theo bảng lỗi (token_invalid → /auth/expired...).
+ */
+async function PasswordGate({ children }: { children: React.ReactNode }) {
+  try {
+    if ((await getMe()).must_change_password) return <ChangePasswordRequired />;
+  } catch {
+    // trang con gặp cùng lỗi và hiện đúng panel
+  }
+  return <>{children}</>;
+}
+
+function ContentSkeleton() {
+  return (
+    <div className="animate-pulse space-y-4" aria-busy="true" aria-label="Đang tải">
+      <div className="h-9 w-64 rounded-lg bg-[var(--color-surface-hover)]" />
+      <div className="h-40 rounded-2xl border border-[var(--color-border)] bg-[var(--color-surface-raised)]" />
+    </div>
+  );
 }
 
 export default async function RootLayout({
@@ -152,7 +180,13 @@ export default async function RootLayout({
                 </p>
               ) : null}
 
-              {children}
+              {loggedIn ? (
+                <Suspense fallback={<ContentSkeleton />}>
+                  <PasswordGate>{children}</PasswordGate>
+                </Suspense>
+              ) : (
+                children
+              )}
             </div>
           </main>
 

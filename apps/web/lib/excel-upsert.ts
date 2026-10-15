@@ -2,6 +2,7 @@ import { toActionAuthError, type ActionAuthCode } from "@/lib/auth-guard";
 import "server-only";
 
 import { CoreApiError, UpsertBatchError, upsertTasksBatch } from "./api";
+import { cleanName, cleanReporter } from "./text-safety";
 import type { TaskStatus, TaskUpsertItem, UpsertSummary } from "./types";
 
 /**
@@ -139,12 +140,12 @@ export function rowsToUpsertItems(rows: unknown[]): {
       external_url: `https://onemount.atlassian.net/browse/${encodeURIComponent(key)}`,
     };
     if (description) item.description = description.slice(0, 32_000);
-    const assignee = cell(row, "Assignee");
+    const assignee = cleanName(cell(row, "Assignee"));
     if (assignee) item.assignee = assignee;
     else if (columns.has("Assignee")) item.assignee = null;
     // Chỉ khi sheet CÓ cột Reporter mới gửi khoá (vắng khoá = core giữ giá trị đang có).
     const reporter = cell(row, "Reporter");
-    if (reporter) item.reporter = reporter.slice(0, 200);
+    if (reporter) item.reporter = cleanReporter(reporter);
     else if (columns.has("Reporter")) item.reporter = null;
     const created = parseDate(row["Created Date"]);
     if (created) item.created_at = created;

@@ -18,6 +18,7 @@ export type CoreErrorKind =
   | "unauthenticated" // web tự phát hiện không có phiên, chưa gọi core
   | "session_expired" // core báo token_invalid/user_inactive: phiên bị thu hồi/khoá
   | "forbidden" // thiếu quyền (403 code=forbidden)
+  | "password_change_required" // 403 code=password_change_required: phải đổi mật khẩu trước (không đăng xuất)
   | "config" // thiếu/sai X-API-Key: lỗi cấu hình, KHÔNG đăng xuất
   | "other";
 
@@ -32,6 +33,9 @@ export function classifyCoreError(error: unknown): CoreErrorKind {
     if (error.code === "token_invalid" || error.code === "user_inactive") return "session_expired";
     return "config";
   }
-  if (error.status === 403) return error.code === "forbidden" ? "forbidden" : "config";
+  if (error.status === 403) {
+    if (error.code === "password_change_required") return "password_change_required";
+    return error.code === "forbidden" ? "forbidden" : "config";
+  }
   return "other";
 }

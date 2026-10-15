@@ -354,7 +354,7 @@ reset: ## XOÁ TOÀN BỘ DỮ LIỆU rồi dựng lại từ đầu
 	@echo "  Đã dựng lại. Migration chạy tự động khi api khởi động."
 
 # ── Đăng nhập đa người dùng (CLI trong container api, xem app/cli/auth.py) ──
-.PHONY: auth-token auth-invite auth-bootstrap auth-revoke auth-disable auth-enable auth-alias auth-alias-set auth-alias-remove
+.PHONY: auth-token auth-invite auth-bootstrap auth-create-local auth-reset-password auth-unlock auth-revoke auth-disable auth-enable auth-alias auth-alias-set auth-alias-remove
 auth-token: ## In JWT cho một user active: make auth-token EMAIL=a@b.com [TTL=60] (dev, smoke test)
 	@$(API) python -m app.cli.auth token --email "$(EMAIL)" --ttl $(or $(TTL),60)
 
@@ -379,6 +379,15 @@ auth-alias-set: ## Thay TOÀN BỘ alias Jira của user: make auth-alias-set EM
 auth-alias-remove: ## Gỡ alias Jira của user: make auth-alias-remove EMAIL=a@b.com ALIASES="Tên 1,Tên 2"
 	$(API) python -m app.cli.auth alias --email "$(EMAIL)" --remove "$(ALIASES)"
 
+auth-create-local: ## Tạo tài khoản nội bộ (in mật khẩu tạm MỘT lần): make auth-create-local USERNAME=a.nguyen EMAIL=a@b.com [ROLE=member|lead|admin] [NAME="Tên"]
+	@$(API) python -m app.cli.auth create-local --username "$(USERNAME)" --email "$(EMAIL)" $(if $(ROLE),--role $(ROLE),) $(if $(NAME),--name "$(NAME)",)
+
+auth-reset-password: ## Đặt lại mật khẩu tài khoản nội bộ (in mật khẩu tạm MỘT lần): make auth-reset-password EMAIL=a@b.com
+	@$(API) python -m app.cli.auth reset-password --email "$(EMAIL)"
+
+auth-unlock: ## Mở khoá tài khoản nội bộ bị khoá do nhập sai: make auth-unlock EMAIL=a@b.com
+	$(API) python -m app.cli.auth unlock --email "$(EMAIL)"
+
 auth-bootstrap: ## Gán chủ cho dữ liệu cũ SAU make migrate: make auth-bootstrap OWNER=admin@b.com [DRY=1]
 	$(API) python -m app.cli.auth bootstrap --owner "$(OWNER)" $(if $(DRY),--dry-run,)
 
@@ -397,10 +406,19 @@ devvm-tunnel: ## Mở SSH tunnel localhost:8001 -> API VM dev
 	ssh -i $(DEVVM_KEY) -o BatchMode=yes -o ExitOnForwardFailure=yes -fN -L $(DEVVM_PORT):127.0.0.1:8000 $(DEVVM_HOST)
 
 .PHONY: devvm-web
-devvm-web: devvm-tunnel ## Chạy web trên host trỏ vào API VM dev (tắt next dev đang chạy ở :3000 trước)
-	cd apps/web && DATA_SOURCE=api CORE_API_URL=http://127.0.0.1:$(DEVVM_PORT) \
-	  CORE_API_KEY="$$(ssh -i $(DEVVM_KEY) -o BatchMode=yes $(DEVVM_HOST) 'grep ^API_KEY= /srv/builder-ai/dev/.env | cut -d= -f2-')" \
-	  npm run dev
+devvm-web: devvm-tunnel ## Chạy web trên host (DATA_SOURCE=api) trỏ vào API VM dev; đăng nhập bằng tài khoản nội bộ. Tắt next dev ở :3000 trước
+	@# Khoá đọc từ .env của VM lúc chạy và CHỈ nằm trong env của tiến trình (không ghi file):
+	@# API_KEY (X-API-Key) và CORE_JWT_SECRET (phải TRÙNG core để core nhận JWT web ký).
+	@# AUTH_SECRET sinh mới mỗi lần chạy (phiên đăng nhập local mất khi khởi động lại, đúng ý dev).
+	@# Cần tài khoản: trên VM chạy `make auth-create-local USERNAME=... EMAIL=... ROLE=admin`.
+	@SECRETS="$$(ssh -i $(DEVVM_KEY) -o BatchMode=yes $(DEVVM_HOST) "grep -E '^(API_KEY|CORE_JWT_SECRET)=' /srv/builder-ai/dev/.env")"; \
+	  API_KEY_VALUE="$$(printf '%s\n' "$$SECRETS" | sed -n 's/^API_KEY=//p')"; \
+	  JWT_VALUE="$$(printf '%s\n' "$$SECRETS" | sed -n 's/^CORE_JWT_SECRET=//p')"; \
+	  [ -n "$$API_KEY_VALUE" ] && [ -n "$$JWT_VALUE" ] || { echo "Không đọc được API_KEY/CORE_JWT_SECRET từ VM dev"; exit 1; }; \
+	  cd apps/web && DATA_SOURCE=api CORE_API_URL=http://127.0.0.1:$(DEVVM_PORT) \
+	    CORE_API_KEY="$$API_KEY_VALUE" CORE_JWT_SECRET="$$JWT_VALUE" \
+	    AUTH_SECRET="$$(openssl rand -hex 32)" AUTH_URL=http://localhost:3000 AUTH_TRUST_HOST=true \
+	    npm run dev
 
 .PHONY: devvm-down
 devvm-down: ## Đóng tunnel

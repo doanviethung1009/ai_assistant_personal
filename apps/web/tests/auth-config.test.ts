@@ -42,4 +42,23 @@ describe("readAuthConfig", () => {
     expect(warn("http://127.0.0.1:3000")).toBe(0);
     expect(warn("https://app.example.com")).toBe(0);
   });
+
+  it("Google là tuỳ chọn: thiếu cả hai biến → ok nhưng googleEnabled=false", () => {
+    const cfg = readAuthConfig({ ...GOOD, AUTH_GOOGLE_ID: "", AUTH_GOOGLE_SECRET: "" });
+    expect(cfg.ok && cfg.googleEnabled).toBe(false);
+    expect(cfg.ok && cfg.passwordEnabled).toBe(true);
+  });
+
+  it("chỉ có một trong hai biến Google là cấu hình dở → báo thiếu biến còn lại", () => {
+    const cfg = readAuthConfig({ ...GOOD, AUTH_GOOGLE_SECRET: "" });
+    expect(cfg.ok).toBe(false);
+    if (!cfg.ok) expect(cfg.missing).toContain("AUTH_GOOGLE_SECRET");
+  });
+
+  it("tắt cả Google lẫn mật khẩu → lỗi cấu hình; chỉ tắt mật khẩu thì Google vẫn chạy", () => {
+    const none = readAuthConfig({ ...GOOD, AUTH_GOOGLE_ID: "", AUTH_GOOGLE_SECRET: "", PASSWORD_LOGIN_ENABLED: "false" });
+    expect(none.ok).toBe(false);
+    const googleOnly = readAuthConfig({ ...GOOD, PASSWORD_LOGIN_ENABLED: "false" });
+    expect(googleOnly.ok && googleOnly.googleEnabled && !googleOnly.passwordEnabled).toBe(true);
+  });
 });

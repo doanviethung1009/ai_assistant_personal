@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
@@ -26,6 +27,7 @@ from starlette.responses import JSONResponse
 
 from app.core.auth import peek_subject
 from app.core.config import settings
+from app.core.identifier_hash import identifier_digest
 from app.db.redis import get_redis
 from app.services.errors import TooManyRequestsError
 
@@ -41,6 +43,15 @@ _EXEMPT_PATHS = {"/health", "/health/live", "/health/ready", "/metrics", "/docs"
 # Đăng nhập: chặn dò email được mời và spam. Theo IP của browser (web chuyển) và toàn cục.
 LOGIN_LIMIT_PER_IP = 20
 LOGIN_LIMIT_GLOBAL = 60
+# Đăng nhập bằng mật khẩu (spec admin-users-local-login 3.4): theo IP, theo identifier (băm),
+# và toàn cục. Lớp chính chống đoán mật khẩu vẫn là khoá theo tài khoản ở DB.
+PASSWORD_LOGIN_LIMIT_PER_IP = 10
+PASSWORD_LOGIN_LIMIT_PER_IDENTIFIER = 10
+# Toàn cục chỉ là cầu chì chống flood; nới rộng để một kẻ spam không dễ khoá cả người dùng thật.
+PASSWORD_LOGIN_LIMIT_GLOBAL = 300
+# Tự đổi mật khẩu: 5 lần mỗi 15 phút theo user (chặn đoán mật khẩu hiện tại bằng JWT đã có).
+PASSWORD_CHANGE_LIMIT = 5
+PASSWORD_CHANGE_WINDOW_SECONDS = 15 * 60
 
 
 def _identity(request: Request) -> str:
@@ -63,9 +74,9 @@ def _identity(request: Request) -> str:
     return f"ip:{client.host if client else 'unknown'}"
 
 
-async def _hit(key: str) -> int | None:
-    """Tăng bộ đếm của cửa sổ hiện tại; trả số đếm, hoặc None nếu Redis lỗi (fail-open)."""
-    bucket = int(time.time() // _WINDOW_SECONDS)
+async def _hit_window(key: str, window: int) -> int | None:
+    """Tăng bộ đếm của cửa sổ `window` giây hiện tại; None nếu Redis lỗi (fail-open)."""
+    bucket = int(time.time() // window)
     full_key = f"ratelimit:{key}:{bucket}"
     try:
         redis = get_redis()
@@ -73,11 +84,16 @@ async def _hit(key: str) -> int | None:
         if count == 1:
             # +5s đệm để tránh key hết hạn đúng lúc client gửi request
             # sát ranh cửa sổ, dẫn tới đếm lại từ 0 ở request kế tiếp.
-            await redis.expire(full_key, _WINDOW_SECONDS + 5)
+            await redis.expire(full_key, window + 5)
     except Exception:  # fail-open theo chủ đích, xem docstring module
         logger.warning("rate_limit_redis_error", exc_info=True)
         return None
     return int(count)
+
+
+async def _hit(key: str) -> int | None:
+    """Cửa sổ 60 giây chuẩn; trả số đếm, hoặc None nếu Redis lỗi (fail-open)."""
+    return await _hit_window(key, _WINDOW_SECONDS)
 
 
 async def enforce_login_limits(client_ip: str | None) -> None:
@@ -94,6 +110,37 @@ async def enforce_login_limits(client_ip: str | None) -> None:
         count = await _hit(key)
         if count is not None and count > limit:
             raise TooManyRequestsError("Quá nhiều lần đăng nhập, thử lại sau")
+
+
+async def enforce_password_login_limits(client_ip: str | None, identifier: str) -> None:
+    """Giới hạn riêng cho `/auth/login/password`, chạy TRƯỚC khi chạm DB hay băm (429).
+
+    Khoá Redis chứa HMAC-SHA256 của identifier chuẩn hoá, không chứa tên đăng nhập hay email.
+    Khi web chạy qua tunnel `client_ip` là null nên bucket IP thành bucket chung: chấp nhận (Q13).
+    """
+    if not settings.rate_limit_enabled:
+        return
+    digest = identifier_digest(identifier)
+    for key, limit in (
+        (f"login-pw-ip:{client_ip or 'unknown'}", PASSWORD_LOGIN_LIMIT_PER_IP),
+        (f"login-pw-id:{digest}", PASSWORD_LOGIN_LIMIT_PER_IDENTIFIER),
+        ("login-pw-global", PASSWORD_LOGIN_LIMIT_GLOBAL),
+    ):
+        count = await _hit(key)
+        if count is not None and count > limit:
+            if key == "login-pw-global":
+                # Không log identifier hay IP: chỉ cần biết cầu chì đã nhảy.
+                logger.warning("login_global_limit_hit")
+            raise TooManyRequestsError("Quá nhiều lần đăng nhập, thử lại sau")
+
+
+async def enforce_password_change_limit(user_id: uuid.UUID) -> None:
+    """5 lần đổi mật khẩu mỗi 15 phút cho mỗi user (429). KHÔNG khoá tài khoản."""
+    if not settings.rate_limit_enabled:
+        return
+    count = await _hit_window(f"pwchange:{user_id}", PASSWORD_CHANGE_WINDOW_SECONDS)
+    if count is not None and count > PASSWORD_CHANGE_LIMIT:
+        raise TooManyRequestsError("Quá nhiều lần đổi mật khẩu, thử lại sau")
 
 
 # ═══════════════════════════════════════════════════════════════════════

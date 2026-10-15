@@ -1,6 +1,8 @@
 # Cấu hình Google OAuth Client (đăng nhập Google)
 
-> Dành cho epic đăng nhập đa người dùng (`docs/specs/auth-multiuser.md`). Đây là phần **bạn tự làm trên Google Cloud Console**; code không làm thay được. Tên biến môi trường bên dưới là đề xuất theo Auth.js v5, sẽ chốt lại khi spec được duyệt.
+> Dành cho epic đăng nhập đa người dùng (`docs/specs/auth-multiuser.md`). Đây là phần **bạn tự làm trên Google Cloud Console**; code không làm thay được.
+>
+> **Google chỉ là MỘT trong hai cách đăng nhập.** Cách còn lại là tài khoản nội bộ (tên đăng nhập + mật khẩu, `PASSWORD_LOGIN_ENABLED`, mặc định bật; spec `docs/specs/admin-users-local-login.md`). **Nếu chỉ dùng tài khoản nội bộ thì bỏ qua các mục 2-5**: để trống `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET`, nút Google sẽ không hiện ở `/login`. Tạo admin đầu tiên bằng `make auth-create-local USERNAME=... EMAIL=... ROLE=admin` (in mật khẩu tạm một lần; đăng nhập xong web ép đổi).
 
 ## 1. Khi nào cần, khi nào không
 
@@ -60,7 +62,7 @@ GOOGLE_ALLOWED_HD=                          # để trống; chỉ điền nếu
 ADMIN_EMAILS=ban@congty.com                 # bootstrap admin đầu tiên (email, ngăn cách bằng dấu phẩy)
 ```
 
-`IMPORT_COMMIT_SECRET` sẽ bị bỏ khi epic này xong (quyền chuyển sang theo role). Danh sách biến chốt cuối nằm ở `docs/specs/auth-multiuser.md`.
+`IMPORT_COMMIT_SECRET` đã bị bỏ (quyền nhập/cào Jira nay theo role, core kiểm). Thêm `PASSWORD_LOGIN_ENABLED=true` (mặc định; đặt `false` để tắt tạm đăng nhập mật khẩu khi có sự cố dò mật khẩu, không ảnh hưởng Google/CLI/admin API; đặt giống nhau ở `api` và `web`). Danh sách biến chốt cuối nằm ở `docs/specs/auth-multiuser.md` và `docs/specs/admin-users-local-login.md`.
 
 - `AUTH_SECRET` mất hoặc đổi: mọi phiên đăng nhập hiện có bị vô hiệu (người dùng đăng nhập lại), dữ liệu không mất.
 - **Client secret là bí mật**: không dán vào chat, ticket, commit hay log. Nếu lỡ lộ, vào Credentials → client → **Reset secret** rồi cập nhật `.env`.
@@ -78,9 +80,9 @@ Một client có thể khai báo nhiều redirect URI, nhưng tách riêng theo 
 
 ## 6. Kiểm tra sau khi cấu hình
 
-1. Mở web, bấm **Đăng nhập với Google**, chọn tài khoản có trong `ADMIN_EMAILS`: phải vào được và có menu Quản trị.
+1. Mở web, bấm **Đăng nhập với Google**, chọn tài khoản có trong `ADMIN_EMAILS`: phải vào được và thấy mục **Quản trị** (Người dùng, Nhật ký) trên menu.
 2. Đăng nhập bằng một tài khoản Google **chưa được mời**: phải bị từ chối với thông báo rõ ràng, không tạo user.
-3. Admin mời thêm một email rồi đăng nhập bằng email đó: vào được với vai trò đã gán.
+3. Admin mời thêm một email ở **Quản trị → Người dùng** (có thể gán luôn "Tên trên Jira") rồi đăng nhập bằng email đó: vào được với vai trò đã gán.
 4. Vô hiệu hoá một user: lần gọi tiếp theo của họ phải bị chặn ngay, không chờ hết phiên.
 
 ## 7. Lỗi thường gặp
@@ -91,9 +93,10 @@ Một client có thể khai báo nhiều redirect URI, nhưng tách riêng theo 
 | `Error 403: access_denied` / "app is being tested" | Consent screen ở Testing và email chưa vào Test users | Thêm email vào Test users hoặc Publish |
 | `Error 401: invalid_client` | Sai Client ID/secret hoặc đã reset secret | Cập nhật lại `.env` rồi restart web |
 | Đăng nhập Google xong nhưng quay lại trang login | `AUTH_SECRET` thiếu/đổi, hoặc cookie bị chặn do chạy HTTP ở host không phải localhost | Dùng HTTPS; kiểm `AUTH_URL`, `AUTH_TRUST_HOST` |
-| Đăng nhập xong báo "chưa được mời" | Email chưa có trong danh sách mời (đúng thiết kế invite-only) | Admin thêm email ở trang Quản trị người dùng |
+| Đăng nhập xong báo "chưa được mời" | Email chưa có trong danh sách mời (đúng thiết kế invite-only) | Admin thêm email ở **Quản trị → Người dùng → Thêm người dùng** (tab Google) |
 
 ## 8. Liên quan
 
-- Spec: `docs/specs/auth-multiuser.md`
+- Spec: `docs/specs/auth-multiuser.md`, `docs/specs/admin-users-local-login.md`
+- API đăng nhập và quản trị: `docs/API_REFERENCE.md` mục 9
 - Hạ tầng và deploy: `docs/PROXMOX_DEPLOY.md`, `docs/PROXMOX_OPERATIONS.md`

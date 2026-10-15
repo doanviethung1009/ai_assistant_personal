@@ -55,6 +55,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Web chuyển claim Google đã xác minh để đăng nhập (invite-only)
+         * @description Chỉ tin được khi đi cùng `X-API-Key` của web. 403 với `code` ∈ {not_invited, disabled, email_unverified, hd_not_allowed, account_mismatch}; thông báo chung, lý do thật nằm ở audit_log. 429 khi vượt giới hạn đăng nhập.
+         */
+        post: operations["login_api_v1_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/login/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Đăng nhập tài khoản nội bộ bằng tên đăng nhập hoặc email + mật khẩu
+         * @description Chỉ API key (web gọi từ Server Action). 200 trả `LoginResult` như `/auth/login`, web ký JWT. Mọi thất bại (không có tài khoản, sai mật khẩu, đang khoá, bị khoá, mật khẩu tạm hết hạn) đều 403 `invalid_credentials` cùng một thông báo. 403 `password_login_disabled` khi công tắc PASSWORD_LOGIN_ENABLED=false; 429 khi vượt giới hạn.
+         */
+        post: operations["login_password_api_v1_auth_login_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hồ sơ và quyền của tôi */
+        get: operations["get_me_api_v1_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/me/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tự đổi mật khẩu (tài khoản nội bộ)
+         * @description Được phép cả khi đang bị ép đổi mật khẩu. Thành công thì `session_version` tăng: mọi thiết bị khác bị đăng xuất. Sai mật khẩu hiện tại là 422 `current_password_invalid` (không phải 401, vì web coi 401 là hết phiên). 409 `not_local_account` với tài khoản Google; 422 `weak_password`; 429 sau 5 lần/15 phút.
+         */
+        post: operations["change_password_api_v1_me_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/agenda": {
         parameters: {
             query?: never;
@@ -123,7 +200,7 @@ export interface paths {
         put?: never;
         /**
          * Upsert hàng loạt task từ nguồn tích hợp (idempotent)
-         * @description Khớp theo (source, external_id) trên task còn sống; chỉ ghi scope=work, task personal trùng khoá bị bỏ qua (skipped_personal). Tối đa 1000 item, body tối đa 20 MB (413). Đòi header X-Import-Secret (403). `tags` được gộp, `description` chỉ điền khi task đang rỗng. `source` không được là `manual`.
+         * @description Khớp theo (source, external_id) trên task còn sống; chỉ ghi scope=work, task personal trùng khoá bị bỏ qua (skipped_personal). Tối đa 1000 item, body tối đa 20 MB (413). Đòi quyền `integration:sync` (403). `tags` được gộp, `description` chỉ điền khi task đang rỗng. `source` không được là `manual`.
          */
         post: operations["upsert_batch_api_v1_tasks_upsert_batch_post"];
         delete?: never;
@@ -181,7 +258,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Dọn task quá hạn trong thùng rác */
+        /**
+         * Dọn task quá hạn trong thùng rác
+         * @description Dọn toàn hệ thống theo chính sách lưu giữ, không phải quyền của riêng ai.
+         */
         post: operations["purge_expired_api_v1_tasks_trash_purge_post"];
         delete?: never;
         options?: never;
@@ -199,8 +279,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Xoá vĩnh viễn toàn bộ thùng rác
-         * @description Không chờ hết hạn. Không phục hồi lại được.
+         * Xoá vĩnh viễn thùng rác của tôi
+         * @description Chỉ xoá các task trong thùng rác mà người gọi được phép xoá. Không chờ hết hạn, không phục hồi lại được.
          */
         post: operations["empty_trash_api_v1_tasks_trash_empty_post"];
         delete?: never;
@@ -331,7 +411,7 @@ export interface paths {
         post?: never;
         /**
          * Xoá project
-         * @description Task thuộc project sẽ được gỡ liên kết (project_id = null), không bị xoá theo.
+         * @description Chỉ người tạo hoặc lead/admin. Task thuộc project sẽ được gỡ liên kết (project_id = null), không bị xoá theo.
          */
         delete: operations["delete_project_api_v1_projects__project_id__delete"];
         options?: never;
@@ -387,7 +467,7 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Xoá vĩnh viễn toàn bộ thùng rác note
+         * Xoá vĩnh viễn thùng rác note của tôi
          * @description Không chờ hết hạn. Không hoàn tác được.
          */
         post: operations["empty_note_trash_api_v1_notes_trash_empty_post"];
@@ -543,34 +623,11 @@ export interface paths {
         };
         /**
          * Thông tin hệ thống cho trang quản trị
-         * @description Config vận hành không nhạy cảm: version, environment, rate limit, thời hạn thùng rác, CORS origins. Yêu cầu X-API-Key như mọi endpoint khác dưới /api/v1 — không trả bất kỳ secret nào.
+         * @description Config vận hành không nhạy cảm: version, environment, rate limit, thời hạn thùng rác, CORS origins. Yêu cầu X-API-Key và quyền `system:read` (admin) — không trả bất kỳ secret nào.
          */
         get: operations["get_system_info_api_v1_system_info_get"];
         put?: never;
         post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/import/verify-secret": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Kiểm mật khẩu nhập (X-Import-Secret), không ghi gì
-         * @description Cho web xác minh mật khẩu THẬT trước khi tải URL (tới 20 MB) hay parse Excel.
-         *
-         *     Nếu chỉ kiểm cú pháp, người gọi Server Action giả chưa biết mật khẩu vẫn gây tốn
-         *     băng thông/CPU. Không đọc body, không chạm DB; 403 như mọi đường dùng mật khẩu nhập.
-         */
-        post: operations["verify_secret_api_v1_import_verify_secret_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -586,29 +643,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá) */
+        /** Nhập builder-data.json (GHI ĐÈ bản ghi đã có, không xoá; chỉ admin) */
         post: operations["import_datafile_api_v1_import_datafile_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/settings/current-users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Tên của User (dùng cho view=mine) */
-        get: operations["get_current_users_api_v1_settings_current_users_get"];
-        /**
-         * Ghi đè danh sách tên của User
-         * @description Tối đa 20 tên, mỗi tên 1..200 ký tự sau khi strip, loại trùng.
-         */
-        put: operations["put_current_users_api_v1_settings_current_users_put"];
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -622,11 +658,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** URL file đồng bộ đã lưu */
+        /** URL file đồng bộ đã lưu (cài đặt toàn cục, chỉ admin) */
         get: operations["get_sync_urls_api_v1_settings_sync_urls_get"];
         /**
-         * Ghi đè danh sách URL đồng bộ
-         * @description Tối đa 50 URL, chỉ https, host thuộc allowlist (Google Docs/Sheets/Drive, SharePoint/OneDrive + SYNC_URL_EXTRA_HOSTS). Chống SSRF: server sẽ fetch các URL này.
+         * Ghi đè danh sách URL đồng bộ (chỉ admin)
+         * @description Tối đa 50 URL, chỉ https, host thuộc allowlist (Google Docs/Sheets/Drive, SharePoint/OneDrive + SYNC_URL_EXTRA_HOSTS). Chống SSRF: server sẽ fetch các URL này. Link chia sẻ thường mang token trong query nên chỉ admin đọc/ghi.
          */
         put: operations["put_sync_urls_api_v1_settings_sync_urls_put"];
         post?: never;
@@ -682,10 +718,167 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Đồng bộ Jira theo yêu cầu (đòi X-Import-Secret)
-         * @description Kéo issue từ Jira về task (scope=work, source=jira), idempotent. `since` (ISO 8601, tuỳ chọn) chỉ lấy issue cập nhật gần đây. Tối đa 100 trang x 100 issue (chạm trần: truncated=true). 403 sai secret, 409 thiếu token hoặc đang có sync khác, 422 since/JQL sai hoặc host bị chặn (SSRF), 502/504 lỗi Jira (thông báo tự viết, không kèm nội dung Jira), 503 không giải mã được token.
+         * Đồng bộ Jira theo yêu cầu (đòi quyền integration:sync)
+         * @description Kéo issue từ Jira về task (scope=work, source=jira), idempotent. `assignee`/`reporter` (lặp, tối đa 20) lọc theo người, nối OR rồi AND với JQL kết nối. `since` (ISO 8601, tuỳ chọn) chỉ lấy issue cập nhật gần đây. Tối đa 100 trang x 100 issue (chạm trần: truncated=true). 403 thiếu quyền, 409 thiếu token hoặc đang có sync khác, 422 since/JQL sai, không có JQL lẫn alias Jira của người gọi, hoặc host bị chặn (SSRF), 502/504 lỗi Jira (thông báo tự viết, không kèm nội dung Jira), 503 không giải mã được token.
          */
         post: operations["sync_connection_api_v1_integrations__connection_id__sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Danh sách người dùng */
+        get: operations["list_users_api_v1_admin_users_get"];
+        put?: never;
+        /**
+         * Mời một email Google (trạng thái invited)
+         * @description `aliases` (tuỳ chọn): alias Jira gán ngay. Tên đang thuộc user khác bị bỏ qua và nằm trong `aliases_skipped` của response.
+         */
+        post: operations["invite_google_user_api_v1_admin_users_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/local": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Tạo tài khoản nội bộ kèm mật khẩu tạm (hiện MỘT lần)
+         * @description Trả `temporary_password` đúng một lần, header `Cache-Control: no-store`. Người dùng phải đổi mật khẩu ở lần đăng nhập đầu; mật khẩu tạm hết hạn sau 72 giờ.
+         */
+        post: operations["create_local_user_api_v1_admin_users_local_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Chi tiết một người dùng */
+        get: operations["get_user_api_v1_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Xoá cứng user chưa có dữ liệu
+         * @description 409: `has_data` (còn task/note, kể cả trong thùng rác: hãy khoá thay vì xoá), `self_lockout`, `last_admin`, `env_admin`.
+         */
+        delete: operations["delete_user_api_v1_admin_users__user_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Đổi role, trạng thái, tên, email hoặc tên đăng nhập
+         * @description 409: `self_lockout` (tự hạ role/tự khoá), `last_admin`, `env_admin` (email thuộc ADMIN_EMAILS), `email_exists`, `username_exists`, `not_local_account` (sửa email hoặc tên đăng nhập của tài khoản Google). `status=active` cho tài khoản Google chưa gắn `google_sub` được lưu thành `invited`.
+         */
+        patch: operations["update_user_api_v1_admin_users__user_id__patch"];
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/reset-password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Đặt lại mật khẩu tài khoản nội bộ (mật khẩu tạm hiện MỘT lần)
+         * @description Thu hồi mọi phiên của người đó và ép đổi mật khẩu. 409 `not_local_account` (tài khoản Google), `self_action` (tự đặt lại: dùng `/me/password`).
+         */
+        post: operations["reset_password_api_v1_admin_users__user_id__reset_password_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/unlock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mở khoá đăng nhập tạm (xoá bộ đếm sai và thời hạn khoá) */
+        post: operations["unlock_user_api_v1_admin_users__user_id__unlock_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/revoke-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Đăng xuất mọi thiết bị của người dùng */
+        post: operations["revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/users/{user_id}/aliases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Thay toàn bộ alias Jira của người dùng
+         * @description 409 `alias_taken` khi một tên đang thuộc user khác (detail có email người giữ).
+         */
+        put: operations["set_user_aliases_api_v1_admin_users__user_id__aliases_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/admin/audit-log": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Nhật ký, mới nhất trước */
+        get: operations["list_audit_log_api_v1_admin_audit_log_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -725,6 +918,30 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** AliasItem */
+        AliasItem: {
+            /** @default jira */
+            source: components["schemas"]["AliasSource"];
+            /** Alias */
+            alias: string;
+        };
+        /** AliasRead */
+        AliasRead: {
+            source: components["schemas"]["AliasSource"];
+            /** Alias */
+            alias: string;
+        };
+        /**
+         * AliasSource
+         * @description Hệ thống nguồn của một alias (tên trong Jira...). CHECK `ck_user_aliases_source_valid`.
+         * @enum {string}
+         */
+        AliasSource: "jira";
+        /** AliasesSet */
+        AliasesSet: {
+            /** Aliases */
+            aliases: components["schemas"]["AliasItem"][];
+        };
         /** AssigneeOption */
         AssigneeOption: {
             /** Name */
@@ -735,6 +952,56 @@ export interface components {
              */
             total: number;
         };
+        /**
+         * AuditAction
+         * @description Hành động được ghi vào `audit_log`.
+         *
+         *     CỐ Ý không có CHECK ở DB: danh sách sẽ tăng theo tính năng, mỗi lần thêm mà phải DROP/ADD
+         *     CHECK (và `alembic check` không bắt được nếu quên) thì rủi ro làm hỏng việc ghi nhật ký
+         *     cao hơn lợi ích. Service chỉ nhận enum này. `details` KHÔNG BAO GIỜ chứa token, cookie,
+         *     JWT, mã OAuth hay mật khẩu.
+         * @enum {string}
+         */
+        AuditAction: "login_success" | "login_denied" | "user_invited" | "user_updated" | "user_role_changed" | "user_status_changed" | "user_aliases_changed" | "sessions_revoked" | "import_committed" | "integration_created" | "integration_updated" | "integration_deleted" | "integration_synced" | "bootstrap_backfill" | "user_created" | "password_reset" | "password_changed" | "password_change_failed" | "login_locked" | "user_unlocked" | "user_deleted";
+        /** AuditRead */
+        AuditRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Action */
+            action: string;
+            /** Actor User Id */
+            actor_user_id: string | null;
+            /** Actor Email */
+            actor_email: string | null;
+            /** Target Type */
+            target_type: string | null;
+            /** Target Id */
+            target_id: string | null;
+            /** Target Email */
+            target_email: string | null;
+            /** Client Ip */
+            client_ip: string | null;
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            } | null;
+        };
+        /**
+         * AuthProvider
+         * @description Cách một tài khoản đăng nhập (bảng `users`). Một tài khoản chỉ có MỘT cách.
+         *
+         *     CÓ CHECK `ck_users_auth_provider_valid` ở DB (xem cảnh báo ở UserRole).
+         * @enum {string}
+         */
+        AuthProvider: "google" | "local";
         /** ComponentHealth */
         ComponentHealth: {
             /**
@@ -746,14 +1013,6 @@ export interface components {
             latency_ms?: number | null;
             /** Error */
             error?: string | null;
-        };
-        /**
-         * CurrentUsersBody
-         * @description Danh sách tên của chính User, dùng để lọc `view=mine`/`owner`.
-         */
-        CurrentUsersBody: {
-            /** Names */
-            names: string[];
         };
         /** EntityCounts */
         EntityCounts: {
@@ -811,6 +1070,17 @@ export interface components {
             old?: unknown;
             /** New */
             new?: unknown;
+        };
+        /** GoogleUserInvite */
+        GoogleUserInvite: {
+            /** Email */
+            email: string;
+            /** @default member */
+            role: components["schemas"]["UserRole"];
+            /** Name */
+            name?: string | null;
+            /** Aliases */
+            aliases?: string[];
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1004,6 +1274,91 @@ export interface components {
             /** Normalized */
             normalized: string;
         };
+        /** LocalUserCreate */
+        LocalUserCreate: {
+            /** Username */
+            username: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name?: string | null;
+            /** @default member */
+            role: components["schemas"]["UserRole"];
+            /** Aliases */
+            aliases?: string[];
+        };
+        /** LocalUserCreated */
+        LocalUserCreated: {
+            user: components["schemas"]["UserAdminRead"];
+            /** Temporary Password */
+            temporary_password: string;
+            /** Aliases Skipped */
+            aliases_skipped?: string[];
+        };
+        /**
+         * LoginRequest
+         * @description Claim đã được WEB xác minh với Google (chữ ký, aud, nonce), chuyển cho core.
+         *
+         *     Core không có cách tự kiểm id_token, nên endpoint này chỉ tin được khi đi cùng `X-API-Key`
+         *     của web (nằm trong server env của web, không xuống browser). KHÔNG nhận hay lưu id_token,
+         *     access_token, refresh_token.
+         */
+        LoginRequest: {
+            /** Google Sub */
+            google_sub: string;
+            /** Email */
+            email: string;
+            /** Email Verified */
+            email_verified: boolean;
+            /** Name */
+            name?: string | null;
+            /** Hd */
+            hd?: string | null;
+            /** Client Ip */
+            client_ip?: string | null;
+        };
+        /** LoginResult */
+        LoginResult: {
+            /**
+             * User Id
+             * Format: uuid
+             */
+            user_id: string;
+            role: components["schemas"]["UserRole"];
+            /** Session Version */
+            session_version: number;
+        };
+        /**
+         * MeRead
+         * @description Hồ sơ của người đang đăng nhập; web dùng `permissions` để ẩn/hiện, không so chuỗi role.
+         */
+        MeRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Name */
+            name: string | null;
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            /**
+             * Effective Timezone
+             * @description Múi giờ của server
+             */
+            effective_timezone: string;
+            /** Aliases */
+            aliases: components["schemas"]["AliasRead"][];
+            /** Permissions */
+            permissions: components["schemas"]["Permission"][];
+            auth_provider: components["schemas"]["AuthProvider"];
+            /** Username */
+            username: string | null;
+            /** Must Change Password */
+            must_change_password: boolean;
+        };
         /** NoteCreate */
         NoteCreate: {
             /**
@@ -1110,6 +1465,8 @@ export interface components {
             source: components["schemas"]["NoteSource"];
             /** External Id */
             external_id: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1203,6 +1560,20 @@ export interface components {
             /** Is Dangerous */
             is_dangerous?: boolean | null;
         };
+        /** Page[AuditRead] */
+        Page_AuditRead_: {
+            /** Items */
+            items: components["schemas"]["AuditRead"][];
+            /**
+             * Total
+             * @description Tổng số bản ghi khớp filter, không tính phân trang
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
         /** Page[IntegrationRead] */
         Page_IntegrationRead_: {
             /** Items */
@@ -1235,6 +1606,20 @@ export interface components {
         Page_TaskRead_: {
             /** Items */
             items: components["schemas"]["TaskRead"][];
+            /**
+             * Total
+             * @description Tổng số bản ghi khớp filter, không tính phân trang
+             */
+            total: number;
+            /** Limit */
+            limit: number;
+            /** Offset */
+            offset: number;
+        };
+        /** Page[UserAdminRead] */
+        Page_UserAdminRead_: {
+            /** Items */
+            items: components["schemas"]["UserAdminRead"][];
             /**
              * Total
              * @description Tổng số bản ghi khớp filter, không tính phân trang
@@ -1301,6 +1686,50 @@ export interface components {
             /** Projects */
             projects: components["schemas"]["ProjectParticipation"][];
         };
+        /** PasswordChange */
+        PasswordChange: {
+            /**
+             * Current Password
+             * Format: password
+             */
+            current_password: string;
+            /**
+             * New Password
+             * Format: password
+             */
+            new_password: string;
+        };
+        /**
+         * PasswordChanged
+         * @description `session_version` mới: web dùng nó (hoặc đăng nhập lại) để phiên hiện tại không chết.
+         */
+        PasswordChanged: {
+            /** Session Version */
+            session_version: number;
+        };
+        /**
+         * PasswordLoginRequest
+         * @description Đăng nhập tài khoản nội bộ. Web chuyển nguyên văn những gì người dùng gõ.
+         *
+         *     `password` là `SecretStr` để repr/log/dump không in giá trị. `identifier` có `@` thì so với
+         *     email, không có thì so với username; chỉ trong tài khoản `local`.
+         */
+        PasswordLoginRequest: {
+            /** Identifier */
+            identifier: string;
+            /**
+             * Password
+             * Format: password
+             */
+            password: string;
+            /** Client Ip */
+            client_ip?: string | null;
+        };
+        /**
+         * Permission
+         * @enum {string}
+         */
+        Permission: "task:read_work" | "task:write_any_work" | "team:read" | "integration:sync" | "integration:manage" | "project:write_any" | "data:import" | "user:manage" | "system:read";
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -1389,6 +1818,13 @@ export interface components {
             key: string;
             /** Is Archived */
             is_archived: boolean;
+            /** Owner Id */
+            owner_id?: string | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
             /**
              * Created At
              * Format: date-time
@@ -1542,7 +1978,7 @@ export interface components {
             environment: string;
             /**
              * Display Timezone
-             * @description Giá trị hiệu lực (cài đặt, hoặc mặc định)
+             * @description Múi giờ của server (env DISPLAY_TIMEZONE)
              */
             display_timezone: string;
             /** Trash Retention Days */
@@ -1610,6 +2046,8 @@ export interface components {
             description: string | null;
             /** Assignee */
             assignee: string | null;
+            /** Reporter */
+            reporter: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -1635,6 +2073,8 @@ export interface components {
             external_id: string | null;
             /** External Url */
             external_url: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1650,6 +2090,16 @@ export interface components {
              * @description Khác null nghĩa là đang ở trong thùng rác
              */
             deleted_at?: string | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
+            /**
+             * Can Delete
+             * @default false
+             */
+            can_delete: boolean;
             /** Events */
             events?: components["schemas"]["TaskEventRead"][];
             /** Is Overdue */
@@ -1703,6 +2153,8 @@ export interface components {
             description: string | null;
             /** Assignee */
             assignee: string | null;
+            /** Reporter */
+            reporter: string | null;
             status: components["schemas"]["TaskStatus"];
             priority: components["schemas"]["TaskPriority"];
             /** Project Id */
@@ -1728,6 +2180,8 @@ export interface components {
             external_id: string | null;
             /** External Url */
             external_url: string | null;
+            /** Owner Id */
+            owner_id?: string | null;
             /**
              * Created At
              * Format: date-time
@@ -1743,6 +2197,16 @@ export interface components {
              * @description Khác null nghĩa là đang ở trong thùng rác
              */
             deleted_at?: string | null;
+            /**
+             * Can Edit
+             * @default false
+             */
+            can_edit: boolean;
+            /**
+             * Can Delete
+             * @default false
+             */
+            can_delete: boolean;
             /** Is Overdue */
             readonly is_overdue: boolean;
             /**
@@ -1870,6 +2334,8 @@ export interface components {
             description?: string | null;
             /** Assignee */
             assignee?: string | null;
+            /** Reporter */
+            reporter?: string | null;
             /** @default todo */
             status: components["schemas"]["TaskStatus"];
             /** @default medium */
@@ -1938,10 +2404,15 @@ export interface components {
          * @description Góc nhìn lọc theo scope cho /tasks, /agenda, /stats.
          *
          *     `ALL` là mặc định để client cũ không đổi hành vi. `MINE` là một view tính từ
-         *     scope và assignee (không phải cột): xem `_view_clause` trong task_service.
+         *     scope, assignee và người gọi (không phải cột): xem `access.task_view_clause`.
          * @enum {string}
          */
         TaskView: "all" | "mine" | "personal" | "work";
+        /** TemporaryPassword */
+        TemporaryPassword: {
+            /** Temporary Password */
+            temporary_password: string;
+        };
         /** TimeLogRequest */
         TimeLogRequest: {
             /**
@@ -2000,6 +2471,117 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** UserAdminRead */
+        UserAdminRead: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Username */
+            username: string | null;
+            /** Name */
+            name: string | null;
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            auth_provider: components["schemas"]["AuthProvider"];
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Locked Until */
+            locked_until: string | null;
+            /** Failed Login Count */
+            failed_login_count: number;
+            /** Last Login At */
+            last_login_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Invited By */
+            invited_by: string | null;
+            /** Aliases */
+            aliases: components["schemas"]["AliasRead"][];
+            /** Is Env Admin */
+            is_env_admin: boolean;
+        };
+        /**
+         * UserAdminUpdate
+         * @description Ít nhất một trường. `email`/`username` chỉ áp cho tài khoản nội bộ.
+         */
+        UserAdminUpdate: {
+            role?: components["schemas"]["UserRole"] | null;
+            /** Status */
+            status?: ("active" | "disabled") | null;
+            /** Name */
+            name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Username */
+            username?: string | null;
+        };
+        /**
+         * UserInvited
+         * @description Response mời Google: `UserAdminRead` cộng `aliases_skipped`. Là lớp con nên client cũ
+         *     (chỉ đọc các trường của `UserAdminRead`) không bị phá.
+         */
+        UserInvited: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Username */
+            username: string | null;
+            /** Name */
+            name: string | null;
+            role: components["schemas"]["UserRole"];
+            status: components["schemas"]["UserStatus"];
+            auth_provider: components["schemas"]["AuthProvider"];
+            /** Must Change Password */
+            must_change_password: boolean;
+            /** Locked Until */
+            locked_until: string | null;
+            /** Failed Login Count */
+            failed_login_count: number;
+            /** Last Login At */
+            last_login_at: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Invited By */
+            invited_by: string | null;
+            /** Aliases */
+            aliases: components["schemas"]["AliasRead"][];
+            /** Is Env Admin */
+            is_env_admin: boolean;
+            /** Aliases Skipped */
+            aliases_skipped?: string[];
+        };
+        /**
+         * UserRole
+         * @description Vai trò của người dùng (bảng `users`).
+         *
+         *     Ba role cố định, quyền chi tiết khai ở `core/permissions.py` (không có bảng roles).
+         *     CẠM BẪY: có CHECK `ck_users_role_valid` và `alembic check` KHÔNG so CHECK; thêm giá trị mà
+         *     quên migration DROP/ADD CONSTRAINT thì INSERT bị DB từ chối.
+         * @enum {string}
+         */
+        UserRole: "admin" | "lead" | "member";
+        /**
+         * UserStatus
+         * @description Trạng thái tài khoản. `invited` = đã được mời, chưa đăng nhập lần nào (chưa có google_sub).
+         *
+         *     CÓ CHECK `ck_users_status_valid` ở DB (xem cảnh báo ở UserRole).
+         * @enum {string}
+         */
+        UserStatus: "invited" | "active" | "disabled";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -2084,15 +2666,132 @@ export interface operations {
             };
         };
     };
+    login_api_v1_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_password_api_v1_auth_login_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_me_api_v1_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MeRead"];
+                };
+            };
+        };
+    };
+    change_password_api_v1_me_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PasswordChanged"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_agenda_api_v1_tasks_agenda_get: {
         parameters: {
             query?: {
                 /** @description Mặc định là hôm nay theo timezone hiển thị */
                 reference_date?: string | null;
-                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                /** @description Lọc theo scope, luôn nằm TRONG phạm vi người gọi nhìn thấy (mọi task `work` và task `personal` của chính họ). `mine` = cá nhân của tôi + công việc giao cho alias của tôi (hoặc tôi tự tạo, không giao ai, không đến từ tích hợp). Server tự suy 'của tôi' từ người đăng nhập, client không chọn được. Mặc định `all`. */
                 view?: components["schemas"]["TaskView"];
-                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
-                owner?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -2124,10 +2823,8 @@ export interface operations {
         parameters: {
             query?: {
                 reference_date?: string | null;
-                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                /** @description Lọc theo scope, luôn nằm TRONG phạm vi người gọi nhìn thấy (mọi task `work` và task `personal` của chính họ). `mine` = cá nhân của tôi + công việc giao cho alias của tôi (hoặc tôi tự tạo, không giao ai, không đến từ tích hợp). Server tự suy 'của tôi' từ người đăng nhập, client không chọn được. Mặc định `all`. */
                 view?: components["schemas"]["TaskView"];
-                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
-                owner?: string[] | null;
             };
             header?: never;
             path?: never;
@@ -2194,10 +2891,7 @@ export interface operations {
     upsert_batch_api_v1_tasks_upsert_batch_post: {
         parameters: {
             query?: never;
-            header?: {
-                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
-                "X-Import-Secret"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -2338,10 +3032,8 @@ export interface operations {
                 assignee?: string | null;
                 /** @description Gồm cả done và cancelled */
                 include_closed?: boolean;
-                /** @description Lọc theo scope. `mine` = cá nhân + công việc giao cho `owner` (hoặc không giao ai và không đến từ tích hợp). Mặc định `all` để client cũ không đổi. */
+                /** @description Lọc theo scope, luôn nằm TRONG phạm vi người gọi nhìn thấy (mọi task `work` và task `personal` của chính họ). `mine` = cá nhân của tôi + công việc giao cho alias của tôi (hoặc tôi tự tạo, không giao ai, không đến từ tích hợp). Server tự suy 'của tôi' từ người đăng nhập, client không chọn được. Mặc định `all`. */
                 view?: components["schemas"]["TaskView"];
-                /** @description Tên assignee của User, lặp lại để chọn nhiều. Chỉ với view=mine. */
-                owner?: string[] | null;
                 limit?: number;
                 offset?: number;
                 sort_by?: "created_at" | "updated_at" | "due_at" | "priority" | "title" | "scheduled_for";
@@ -3180,36 +3872,6 @@ export interface operations {
             };
         };
     };
-    verify_secret_api_v1_import_verify_secret_post: {
-        parameters: {
-            query?: never;
-            header?: {
-                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
-                "X-Import-Secret"?: string | null;
-            };
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
     import_datafile_api_v1_import_datafile_post: {
         parameters: {
             query?: {
@@ -3219,13 +3881,10 @@ export interface operations {
                 expect_replaced?: number | null;
                 /** @description Bắt buộc khi dry_run=false: `file_sha256` trong báo cáo dry-run. Chứng minh file nhập thật chính là file đã kiểm tra, không chỉ trùng số lượng. */
                 expect_sha256?: string | null;
-                /** @description false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè (đếm `skipped_personal`). true: cho phép ghi đè cả task cá nhân. */
+                /** @description false (mặc định): task đang `personal` trong DB KHÔNG bị file ghi đè (đếm `skipped_personal`). true: cho phép ghi đè task cá nhân CỦA CHÍNH người nhập; dữ liệu riêng của người khác luôn được bảo vệ. */
                 include_personal?: boolean;
             };
-            header?: {
-                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
-                "X-Import-Secret"?: string | null;
-            };
+            header?: never;
             path?: never;
             cookie?: never;
         };
@@ -3272,59 +3931,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportReport"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_current_users_api_v1_settings_current_users_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CurrentUsersBody"];
-                };
-            };
-        };
-    };
-    put_current_users_api_v1_settings_current_users_put: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["CurrentUsersBody"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["CurrentUsersBody"];
                 };
             };
             /** @description Validation Error */
@@ -3527,11 +4133,10 @@ export interface operations {
                 since?: string | null;
                 /** @description Chỉ kéo task giao cho những người này (lặp tham số) */
                 assignee?: string[] | null;
+                /** @description Kéo cả issue do những người này báo cáo (OR với assignee) */
+                reporter?: string[] | null;
             };
-            header?: {
-                /** @description Bắt buộc khi dry_run=false: mật khẩu nhập dữ liệu (IMPORT_COMMIT_SECRET). */
-                "X-Import-Secret"?: string | null;
-            };
+            header?: never;
             path: {
                 connection_id: string;
             };
@@ -3546,6 +4151,365 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SyncResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_users_api_v1_admin_users_get: {
+        parameters: {
+            query?: {
+                q?: string | null;
+                role?: components["schemas"]["UserRole"] | null;
+                status?: components["schemas"]["UserStatus"] | null;
+                auth_provider?: components["schemas"]["AuthProvider"] | null;
+                locked?: boolean | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_UserAdminRead_"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    invite_google_user_api_v1_admin_users_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GoogleUserInvite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserInvited"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_local_user_api_v1_admin_users_local_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalUserCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalUserCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_user_api_v1_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_user_api_v1_admin_users__user_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_user_api_v1_admin_users__user_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UserAdminUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_password_api_v1_admin_users__user_id__reset_password_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemporaryPassword"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlock_user_api_v1_admin_users__user_id__unlock_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_user_sessions_api_v1_admin_users__user_id__revoke_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_aliases_api_v1_admin_users__user_id__aliases_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AliasesSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserAdminRead"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_audit_log_api_v1_admin_audit_log_get: {
+        parameters: {
+            query?: {
+                action?: components["schemas"]["AuditAction"] | null;
+                actor_user_id?: string | null;
+                target_id?: string | null;
+                since?: string | null;
+                until?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_AuditRead_"];
                 };
             };
             /** @description Validation Error */

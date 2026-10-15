@@ -21,6 +21,8 @@ dependencies = [
     "cryptography>=43,<47",
     # Kiểm JWT HS256 web->core (core/auth.py). Ghim algorithms=["HS256"] ở nơi gọi decode.
     "pyjwt>=2.9,<3.0",
+    # Băm mật khẩu tài khoản nội bộ bằng argon2id (core/passwords.py). Không dùng passlib.
+    "argon2-cffi>=23.1,<26",
     # Cố định danh sách múi giờ IANA theo lock file thay vì theo tzdata của base image
     # (zoneinfo, core/timezones.py). Không có gói này, image slim có thể thiếu /usr/share/zoneinfo.
     "tzdata>=2024.1",

@@ -13,12 +13,18 @@ import { syncUrlError } from "./sync-url-policy";
 import { DATA_SOURCE, trashRetentionDays, type WipeOptions } from "./store/types";
 import type {
   Agenda,
+  AliasItem,
+  AuditEntry,
+  GoogleUserInviteBody,
   HealthResponse,
   ImportReport,
   IntegrationConnection,
   IntegrationCreateBody,
   IntegrationSyncResult,
   IntegrationUpdateBody,
+  LocalUserCreateBody,
+  LocalUserCreated,
+  UserInvited,
   LoginClaims,
   LoginResult,
   MeRead,
@@ -27,6 +33,7 @@ import type {
   NoteSortField,
   NoteTrashResponse,
   Paged,
+  PasswordChanged,
   Project,
   PurgeResponse,
   Participation,
@@ -39,7 +46,10 @@ import type {
   TaskUpsertItem,
   TaskUpsertResult,
   TaskView,
+  TemporaryPassword,
   TrashResponse,
+  UserAdmin,
+  UserAdminUpdate,
 } from "./types";
 
 /**
@@ -113,8 +123,9 @@ async function local<T>(run: () => T): Promise<T> {
 
 // ── Đường mạng: core API ───────────────────────────────────────────────
 
-// Đường không được cache: trạng thái đồng bộ (integrations) và quyền/hồ sơ (me) phải luôn mới.
-const UNCACHED_PREFIXES = ["/api/v1/integrations", "/api/v1/me"];
+// Đường không được cache: trạng thái đồng bộ (integrations), quyền/hồ sơ (me) và quản trị (admin: PII, nhiều admin
+// thao tác cùng lúc) phải luôn mới.
+const UNCACHED_PREFIXES = ["/api/v1/integrations", "/api/v1/me", "/api/v1/admin"];
 
 function isUncached(path: string): boolean {
   return UNCACHED_PREFIXES.some(
@@ -247,6 +258,124 @@ export function coreLogin(claims: LoginClaims, clientIp: string | null): Promise
 /** Tự kiểm khoá chung web↔core ngay sau đăng nhập (auth.ts, signIn bước 4). Không cache. */
 export function coreProbeMe(session: SessionUser): Promise<MeRead> {
   return coreFetchRaw<MeRead>("/api/v1/me", undefined, session);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+//  Tài khoản nội bộ và quản trị người dùng (spec admin-users-local-login)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Đăng nhập bằng mật khẩu: web chuyển nguyên văn cho core, core so argon2id rồi trả `LoginResult`
+ * (web ký JWT như với Google). CHỈ gọi từ lib/password-login.ts (Credentials.authorize). Đi thẳng
+ * coreFetchRaw: không Bearer (chưa có phiên), không cache. Mật khẩu chỉ nằm trong body của lời
+ * gọi này, không vào URL, header hay thông báo lỗi.
+ */
+export function corePasswordLogin(body: {
+  identifier: string;
+  password: string;
+  client_ip: string | null;
+}): Promise<LoginResult> {
+  return coreFetchRaw<LoginResult>("/api/v1/auth/login/password", {
+    method: "POST",
+    body: JSON.stringify({
+      identifier: body.identifier,
+      password: body.password,
+      ...(body.client_ip ? { client_ip: body.client_ip } : {}),
+    }),
+  });
+}
+
+/** Tự đổi mật khẩu. Thành công: core tăng session_version, mọi phiên cũ (kể cả phiên này) chết. */
+export function changeMyPasswordApi(body: { current_password: string; new_password: string }): Promise<PasswordChanged> {
+  return coreFetch<PasswordChanged>("/api/v1/me/password", { method: "POST", body: JSON.stringify(body) });
+}
+
+export interface AdminUserListParams {
+  q?: string;
+  role?: string;
+  status?: string;
+  auth_provider?: string;
+  locked?: boolean;
+  page: number;
+}
+
+export const ADMIN_PAGE_SIZE = 50;
+
+function pageQuery(page: number): URLSearchParams {
+  const params = new URLSearchParams();
+  params.set("limit", String(ADMIN_PAGE_SIZE));
+  params.set("offset", String(Math.max(0, page - 1) * ADMIN_PAGE_SIZE));
+  return params;
+}
+
+/** `/api/v1/admin` nằm trong UNCACHED_PREFIXES: dữ liệu PII, hai admin thao tác cùng lúc phải thấy ngay. */
+export function listAdminUsersApi(params: AdminUserListParams): Promise<Paged<UserAdmin>> {
+  const query = pageQuery(params.page);
+  if (params.q) query.set("q", params.q);
+  if (params.role) query.set("role", params.role);
+  if (params.status) query.set("status", params.status);
+  if (params.auth_provider) query.set("auth_provider", params.auth_provider);
+  if (params.locked) query.set("locked", "true");
+  return coreFetch<Paged<UserAdmin>>(`/api/v1/admin/users?${query}`);
+}
+
+export function getAdminUserApi(id: string): Promise<UserAdmin> {
+  return coreFetch<UserAdmin>(`/api/v1/admin/users/${pathId(id)}`);
+}
+
+export function inviteGoogleUserApi(body: GoogleUserInviteBody): Promise<UserInvited> {
+  return coreFetch<UserInvited>("/api/v1/admin/users", { method: "POST", body: JSON.stringify(body) });
+}
+
+/** Trả kèm mật khẩu tạm HIỆN MỘT LẦN: caller không được log, cache hay đưa vào Server Component. */
+export function createLocalUserApi(body: LocalUserCreateBody): Promise<LocalUserCreated> {
+  return coreFetch<LocalUserCreated>("/api/v1/admin/users/local", { method: "POST", body: JSON.stringify(body) });
+}
+
+export function updateAdminUserApi(id: string, patch: UserAdminUpdate): Promise<UserAdmin> {
+  return coreFetch<UserAdmin>(`/api/v1/admin/users/${pathId(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+}
+
+export function resetUserPasswordApi(id: string): Promise<TemporaryPassword> {
+  return coreFetch<TemporaryPassword>(`/api/v1/admin/users/${pathId(id)}/reset-password`, { method: "POST" });
+}
+
+export function unlockUserApi(id: string): Promise<void> {
+  return coreFetch<void>(`/api/v1/admin/users/${pathId(id)}/unlock`, { method: "POST" });
+}
+
+export function revokeUserSessionsApi(id: string): Promise<void> {
+  return coreFetch<void>(`/api/v1/admin/users/${pathId(id)}/revoke-sessions`, { method: "POST" });
+}
+
+export function setUserAliasesApi(id: string, aliases: AliasItem[]): Promise<UserAdmin> {
+  return coreFetch<UserAdmin>(`/api/v1/admin/users/${pathId(id)}/aliases`, {
+    method: "PUT",
+    body: JSON.stringify({ aliases }),
+  });
+}
+
+export function deleteUserApi(id: string): Promise<void> {
+  return coreFetch<void>(`/api/v1/admin/users/${pathId(id)}`, { method: "DELETE" });
+}
+
+export interface AuditListParams {
+  action?: string;
+  actor_user_id?: string;
+  target_id?: string;
+  since?: string;
+  until?: string;
+  page: number;
+}
+
+export function listAuditLogApi(params: AuditListParams): Promise<Paged<AuditEntry>> {
+  const query = pageQuery(params.page);
+  if (params.action) query.set("action", params.action);
+  if (params.actor_user_id) query.set("actor_user_id", params.actor_user_id);
+  if (params.target_id) query.set("target_id", params.target_id);
+  if (params.since) query.set("since", params.since);
+  if (params.until) query.set("until", params.until);
+  return coreFetch<Paged<AuditEntry>>(`/api/v1/admin/audit-log?${query}`);
 }
 
 /**

@@ -11,7 +11,12 @@ import { getSessionUser } from "./session";
  * `requirePermission(...)` rồi `if (!auth.ok) return auth;`. tests/server-actions-guard.test.ts đỏ
  * nếu quên. Lớp phòng thủ khác: coreFetch không phiên thì không gọi core, và core đòi JWT.
  */
-export type ActionAuthCode = "unauthenticated" | "forbidden" | "session_expired" | "error";
+export type ActionAuthCode =
+  | "unauthenticated"
+  | "forbidden"
+  | "session_expired"
+  | "password_change_required"
+  | "error";
 
 /** Kết quả thất bại, tương thích kiểu `{ ok: false; error?: string }` của mọi action. */
 export interface AuthFailure {
@@ -31,6 +36,7 @@ const MESSAGES: Record<ActionAuthCode, string> = {
   unauthenticated: "Phiên đăng nhập đã hết hạn. Tải lại trang để đăng nhập lại.",
   session_expired: "Phiên đăng nhập đã bị thu hồi. Tải lại trang để đăng nhập lại.",
   forbidden: "Bạn không có quyền thực hiện thao tác này",
+  password_change_required: "Cần đổi mật khẩu trước khi tiếp tục. Tải lại trang để đổi mật khẩu.",
   error: "Không kiểm tra được quyền. Thử lại sau.",
 };
 
@@ -80,6 +86,8 @@ export function toActionAuthError(error: unknown): AuthFailure | null {
       return fail("session_expired");
     case "forbidden":
       return fail("forbidden");
+    case "password_change_required":
+      return fail("password_change_required");
     case "config":
       return { ok: false, code: "error", error: "Cấu hình web→core sai. Báo quản trị viên." };
     default:

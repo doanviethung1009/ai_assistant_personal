@@ -1,14 +1,17 @@
 import { headers } from "next/headers";
 import NextAuth from "next-auth";
+import Credentials from "next-auth/providers/credentials";
 import Google from "next-auth/providers/google";
 
 import { readAuthConfig } from "@/lib/auth-config";
 import { clientIpFrom } from "@/lib/client-ip";
+import { authorizePassword, verifySessionWithCore } from "@/lib/password-login";
 import { nextSessionToken } from "@/lib/session-token";
 import { safeCallbackPath } from "@/lib/redirect-safety";
 
 /**
- * Auth.js v5: đăng nhập Google, invite-only qua core. Phiên là cookie JWE (không adapter) chỉ chứa
+ * Auth.js v5: đăng nhập Google (invite-only qua core) và đăng nhập mật khẩu tài khoản nội bộ
+ * (Credentials, core xác thực mật khẩu, web chỉ ký JWT như với Google). Phiên là cookie JWE (không adapter) chỉ chứa
  * `uid` và `sv`. Mỗi lời gọi core web tự ký JWT 60 giây riêng (lib/core-jwt.ts).
  *
  * Cấu hình LƯỜI (hàm, không object): import file này không ném lỗi khi thiếu AUTH_* (DATA_SOURCE=file,
@@ -43,19 +46,36 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
     debug: false,
     pages: { signIn: "/login", error: "/login" },
     providers: [
-      Google({
-        clientId: cfg.googleId,
-        clientSecret: cfg.googleSecret,
-        // Không xin access_type=offline: không lưu refresh token Google, không gọi Google API sau đăng nhập.
-        authorization: {
-          params: {
-            prompt: "select_account",
-            scope: "openid email profile",
-            // `hd` chỉ gợi ý UI của Google; kiểm thật nằm ở callback signIn và ở core.
-            ...(cfg.allowedHd.length === 1 ? { hd: cfg.allowedHd[0] } : {}),
-          },
-        },
-      }),
+      // Google chỉ khai khi có ĐỦ AUTH_GOOGLE_ID/SECRET: triển khai chỉ dùng tài khoản nội bộ không cần OAuth client.
+      ...(cfg.googleEnabled
+        ? [
+            Google({
+              clientId: cfg.googleId,
+              clientSecret: cfg.googleSecret,
+              // Không xin access_type=offline: không lưu refresh token Google, không gọi Google API sau đăng nhập.
+              authorization: {
+                params: {
+                  prompt: "select_account",
+                  scope: "openid email profile",
+                  // `hd` chỉ gợi ý UI của Google; kiểm thật nằm ở callback signIn và ở core.
+                  ...(cfg.allowedHd.length === 1 ? { hd: cfg.allowedHd[0] } : {}),
+                },
+              },
+            }),
+          ]
+        : []),
+      // Công tắc PASSWORD_LOGIN_ENABLED=false: không khai provider thì /api/auth/callback/credentials 404-ish,
+      // kể cả khi ai đó POST thẳng bỏ qua form.
+      ...(cfg.passwordEnabled
+        ? [
+            Credentials({
+              id: "credentials",
+              credentials: { identifier: {}, password: {} },
+              // Không log `credentials`; lỗi là PasswordLoginError với mã cố định (lib/password-login.ts).
+              authorize: (credentials, request) => authorizePassword(credentials, request?.headers),
+            }),
+          ]
+        : []),
     ],
     session: { strategy: "jwt", maxAge: 7 * 24 * 60 * 60, updateAge: 24 * 60 * 60 },
     // Không log token/session/profile: chỉ tên lỗi.
@@ -65,7 +85,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
       debug: () => undefined,
     },
     callbacks: {
-      async signIn({ user, profile }) {
+      async signIn({ user, account, profile }) {
+        // Nhánh mật khẩu: core đã xác thực và authorize đã gắn uid/sv lên `user`; bỏ bước 1-3 của Google.
+        if (account?.provider === "credentials") {
+          if (typeof user.uid !== "string" || typeof user.sv !== "number") return "/login?error=denied";
+          const probe = await verifySessionWithCore(user.uid, user.sv);
+          return probe;
+        }
+        if (account?.provider !== "google") return "/login?error=denied";
+
         if (!profile || typeof profile.sub !== "string" || typeof profile.email !== "string") {
           return "/login?error=denied";
         }
@@ -76,7 +104,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
         }
 
         // Import lười: lib/api import lib/session import auth.ts (vòng), nên chỉ nạp khi cần.
-        const { coreLogin, coreProbeMe } = await import("@/lib/api");
+        const { coreLogin } = await import("@/lib/api");
         const { CoreApiError } = await import("@/lib/core-errors");
         let uid: string;
         let sv: number;
@@ -112,14 +140,8 @@ export const { handlers, auth, signIn, signOut } = NextAuth(() => {
 
         // Tự kiểm khoá chung: nếu CORE_JWT_SECRET của web lệch core thì dừng ở đây, không để
         // người dùng lặp vô hạn login → expired → login.
-        try {
-          await coreProbeMe({ uid, sv });
-        } catch (error) {
-          if (error instanceof CoreApiError && error.status === 401 && error.code === "token_invalid") {
-            return "/login?error=config";
-          }
-          return "/login?error=unavailable";
-        }
+        const probe = await verifySessionWithCore(uid, sv);
+        if (probe !== true) return probe;
 
         user.uid = uid;
         user.sv = sv;

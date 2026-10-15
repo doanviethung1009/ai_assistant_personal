@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { checkJiraBaseUrl } from "@/lib/jira-url-policy";
 import { isValidIssueKey, jqlQuote } from "@/lib/jira-issue-key";
+import { checkJqlLength, cleanName, cleanReporter } from "@/lib/text-safety";
 import { buildPeopleJql, parsePeopleRole, splitByRole } from "@/lib/jira-jql";
 import type {
   IntegrationConnection,
@@ -87,12 +88,10 @@ const JIRA_TOTAL_DEADLINE_MS = 5 * 60_000;
 const MAX_TITLE = 500;
 const MAX_REPORTER = 200;
 
-/** displayName của reporter (chỉ khoá này, KHÔNG đọc emailAddress/accountId: PII), cắt 200 ký tự hoặc null. */
+/** displayName của reporter (chỉ khoá này, KHÔNG đọc emailAddress/accountId: PII): làm sạch như jira_mapping.py, cắt 200 ký tự hoặc null. */
 function reporterName(fields: Record<string, any>): string | null {
   const raw = fields.reporter && typeof fields.reporter === "object" ? fields.reporter.displayName : null;
-  if (typeof raw !== "string") return null;
-  // eslint-disable-next-line no-control-regex
-  return raw.replace(/[\u0000-\u001f\u007f\u202a-\u202e\u2066-\u2069]/g, "").trim().slice(0, MAX_REPORTER) || null;
+  return cleanReporter(raw);
 }
 const MAX_DESCRIPTION = 32_000;
 
@@ -116,6 +115,7 @@ function parseAssignees(raw: unknown): string[] | null {
     const name = part.trim();
     if (!name) continue;
     if (name.length > 100 || /[\u0000-\u001f]/.test(name)) return null;
+    if (!cleanName(name)) continue; // chỉ NBSP/zero-width: coi là rỗng
     if (!out.includes(name)) out.push(name);
   }
   return out.length > 20 ? null : out;
@@ -209,7 +209,7 @@ export async function syncJiraAction(formData: FormData) {
     }
   } else {
     // Lấy task assign cho mình theo cài đặt Tên người dùng cá nhân (danh sách)
-    const storeUsers = engine.state().currentUsers || [];
+    const storeUsers = (engine.state().currentUsers || []).filter((u) => cleanName(String(u)) !== "");
     if (storeUsers.length > 0) {
       const usersStr = storeUsers.map(u => jqlQuote(String(u))).join(", ");
       jql = `assignee in (${usersStr}) ORDER BY updated DESC`;
@@ -239,6 +239,9 @@ export async function syncJiraAction(formData: FormData) {
       jql = `(${base}) AND updated >= -${minutes}m ORDER BY updated DESC`;
     }
   }
+
+  const jqlError = checkJqlLength(jql);
+  if (jqlError) return { ok: false, error: jqlError };
 
   const searchUrl = `${baseUrl}/rest/api/3/search/jql`;
   
