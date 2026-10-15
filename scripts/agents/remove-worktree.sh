@@ -56,7 +56,9 @@ cd "$MAIN_WT"
 # ═══════════════════════════════════════════════════════════════════════
 #  1. Kiểm tra worktree trước, để không xoá DB rồi mới phát hiện còn code dở
 # ═══════════════════════════════════════════════════════════════════════
-if [[ -n "$WT" && -d "$WT" ]]; then
+# Thư mục còn nhưng mất .git = lần chạy trước hỏng giữa chừng (git đã xoá
+# .git rồi mới gặp lỗi). Không còn gì để kiểm, bước 3 dọn nốt.
+if [[ -n "$WT" && -e "$WT/.git" ]]; then
   dirty="$(git -C "$WT" status --porcelain)"
   if [[ -n "$dirty" && $FORCE -eq 0 ]]; then
     echo "$dirty" | head -20 >&2
@@ -97,9 +99,26 @@ fi
 #  3. Worktree
 # ═══════════════════════════════════════════════════════════════════════
 if [[ -n "$WT" && -d "$WT" ]]; then
-  # --force ở đây chỉ để bỏ qua file bị gitignore (.env, data/); thay đổi
-  # thật đã được chặn ở bước 1 nếu không có --force của người dùng.
-  git worktree remove --force "$WT"
+  # Trên Linux, container chạy bằng root ghi file vào thư mục bind-mount
+  # (__pycache__, .pytest_cache, data/) với chủ là root, nên user thường không
+  # xoá được (gặp thật trên VM dev). Trả quyền lại bằng một container tạm.
+  # macOS (Docker Desktop/OrbStack) tự map quyền nên không vào nhánh này.
+  if [[ -n "$(find "$WT" ! -user "$(id -u)" -print -quit 2>/dev/null)" ]]; then
+    has_docker || die "trong $WT có file không thuộc user hiện tại; cần Docker để trả quyền rồi mới xoá được."
+    docker run --rm -v "$WT:/w" alpine:3 chown -R "$(id -u):$(id -g)" /w
+  fi
+  if [[ -e "$WT/.git" ]]; then
+    # --force ở đây chỉ để bỏ qua file bị gitignore (.env, data/); thay đổi
+    # thật đã được chặn ở bước 1 nếu không có --force của người dùng.
+    git worktree remove --force "$WT"
+  else
+    # Phần sót của lần chạy hỏng. rm -rf chỉ trên đường dẫn đúng dạng worktree
+    # của task, không bao giờ trên đường dẫn lạ.
+    case "$WT" in
+      "$WT_PATH"|*/.claude/worktrees/*) rm -rf -- "$WT" ;;
+      *) die "'$WT' không có .git và không phải đường dẫn worktree chuẩn của $TASK_ID. Xoá tay sau khi kiểm." ;;
+    esac
+  fi
   info "Đã xoá worktree $WT"
 else
   info "Không có worktree nào cho $TASK_ID."

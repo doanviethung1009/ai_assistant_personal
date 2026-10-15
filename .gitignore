@@ -50,6 +50,9 @@ Thumbs.db
 # không ai thêm ngoại lệ nhầm. Thư mục worktree nằm NGOÀI repo (../<repo>-T<N>)
 # nên không cần ignore.
 .env.worktree
+# Worktree do agent view của Claude Code tạo nằm TRONG repo; không ignore thì
+# `git add -A` ở checkout chính sẽ thêm chúng vào như gitlink.
+.claude/worktrees/
 
 # Claude Code: cài đặt cá nhân, không commit
 .claude/settings.local.json
