@@ -445,6 +445,46 @@ def _audit_user(
     )
 
 
+async def assign_initial_aliases(
+    session: AsyncSession,
+    user: User,
+    aliases: Iterable[str],
+    *,
+    actor_user_id: uuid.UUID | None = None,
+    via: str = "api",
+) -> tuple[list[str], list[str]]:
+    """Gán alias Jira cho user VỪA TẠO, trong transaction của caller; trả `(đã thêm, bỏ qua)`.
+
+    Tên đã thuộc user khác bị bỏ qua chứ không báo lỗi: việc tạo user không được hỏng vì một
+    alias, nhưng caller phải báo lại danh sách bỏ qua cho admin. Savepoint bọc phần ghi để một
+    vụ đua UNIQUE (người khác vừa lấy tên đó) chỉ làm mất alias, không làm rollback cả user.
+    Không có alias thì không ghi gì (kể cả audit).
+    """
+    names = _clean_names(aliases)
+    if not names:
+        return [], []
+    try:
+        async with session.begin_nested():
+            added, skipped = await add_aliases(session, user.id, AliasSource.JIRA, names)
+    except IntegrityError as exc:
+        if constraint_name(exc) != "uq_user_aliases_source_alias":
+            raise
+        added, skipped = [], names
+    _audit_user(
+        session,
+        AuditAction.USER_ALIASES_CHANGED,
+        user,
+        actor_user_id=actor_user_id,
+        details={
+            "source": AliasSource.JIRA.value,
+            "added": len(added),
+            "skipped": len(skipped),
+            "via": via,
+        },
+    )
+    return added, skipped
+
+
 # ═══════════════════════════════════════════════════════════════════════
 #  Tạo, sửa, xoá
 # ═══════════════════════════════════════════════════════════════════════

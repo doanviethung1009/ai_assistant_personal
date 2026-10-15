@@ -28,6 +28,7 @@ from app.schemas.admin import (
     TemporaryPassword,
     UserAdminRead,
     UserAdminUpdate,
+    UserInvited,
 )
 from app.schemas.common import Page
 from app.schemas.user import AliasRead
@@ -98,17 +99,25 @@ async def list_users(
 
 @router.post(
     "/users",
-    response_model=UserAdminRead,
+    response_model=UserInvited,
     status_code=201,
     summary="Mời một email Google (trạng thái invited)",
+    description=(
+        "`aliases` (tuỳ chọn): alias Jira gán ngay. Tên đang thuộc user khác bị bỏ qua và nằm "
+        "trong `aliases_skipped` của response."
+    ),
 )
 async def invite_google_user(
     session: SessionDep, admin: CurrentUserDep, payload: GoogleUserInvite
-) -> UserAdminRead:
+) -> UserInvited:
     user = await user_service.invite_user(
         session, payload.email, payload.role, name=payload.name, actor_user_id=admin.id
     )
-    return _read(await user_service.get_user_fresh(session, user.id))
+    _, skipped = await user_service.assign_initial_aliases(
+        session, user, payload.aliases, actor_user_id=admin.id
+    )
+    fresh = _read(await user_service.get_user_fresh(session, user.id))
+    return UserInvited(**fresh.model_dump(), aliases_skipped=skipped)
 
 
 @router.post(
@@ -132,10 +141,14 @@ async def create_local_user(
         role=payload.role,
         actor_user_id=admin.id,
     )
+    _, skipped = await user_service.assign_initial_aliases(
+        session, user, payload.aliases, actor_user_id=admin.id
+    )
     response.headers["Cache-Control"] = _NO_STORE
     return LocalUserCreated(
         user=_read(await user_service.get_user_fresh(session, user.id)),
         temporary_password=temporary,
+        aliases_skipped=skipped,
     )
 
 

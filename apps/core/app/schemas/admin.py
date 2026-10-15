@@ -39,12 +39,38 @@ class UserAdminRead(BaseModel):
     is_env_admin: bool
 
 
+_ALIAS_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def clean_initial_aliases(values: list[str]) -> list[str]:
+    """Chuẩn hoá alias Jira gán lúc tạo user: strip, 1..200 ký tự, không ký tự điều khiển,
+    không trùng. Lỗi thì 422 ngay (khác `add_aliases`, nơi tên trùng NGƯỜI KHÁC chỉ bị bỏ qua)."""
+    cleaned: list[str] = []
+    for raw in values:
+        alias = raw.strip()
+        if not 1 <= len(alias) <= 200:
+            raise ValueError("alias phải dài 1-200 ký tự")
+        if _ALIAS_CONTROL_RE.search(alias):
+            raise ValueError("alias không được chứa ký tự điều khiển")
+        cleaned.append(alias)
+    if len(set(cleaned)) != len(cleaned):
+        raise ValueError("alias bị trùng")
+    return cleaned
+
+
 class GoogleUserInvite(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(min_length=3, max_length=320)
     role: UserRole = UserRole.MEMBER
     name: str | None = Field(default=None, max_length=200)
+    # Alias Jira gán ngay lúc mời; tên đang thuộc user khác bị bỏ qua (xem `aliases_skipped`).
+    aliases: list[str] = Field(default_factory=list, max_length=MAX_ALIASES)
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases_format(cls, value: list[str]) -> list[str]:
+        return clean_initial_aliases(value)
 
 
 class LocalUserCreate(BaseModel):
@@ -54,6 +80,12 @@ class LocalUserCreate(BaseModel):
     email: str = Field(min_length=3, max_length=320)
     name: str | None = Field(default=None, max_length=200)
     role: UserRole = UserRole.MEMBER
+    aliases: list[str] = Field(default_factory=list, max_length=MAX_ALIASES)
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases_format(cls, value: list[str]) -> list[str]:
+        return clean_initial_aliases(value)
 
     @field_validator("username")
     @classmethod
@@ -66,10 +98,19 @@ class LocalUserCreate(BaseModel):
         return clean
 
 
+class UserInvited(UserAdminRead):
+    """Response mời Google: `UserAdminRead` cộng `aliases_skipped`. Là lớp con nên client cũ
+    (chỉ đọc các trường của `UserAdminRead`) không bị phá."""
+
+    # Alias yêu cầu nhưng đã thuộc user khác (hoặc đua nhau), không được gán.
+    aliases_skipped: list[str] = Field(default_factory=list)
+
+
 class LocalUserCreated(BaseModel):
     user: UserAdminRead
     # Hiện MỘT lần. Không lưu ở đâu ngoài hash.
     temporary_password: str
+    aliases_skipped: list[str] = Field(default_factory=list)
 
 
 class TemporaryPassword(BaseModel):

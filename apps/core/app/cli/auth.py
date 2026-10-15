@@ -4,8 +4,10 @@ Chạy trong container `api` (orchestrator nối vào Makefile):
 
   python -m app.cli.auth bootstrap --owner <email-admin> [--dry-run]
   python -m app.cli.auth invite --email <email> [--role member|lead|admin] [--name <tên>]
+                               [--alias <tên>]... [--aliases "a,b"]
   python -m app.cli.auth token --email <email> [--ttl 60]
   python -m app.cli.auth create-local --username <u> --email <email> [--role ...] [--name <tên>]
+                               [--alias <tên>]... [--aliases "a,b"]
   python -m app.cli.auth reset-password (--email <email> | --username <u>)
   python -m app.cli.auth unlock (--email <email> | --username <u>)
   python -m app.cli.auth revoke --email <email>
@@ -47,6 +49,7 @@ from app.models.enums import (
     UserStatus,
 )
 from app.models.user import User
+from app.schemas.admin import clean_initial_aliases
 from app.services import audit_service, settings_service, user_service
 from app.services.errors import DomainError
 
@@ -181,7 +184,27 @@ async def _cmd_bootstrap(args: argparse.Namespace) -> int:
 # ═══════════════════════════════════════════════════════════════════════
 
 
+def _collect_aliases(args: argparse.Namespace) -> list[str]:
+    """Gộp `--alias` (lặp được) và `--aliases "a,b"`, kiểm như API (422 thì ở đây là mã 2).
+    Kiểm TRƯỚC khi mở transaction để alias dị dạng không để lại user nửa vời."""
+    raw = list(args.alias or [])
+    if args.aliases:
+        raw.extend(args.aliases.split(","))
+    try:
+        return clean_initial_aliases([n for n in raw if n.strip()])
+    except ValueError as exc:
+        raise CliError(str(exc)) from exc
+
+
+def _print_alias_result(added: list[str], skipped: list[str]) -> None:
+    for name in added:
+        print(f"Đã thêm alias {name!r}")
+    for name in skipped:
+        print(f"CẢNH BÁO: alias {name!r} đã thuộc user khác, bỏ qua")
+
+
 async def _cmd_invite(args: argparse.Namespace) -> int:
+    aliases = _collect_aliases(args)
     async with SessionFactory() as session:
         user = await user_service.invite(
             session, args.email, UserRole(args.role), name=args.name, invited_by=None
@@ -193,9 +216,13 @@ async def _cmd_invite(args: argparse.Namespace) -> int:
             target_id=user.id,
             details={"role": user.role.value, "via": "cli"},
         )
+        added, skipped = await user_service.assign_initial_aliases(
+            session, user, aliases, via="cli"
+        )
         await session.commit()
     print(f"Đã mời {user.email} (role {user.role.value}, id {user.id}). Người được mời đăng nhập")
     print("bằng Google với đúng địa chỉ này để kích hoạt.")
+    _print_alias_result(added, skipped)
     return EXIT_OK
 
 
@@ -339,6 +366,7 @@ async def _require_local_user(session: AsyncSession, args: argparse.Namespace) -
 
 
 async def _cmd_create_local(args: argparse.Namespace) -> int:
+    aliases = _collect_aliases(args)
     async with SessionFactory() as session:
         user, temporary = await user_service.create_local_user(
             session,
@@ -348,8 +376,13 @@ async def _cmd_create_local(args: argparse.Namespace) -> int:
             role=UserRole(args.role),
             via="cli",
         )
+        added, skipped = await user_service.assign_initial_aliases(
+            session, user, aliases, via="cli"
+        )
         await session.commit()
     print(f"Đã tạo tài khoản nội bộ {user.username} (role {user.role.value}, id {user.id}).")
+    # Alias in TRƯỚC mật khẩu: mật khẩu phải là dòng cuối (script lấy `tail -n 1`).
+    _print_alias_result(added, skipped)
     print("Mật khẩu tạm (CHỈ HIỆN MỘT LẦN, hết hạn sau 72 giờ, phải đổi ở lần đăng nhập đầu):")
     print(temporary)
     return EXIT_OK
@@ -380,6 +413,13 @@ async def _cmd_unlock(args: argparse.Namespace) -> int:
 # ═══════════════════════════════════════════════════════════════════════
 
 
+def _add_alias_args(cmd: argparse.ArgumentParser) -> None:
+    cmd.add_argument(
+        "--alias", action="append", default=[], help="gán alias Jira ngay (lặp lại được)"
+    )
+    cmd.add_argument("--aliases", default=None, help='gán nhiều alias Jira: "a,b"')
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m app.cli.auth", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
@@ -393,6 +433,7 @@ def build_parser() -> argparse.ArgumentParser:
     inv.add_argument("--email", required=True)
     inv.add_argument("--role", choices=[r.value for r in UserRole], default=UserRole.MEMBER.value)
     inv.add_argument("--name", default=None)
+    _add_alias_args(inv)
     inv.set_defaults(func=_cmd_invite)
 
     loc = sub.add_parser("create-local", help="tạo tài khoản nội bộ, in mật khẩu tạm một lần")
@@ -400,6 +441,7 @@ def build_parser() -> argparse.ArgumentParser:
     loc.add_argument("--email", required=True)
     loc.add_argument("--role", choices=[r.value for r in UserRole], default=UserRole.MEMBER.value)
     loc.add_argument("--name", default=None)
+    _add_alias_args(loc)
     loc.set_defaults(func=_cmd_create_local)
 
     for name, func, helptext in (

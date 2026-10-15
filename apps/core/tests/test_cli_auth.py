@@ -131,3 +131,61 @@ async def test_reset_password_and_unlock_audit_via_cli(anon_client: httpx.AsyncC
 
     missing = await _run("reset-password", "--username", "khong.co")
     assert missing.returncode == 2
+
+
+async def _aliases_of(username: str) -> list[str]:
+    async with SessionFactory() as s:
+        user = await s.scalar(select(User).where(User.username == username))
+        assert user is not None
+        await s.refresh(user, ["aliases"])
+        return sorted(a.alias for a in user.aliases)
+
+
+async def test_create_local_with_aliases_reports_added_and_skipped() -> None:
+    first = await _run(
+        "create-local",
+        "--username",
+        "alias.mot",
+        "--email",
+        "mot@test.local",
+        "--alias",
+        "Nguyễn A",
+    )
+    assert first.returncode == 0, first.stderr
+    out = await _run(
+        "create-local",
+        "--username",
+        "alias.hai",
+        "--email",
+        "hai@test.local",
+        "--alias",
+        "B.B",
+        "--alias",
+        "Nguyễn A",
+        "--aliases",
+        "C.C, D.D",
+    )
+    assert out.returncode == 0, out.stderr
+    temp = out.stdout.strip().splitlines()[-1]  # mật khẩu vẫn là dòng cuối, in một lần
+    assert len(temp) == 16 and temp.isalnum() and out.stdout.count(temp) == 1
+    assert "Đã thêm alias 'B.B'" in out.stdout and "Đã thêm alias 'D.D'" in out.stdout
+    assert "alias 'Nguyễn A' đã thuộc user khác" in out.stdout
+    assert await _aliases_of("alias.hai") == ["B.B", "C.C", "D.D"]
+    assert await _aliases_of("alias.mot") == ["Nguyễn A"]
+    audited = [a for a in await _audit("user_aliases_changed") if a.details["added"] == 3]
+    assert audited[0].details == {"source": "jira", "added": 3, "skipped": 1, "via": "cli"}
+
+
+async def test_invite_with_aliases_and_malformed_alias_creates_nothing() -> None:
+    out = await _run("invite", "--email", "moi@test.local", "--aliases", "M.M,N.N")
+    assert out.returncode == 0, out.stderr
+    async with SessionFactory() as s:
+        user = await s.scalar(select(User).where(User.email == "moi@test.local"))
+        assert user is not None
+        await s.refresh(user, ["aliases"])
+        assert sorted(a.alias for a in user.aliases) == ["M.M", "N.N"]
+
+    bad = await _run("invite", "--email", "hong@test.local", "--alias", "a\nb")
+    assert bad.returncode == 2 and "ký tự điều khiển" in bad.stderr
+    async with SessionFactory() as s:
+        assert await s.scalar(select(User).where(User.email == "hong@test.local")) is None

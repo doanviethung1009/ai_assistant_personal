@@ -53,7 +53,7 @@ async def _user(user_id: uuid.UUID) -> User:
 
 
 async def _create_local(
-    client: httpx.AsyncClient, admin: Persona, username: str = "c.nguyen", **extra: str
+    client: httpx.AsyncClient, admin: Persona, username: str = "c.nguyen", **extra: object
 ) -> httpx.Response:
     return await client.post(
         f"{USERS}/local",
@@ -245,6 +245,83 @@ async def test_invite_google_user(anon_client: httpx.AsyncClient) -> None:
     assert dup.status_code == 409 and dup.json()["code"] == "email_exists"
     invited = await _audit("user_invited")
     assert invited[0].details == {"role": "lead", "via": "api"}
+    # Không gửi aliases: như cũ, kèm aliases_skipped rỗng, không có audit alias.
+    assert body["aliases"] == [] and body["aliases_skipped"] == []
+    assert await _audit("user_aliases_changed") == []
+
+
+async def test_create_local_with_aliases_assigns_and_reports_skipped(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    admin = await _admin()
+    await create_persona("giu.ten@test.local", aliases=("Da Co Chu",))
+    resp = await _create_local(anon_client, admin, aliases=[" Cẩm N ", "Da Co Chu", "C.N"])
+    assert resp.status_code == 201, resp.text
+    assert resp.headers["cache-control"] == "no-store"
+    body = resp.json()
+    assert sorted(a["alias"] for a in body["user"]["aliases"]) == ["C.N", "Cẩm N"]
+    assert body["aliases_skipped"] == ["Da Co Chu"]
+    assert len(body["temporary_password"]) == 16
+    # Alias của người kia không bị cướp.
+    other = await anon_client.get(USERS, headers=admin.headers, params={"q": "giu.ten"})
+    assert [a["alias"] for a in other.json()["items"][0]["aliases"]] == ["Da Co Chu"]
+    audited = await _audit("user_aliases_changed")
+    assert len(audited) == 1
+    assert audited[0].details == {"source": "jira", "added": 2, "skipped": 1, "via": "api"}
+    assert body["temporary_password"] not in str(audited[0].details)
+    # Mật khẩu tạm chỉ trả đúng một lần: GET sau đó không có.
+    got = await anon_client.get(f"{USERS}/{body['user']['id']}", headers=admin.headers)
+    assert body["temporary_password"] not in got.text
+
+
+async def test_create_local_without_aliases_is_unchanged(anon_client: httpx.AsyncClient) -> None:
+    admin = await _admin()
+    resp = await _create_local(anon_client, admin)
+    assert resp.status_code == 201
+    assert resp.json()["user"]["aliases"] == [] and resp.json()["aliases_skipped"] == []
+    assert await _audit("user_aliases_changed") == []
+
+
+async def test_invite_google_with_aliases(anon_client: httpx.AsyncClient) -> None:
+    admin = await _admin()
+    await create_persona("giu.ten@test.local", aliases=("Da Co Chu",))
+    resp = await anon_client.post(
+        USERS,
+        headers=admin.headers,
+        json={"email": "moi@test.local", "aliases": ["Moi A", "Da Co Chu"]},
+    )
+    assert resp.status_code == 201, resp.text
+    body = resp.json()
+    assert [a["alias"] for a in body["aliases"]] == ["Moi A"]
+    assert body["aliases_skipped"] == ["Da Co Chu"]
+    assert body["status"] == "invited"
+    audited = await _audit("user_aliases_changed")
+    assert audited[0].details == {"source": "jira", "added": 1, "skipped": 1, "via": "api"}
+
+
+async def test_create_with_malformed_aliases_is_422_and_creates_nothing(
+    anon_client: httpx.AsyncClient,
+) -> None:
+    admin = await _admin()
+    bad_lists = (
+        ["ok", "ok"],
+        ["  "],
+        [""],
+        ["x" * 201],
+        ["a\nb"],
+        ["a\x00b"],
+        [f"a{i}" for i in range(21)],
+        "không-phải-list",
+    )
+    for bad in bad_lists:
+        local = await _create_local(anon_client, admin, aliases=bad)
+        assert local.status_code == 422, bad
+        invite = await anon_client.post(
+            USERS, headers=admin.headers, json={"email": "moi@test.local", "aliases": bad}
+        )
+        assert invite.status_code == 422, bad
+    listing = await anon_client.get(USERS, headers=admin.headers)
+    assert listing.json()["total"] == 1  # chỉ còn admin
 
 
 # ═══════════════════════════════════════════════════════════════════════
