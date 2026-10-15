@@ -40,11 +40,14 @@ type WithRequiredColor<T extends { color?: string | null }> = Omit<
 
 export type ProjectSummary = WithRequiredColor<Schemas["ProjectSummary"]>;
 /**
- * `can_edit`/`can_delete`: core tính theo người xem (api). Khai bù tới khi `openapi.d.ts` sinh lại có
- * field này; UI chỉ ẨN/KHOÁ khi giá trị là `false` (cục bộ không có field = được phép). Core vẫn chặn thật.
+ * `can_edit`/`can_delete`: core tính theo người xem nên schema sinh khai BẮT BUỘC, nhưng dữ liệu của
+ * chế độ file/memory (lib/store/**) không có người xem nên không có hai field này. Ép lại thành
+ * optional ở kiểu Task/Project dùng chung: UI chỉ ẨN/KHOÁ khi giá trị là `false` (vắng = được phép).
+ * Core vẫn là bên chặn thật.
  */
 type WithAccess = { can_edit?: boolean; can_delete?: boolean };
-export type Project = WithRequiredColor<Schemas["ProjectRead"]> & WithAccess;
+type OptionalAccess<T> = Omit<T, "can_edit" | "can_delete"> & WithAccess;
+export type Project = OptionalAccess<WithRequiredColor<Schemas["ProjectRead"]>>;
 
 /**
  * `deleted_at` ở Pydantic khai `Field(default=None, ...)`, nên
@@ -64,12 +67,12 @@ type WithRequiredDeletedAt<
  * `reporter` (tên hiển thị người tạo issue ở Jira) khai bù ở đây cho tới khi `openapi.d.ts` được sinh
  * lại từ backend. Omit + khai lại nên vẫn đúng sau khi sinh (không xung đột kiểu), và bỏ được khi tiện.
  */
-export type Task = Omit<WithRequiredDeletedAt<Schemas["TaskRead"]>, "reporter"> & {
+export type Task = OptionalAccess<Omit<WithRequiredDeletedAt<Schemas["TaskRead"]>, "reporter">> & {
   reporter: string | null;
-} & WithAccess;
+};
 export type TaskEvent = Schemas["TaskEventRead"];
 /** TaskDetail = Task + events. `events` cũng optional vì default_factory=list. */
-export type TaskDetail = WithRequiredDeletedAt<Schemas["TaskDetail"]> & {
+export type TaskDetail = OptionalAccess<WithRequiredDeletedAt<Schemas["TaskDetail"]>> & {
   events: TaskEvent[];
 };
 
@@ -240,35 +243,66 @@ export interface UpsertSummary extends TaskUpsertResult {
 }
 
 // ── Đăng nhập (spec web-authjs-login) ───────────────────────────────────
-// Khai tay vì lib/generated/openapi.d.ts chưa sinh lại từ core có /me và /auth/login (P0 `make gen-types`).
-// Sau khi sinh, thay bằng alias Schemas["MeRead"] / Schemas["LoginResult"] và xoá khối này.
+// Alias thuần từ schema sinh (openapi.d.ts đã có /me, /auth/login, /admin). Không viết tay field.
 
 /** Quyền của core: nguồn khai ở lib/permissions.ts. */
 export type PermissionName = Permission;
 
-export interface MeRead {
-  id: string;
-  email: string;
-  name: string | null;
-  role: "admin" | "member" | (string & {});
-  status: string;
-  /** Múi giờ của server (= DISPLAY_TZ), chỉ đọc. */
-  effective_timezone: string;
-  aliases: { source: string; alias: string }[];
-  permissions: PermissionName[];
-}
+export type MeRead = Omit<Schemas["MeRead"], "permissions"> & { permissions: PermissionName[] };
+export type UserRole = Schemas["UserRole"];
+export type UserStatus = Schemas["UserStatus"];
+export type AuthProvider = Schemas["AuthProvider"];
 
 /** Claim Google đã được web xác minh, gửi cho POST /auth/login (core đặt extra="forbid"). */
-export interface LoginClaims {
-  google_sub: string;
-  email: string;
-  email_verified: boolean;
-  name?: string;
-  hd?: string;
-}
+export type LoginClaims = Omit<Schemas["LoginRequest"], "client_ip">;
+export type LoginResult = Schemas["LoginResult"];
 
-export interface LoginResult {
-  user_id: string;
-  role: string;
-  session_version: number;
-}
+// ── Tài khoản nội bộ và quản trị người dùng (spec admin-users-local-login) ─────
+// Mật khẩu chỉ nằm trong các body GỬI ĐI; không schema ĐỌC nào có password/hash.
+export type PasswordChangeBody = Schemas["PasswordChange"];
+export type PasswordChanged = Schemas["PasswordChanged"];
+export type UserAdmin = Schemas["UserAdminRead"];
+export type UserAdminUpdate = Schemas["UserAdminUpdate"];
+export type GoogleUserInviteBody = Schemas["GoogleUserInvite"];
+export type LocalUserCreateBody = Schemas["LocalUserCreate"];
+export type LocalUserCreated = Schemas["LocalUserCreated"];
+export type TemporaryPassword = Schemas["TemporaryPassword"];
+export type AliasItem = Schemas["AliasItem"];
+export type AuditAction = Schemas["AuditAction"];
+export type AuditEntry = Schemas["AuditRead"];
+/** Mọi giá trị AuditAction (cho ô lọc /admin/audit). Thêm action ở core thì thêm ở đây; tsc bắt giá trị sai. */
+export const AUDIT_ACTIONS: readonly AuditAction[] = [
+  "login_success",
+  "login_denied",
+  "login_locked",
+  "user_invited",
+  "user_created",
+  "user_updated",
+  "user_role_changed",
+  "user_status_changed",
+  "user_aliases_changed",
+  "user_unlocked",
+  "user_deleted",
+  "sessions_revoked",
+  "password_reset",
+  "password_changed",
+  "password_change_failed",
+  "import_committed",
+  "integration_created",
+  "integration_updated",
+  "integration_deleted",
+  "integration_synced",
+  "bootstrap_backfill",
+];
+
+export const USER_ROLES: readonly UserRole[] = ["admin", "lead", "member"];
+export const USER_ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Quản trị viên",
+  lead: "Trưởng nhóm",
+  member: "Thành viên",
+};
+export const USER_STATUS_LABELS: Record<UserStatus, string> = {
+  invited: "Đã mời",
+  active: "Hoạt động",
+  disabled: "Đã khoá",
+};
