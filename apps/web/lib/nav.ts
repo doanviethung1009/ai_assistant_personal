@@ -16,6 +16,8 @@ import {
   Bot,
   BrainCircuit,
   Target,
+  UserCog,
+  ScrollText,
   type LucideIcon
 } from "lucide-react";
 
@@ -64,6 +66,12 @@ export const AI_NAV: NavItem[] = [
   { href: "/ai/multi-agent-trial", label: "Ví dụ Thực chiến", icon: Target },
   { href: "/ai/claude-operating-guide", label: "Claude Agent", icon: Bot },
   { href: "/ai/codex-operating-guide", label: "Codex Agent", icon: BrainCircuit },
+];
+
+/** Mục Quản trị: chỉ hiện khi có quyền user:manage (core vẫn chặn thật). */
+export const ADMIN_NAV: NavItem[] = [
+  { href: "/admin/users", label: "Người dùng", icon: UserCog, permission: "user:manage" },
+  { href: "/admin/audit", label: "Nhật ký", icon: ScrollText, permission: "user:manage" },
 ];
 
 export function isItemActive(href: string, pathname: string): boolean {

@@ -27,6 +27,14 @@ export function UserMenu({ me }: { me: MeRead }) {
           <Link href="/me" className="underline hover:text-[var(--color-ink)]">
             Hồ sơ
           </Link>
+          {me.auth_provider === "local" ? (
+            <>
+              {" · "}
+              <Link href="/me/password" className="underline hover:text-[var(--color-ink)]">
+                Đổi mật khẩu
+              </Link>
+            </>
+          ) : null}
         </p>
       </div>
       <form action={logoutAction}>

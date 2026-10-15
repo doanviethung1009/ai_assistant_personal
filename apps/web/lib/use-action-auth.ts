@@ -17,6 +17,11 @@ export function useActionAuth(): (result: { ok?: boolean; code?: string } | null
         window.location.assign("/auth/expired");
         return true;
       }
+      if (result.code === "password_change_required") {
+        // Layout sẽ thay nội dung bằng form đổi mật khẩu khi tải lại.
+        window.location.reload();
+        return true;
+      }
       return false;
     },
     [],

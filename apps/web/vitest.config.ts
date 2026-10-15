@@ -14,6 +14,9 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    // next-auth (ESM) import "next/server" không đuôi .js: Node thuần không resolve được, Vite thì được.
+    // Cần khi test chạm CredentialsSignin/AuthError thật (lib/password-login.ts, app/login/actions.ts).
+    server: { deps: { inline: [/next-auth/] } },
     include: ["tests/**/*.test.ts"],
   },
 });
