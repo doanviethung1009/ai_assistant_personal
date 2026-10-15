@@ -153,6 +153,8 @@ Spec note-tags đã CHỐT và Ownership tách rõ. Chạy backend-dev và front
 ```
 Orchestrator sẽ gộp lại và chạy `make gen-types` sau cùng.
 
+Muốn chạy **nhiều session Claude Code độc lập** (mỗi session một task, nhánh, worktree, DB và cổng riêng) thay vì subagent trong một session: xem [Quy trình đa session](agents/WORKFLOW.md) và các skill `start-task`, `finish-task`, `handoff`, `sync-main`, `cleanup-task`.
+
 ### 5.5. Tiếp tục ở session mới
 
 ```text

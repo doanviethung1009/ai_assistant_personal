@@ -26,6 +26,7 @@ Nhiều tài liệu nói về AI agent vì dự án dùng nhiều IDE và nhiề
 | Dùng Codex | `CODEX_OPERATING_GUIDE.md` | Chỉ liên quan khi dùng OpenAI Codex |
 | Biết cấu hình AI nằm ở đâu, công cụ nào đọc gì | **`AI_AGENT_GUIDE.md`** | Đã gộp tài liệu prompt mẫu cũ vào đây |
 | Biết AI phải làm gì khi bắt đầu session | **`NEW_AGENT_ONBOARDING.md`** và `AI_HANDOFF_STATE.md` | |
+| Chạy nhiều session song song không conflict (worktree, TASKS.md) | **`agents/WORKFLOW.md`** | Bảng điều phối: `TASKS.md` ở gốc repo, đọc bằng `scripts/agents/task-board.sh show` |
 | Viết prompt giao việc | `AI_AGENT_GUIDE.md` mục 3 (một agent) | Prompt cho nhiều agent: `MULTI_AGENT_SYSTEM.md` mục 5 |
 | Tự tạo thêm rule, skill, hook | `CREATE_AI_CUSTOMIZATIONS.md` | |
 | Biết hook ghi vết phiên Claude Code ghi gì, ở đâu, tắt thế nào | `CLAUDE_TRACE_HOOKS.md` | Thay AI log viết tay (đã gỡ) |
