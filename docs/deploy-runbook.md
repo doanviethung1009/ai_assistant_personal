@@ -382,10 +382,11 @@ cd /srv/builder-ai/prod
 
 make backup && ls -lh backups/ | tail -n 1   # bắt buộc: migration thêm bảng user, gán chủ dữ liệu
 
+git pull --ff-only   # kéo code TRƯỚC: gen-env.sh bản cũ chưa sinh CORE_JWT_SECRET/AUTH_SECRET
+
 make env-fill        # bổ sung CORE_JWT_SECRET, AUTH_SECRET, INTEGRATION_SECRET_KEY còn thiếu
 nano .env            # tự điền AUTH_URL và ADMIN_EMAILS (+ AUTH_GOOGLE_* nếu dùng Google)
 
-git pull --ff-only
 make prod-build
 make prod-up
 make migrate
@@ -485,8 +486,8 @@ trong `versions/`. Kiểm: `make history` xem revision hiện tại, `make ps` x
 Đừng chạy `make migration-init`: `versions/` đã có đủ migration trong git (xem Case 1).
 
 **#1b — Web hiện `/config-error`, hoặc đăng nhập xong bị đẩy về `localhost`.**
-`AUTH_URL` trống hoặc sai host. Đặt đúng URL người dùng gõ, rồi tạo lại web:
-`docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --force-recreate web`.
+`AUTH_URL` trống hoặc sai host. Đặt đúng URL người dùng gõ, rồi `make prod-up`
+(compose tự tạo lại web khi env đổi, và target này giữ nguyên overlay LAN).
 
 **#1c — Core không khởi động, log nhắc `CORE_JWT_SECRET`.** Thiếu hoặc < 32 ký tự. Chạy
 `make env-fill` rồi `make prod-up`.
