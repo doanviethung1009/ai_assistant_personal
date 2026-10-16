@@ -128,7 +128,14 @@ Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, 
 
 ### Gợi ý thêm (chưa làm, cần quyết định)
 
-- `WATCHPACK_POLLING: "true"` ở `docker-compose.yml` cần cho Docker Desktop trên Mac nhưng thừa trên VM Linux (inotify chạy được, polling tốn CPU). Có thể đọc từ `.env`: `WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}` rồi đặt `false` trong `.env` của dev. Đây là file dùng chung nên cần task riêng.
+- **`WATCHPACK_POLLING`** (`docker-compose.yml`, service `web`). Next.js dev server cần biết file nào vừa đổi để tự build lại (hot reload).
+  Có hai cách: **inotify** (mặc định, kernel Linux báo ngay khi file đổi, gần như không tốn CPU) và **polling** (`true`: cứ vài trăm ms
+  quét lại toàn bộ file để so sánh, tốn CPU liên tục, càng nhiều file càng tốn). Repo bật polling vì Docker Desktop trên Mac mount thư mục
+  từ macOS vào VM Linux ẩn, sự kiện inotify không đi qua được, thiếu polling thì hot reload trên Mac không chạy.
+  VM dev Proxmox là Linux thật, mã nguồn nằm ngay trên ổ của VM nên inotify chạy tốt, polling chỉ phí CPU của 2 nhân.
+  "Tắt trên VM dev" = sửa compose thành `WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}` (mặc định vẫn `true`, Mac không đổi) rồi đặt
+  `WATCHPACK_POLLING=false` trong `.env` của VM dev. Lợi ích vừa phải (thủ phạm chính của dev là thiếu RAM, đã xử lý bằng swap và nâng RAM); sửa compose
+  là file dùng chung nên cần task riêng.
 - Chưa có job backup Proxmox (mục 5.1): dev không cần, staging/prod nên có trước khi nhập dữ liệu thật.
 - Dọn build cache Docker trên dev (3.2 GB, 1.3 GB reclaimable): `ssh ai-dev 'docker builder prune -f'`.
 
