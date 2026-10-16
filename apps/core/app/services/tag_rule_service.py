@@ -71,11 +71,15 @@ async def record_change(
         )
         revived = list(result.scalars())
     # (b) Làm phẳng chuỗi: x -> old nay thành x -> new (hoặc x bị chặn nếu xoá old).
-    rewired = await session.execute(
+    rewired_result = await session.execute(
         update(TagRule)
         .where(TagRule.target_tag == old)
         .values(target_tag=new, updated_at=func.now())
+        .returning(TagRule.source_tag)
     )
+    # Ghi rõ tag nguồn nào bị nối lại: nếu chỉ ghi số lượng thì không biết alias của lead khác
+    # (x -> old) vừa thành x -> new hay bị chặn.
+    rewired = sorted(rewired_result.scalars())
     # (c) Rule chính; upsert vì đổi tên/xoá cùng một tag nguồn nhiều lần chỉ giữ quyết định cuối.
     stmt = pg_insert(TagRule).values(source_tag=old, target_tag=new, created_by_user_id=user.id)
     stmt = stmt.on_conflict_do_update(
@@ -103,7 +107,7 @@ async def record_change(
             "source_tag": old,
             "target_tag": new,
             "revived": revived,
-            "rewired": rewired.rowcount,
+            "rewired": rewired,
         },
     )
     return rule

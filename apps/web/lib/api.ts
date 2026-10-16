@@ -1125,7 +1125,8 @@ function mapTagChange(row: CoreTagChange): TagChangeResult {
 
 export async function renameGlobalTagApi(oldName: string, newName: string): Promise<TagChangeResult> {
   if (IS_LOCAL) {
-    local(() => engine.renameGlobalTag(oldName, newName));
+    // await: nếu engine ném lỗi thì Server Action phải thấy lỗi, không báo ok rồi để promise rơi.
+    await local(() => engine.renameGlobalTag(oldName, newName));
     return { tasks: 0, notes: 0, rule: null };
   }
   const row = await coreFetch<CoreTagChange>(tagPath(oldName), {
@@ -1137,7 +1138,7 @@ export async function renameGlobalTagApi(oldName: string, newName: string): Prom
 
 export async function deleteGlobalTagApi(name: string): Promise<TagChangeResult> {
   if (IS_LOCAL) {
-    local(() => engine.deleteGlobalTag(name));
+    await local(() => engine.deleteGlobalTag(name));
     return { tasks: 0, notes: 0, rule: null };
   }
   const row = await coreFetch<CoreTagChange>(tagPath(name), { method: "DELETE" });

@@ -18,7 +18,11 @@ export default async function TagsPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const raw = (await searchParams).rulesPage;
-  const requested = Math.max(1, Number.parseInt((Array.isArray(raw) ? raw[0] : raw) ?? "", 10) || 1);
+  // Trần 20_000 trang x 50 = offset 1_000_000, đúng trần core (le=1_000_000); vượt thì core trả 422.
+  const requested = Math.min(
+    20_000,
+    Math.max(1, Number.parseInt((Array.isArray(raw) ? raw[0] : raw) ?? "", 10) || 1),
+  );
 
   let view;
   try {
