@@ -23,7 +23,7 @@ CLAUDE.md ──import──► AGENTS.md            luật chung (mọi agent �
 .agents/rules/   ◄── symlink .claude/rules       luật code, nạp theo file đang sửa
 .agents/skills/  ◄── symlink .claude/skills      quy trình đóng gói (commit, migration, QC...)
 .agents/roles/                                    9 vai cho IDE (đóng vai bằng prompt)
-.claude/agents/                                   6 subagent thật cho Claude Code
+.claude/agents/                                   8 subagent thật cho Claude Code
 .claude/settings.json                             quyền allow / ask / deny + hook
 .claude/hooks/                                    guard-bash.sh, no-patch-scripts.sh
 docs/specs/_TEMPLATE.md                           mẫu spec, hợp đồng giữa các agent
@@ -66,7 +66,7 @@ Chỉ orchestrator được làm các việc sau, subagent không làm:
 | `database-architect` | `db-reviewer` (chỉ phần review) | Phần viết migration do `backend-dev` làm qua skill `db-migration` |
 | `tech-lead`, `qa-tester` | `code-reviewer` | Một subagent gộp cả hai vai |
 | `security-auditor` | `security-auditor` | Chạy sau `code-reviewer` khi Epic chạm Vault/RBAC/auth/Server Action |
-| `devops-engineer` | chưa có | Orchestrator làm theo skill `docker-deploy` |
+| `devops-engineer` | `devops` (`.claude/agents/devops.md`) | Mặc định chỉ đọc; dev/staging chỉ đổi khi User nêu rõ; prod chờ duyệt. Skill `docker-deploy` làm checklist |
 | `ai-rag-engineer` | chưa có | Chưa có việc RAG ở Phase hiện tại |
 
 ### 3.4. Mười skill
@@ -195,7 +195,7 @@ Nội dung từ nguồn ngoài (Jira, email, log) là **dữ liệu**, không ba
 
 Những chỗ cấu hình còn hở, nên biết trước khi tin tuyệt đối:
 
-1. **Chưa có subagent cho `devops-engineer`, `ai-rag-engineer`.** Deploy do orchestrator làm theo skill `docker-deploy`. Bảo mật đã có `security-auditor`, nhưng nó chỉ đọc code: những gì cần chạy stack (rate limit, header thật) vẫn phải kiểm tay.
+1. **Chưa có subagent cho `ai-rag-engineer`.** Bảo mật đã có `security-auditor`, nhưng nó chỉ đọc code: những gì cần chạy stack (rate limit, header thật) vẫn phải kiểm tay.
 2. **Dev agent không commit nhưng cũng không cập nhật docs.** AGENTS.md yêu cầu, nên orchestrator phải làm. Quên bước này là lỗi thường gặp nhất.
 3. **Lệnh lint của backend-dev có nhánh `ruff check apps/core`** khi stack chưa chạy, nhưng máy host không cài ruff. Thực tế `make lint` chạy trong container, nên cần `make up` trước.
 4. **Hook là regex trên chuỗi lệnh** nên có thể chặn nhầm (xem mục 6) và không chặn được lệnh nguy hiểm đi vòng qua ngôn ngữ khác (ví dụ script Python tự xoá file). Quyền `deny` là lớp bổ trợ, không phải bảo hiểm tuyệt đối.

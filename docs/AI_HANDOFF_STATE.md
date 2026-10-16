@@ -27,7 +27,7 @@
 
 ## 5. Cập nhật 08-10-2026: multi-agent, CI, backend
 
-- **Multi-agent (Claude Code):** 6 subagent trong `.claude/agents/` (architect, backend-dev, frontend-dev, db-reviewer, code-reviewer, security-auditor), hook an toàn, quyền allow/ask/deny. Đọc `docs/MULTI_AGENT_SYSTEM.md`; ví dụ chạy thật ở `docs/MULTI_AGENT_TRIAL.md`.
+- **Multi-agent (Claude Code):** 8 subagent trong `.claude/agents/` (architect, backend-dev, frontend-dev, db-reviewer, code-reviewer, security-auditor, work-tracker, devops), hook an toàn, quyền allow/ask/deny. Đọc `docs/MULTI_AGENT_SYSTEM.md`; ví dụ chạy thật ở `docs/MULTI_AGENT_TRIAL.md`.
 - **Backend đã sửa:** router `ai-logs` từng import module không tồn tại nên API không khởi động; thêm migration `ai_logs`, `tasks.assignee`, `notes.archived_at`. `TaskRead` nay trả `assignee`. `GET /tasks?assignee=` lọc thật.
 - **Test và CI:** `apps/core/tests/` (43 test, cần Postgres cho phần lớn), `make test` chạy trên DB riêng `<POSTGRES_DB>_test`, CI ở `.github/workflows/ci.yml`. Xem `docs/CI_AND_TESTING.md`.
 - **Tính năng Lưu trữ note** (nhánh thử `trial/multi-agent-note-archive`): chỉ hoạt động ở `DATA_SOURCE=api`; chế độ file JSON (mặc định của web) ẩn tính năng và trả 501. Spec: `docs/specs/note-archive.md`.
