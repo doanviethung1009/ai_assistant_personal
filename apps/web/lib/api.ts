@@ -1055,17 +1055,38 @@ export interface TagStat {
   noteCount: number;
 }
 
+/** Dạng core trả về (snake_case); web giữ camelCase cho cả đường local. */
+interface CoreTagStat {
+  name: string;
+  task_count: number;
+  note_count: number;
+}
+
+/**
+ * Tên tag đi vào path nên phải encode (tag có thể chứa `/`, `?`, `#`). Core chuẩn hoá lại tên
+ * (chữ thường, space → gạch ngang) nên không cần chuẩn hoá ở đây.
+ */
+function tagPath(name: string): string {
+  return `/api/v1/tags/${encodeURIComponent(name)}`;
+}
+
 export async function getTagsStatsApi(): Promise<TagStat[]> {
   if (IS_LOCAL) return local(() => engine.getTagsStats());
-  return []; // TBD core API
+  const rows = await coreFetch<CoreTagStat[]>("/api/v1/tags/stats");
+  return rows.map((row) => ({ name: row.name, taskCount: row.task_count, noteCount: row.note_count }));
 }
 
 export async function renameGlobalTagApi(oldName: string, newName: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.renameGlobalTag(oldName, newName));
+  await coreFetch<unknown>(tagPath(oldName), {
+    method: "PATCH",
+    body: JSON.stringify({ new_name: newName }),
+  });
 }
 
 export async function deleteGlobalTagApi(name: string): Promise<void> {
   if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
+  await coreFetch<unknown>(tagPath(name), { method: "DELETE" });
 }
 
 /**

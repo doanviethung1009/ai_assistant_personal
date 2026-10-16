@@ -13,6 +13,7 @@ from app.api.v1 import (
     projects,
     settings,
     system,
+    tags,
     tasks,
 )
 from app.core.security import require_api_key
@@ -38,6 +39,7 @@ active_router = APIRouter(dependencies=[Depends(require_password_current)])
 active_router.include_router(tasks.router)
 active_router.include_router(projects.router)
 active_router.include_router(notes.router)
+active_router.include_router(tags.router)
 active_router.include_router(system.router)
 active_router.include_router(imports.router)
 active_router.include_router(settings.router)
