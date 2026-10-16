@@ -15,7 +15,7 @@ router = APIRouter(prefix="/tags", tags=["tags"])
     summary="Mọi tag đang dùng kèm số task và note",
     description=(
         "Chỉ đếm bản ghi chưa xoá mềm mà user nhìn thấy: task work, task personal của mình, "
-        "note của mình. Số tag là số tag riêng biệt trong dữ liệu của user, nhỏ nên không phân trang."
+        "note của mình. Số tag riêng biệt nhỏ nên không phân trang."
     ),
 )
 async def tag_stats(session: SessionDep, user: CurrentUserDep) -> list[TagStat]:
