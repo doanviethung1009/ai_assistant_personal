@@ -32,6 +32,28 @@ Trang Hôm nay dựa vào **ngày dự định** để biết hôm nay bạn đ�
 vào **hạn chót** để cảnh báo quá hạn. Nếu bạn chỉ điền hạn chót mà không xếp lịch,
 task sẽ nằm ở nhóm "Sắp đến hạn trong 7 ngày, chưa xếp lịch" để bạn không quên.
 
+**Dải tóm tắt ở trang Task.** Phía trên danh sách có 6 thẻ: Đang mở, Quá hạn, Đang làm,
+Bị chặn, Gấp / Cao (chỉ tính task đang mở) và Xong 7 ngày. Số liệu theo mục xem bạn chọn
+(Của tôi, Công việc, Tất cả...), **không** đổi khi bạn dùng ô tìm kiếm hoặc bộ lọc bên
+dưới, vì đó là bức tranh chung của cả mục. Bên dưới 6 thẻ có mục **Tiến độ theo project**: mỗi project một thanh với số task xong/tổng và tỉ lệ %. Task đã huỷ không tính vào tổng, task không thuộc project nào gom vào dòng "Không có project", và chỉ hiện 8 project nhiều việc đang mở nhất. Nếu thống kê tải lỗi, dải này ẩn đi và danh
+sách vẫn hiển thị bình thường.
+
+**Tỉ lệ tham dự dự án (tab riêng trong Team).** Trang Giao việc / Team có hai tab: **Danh sách task** và **Tham dự dự án** (`/team/participation`). Tách riêng để lọc danh sách không phải tính lại dashboard và ngược lại. Ở tab Tham dự dự án: chọn một hoặc
+nhiều người bằng ô tích (số bên cạnh tên là tổng task công việc của người đó), bấm
+**Phân tích**. Với mỗi project bạn thấy từng người gánh bao nhiêu % task của project đó.
+Cách tính: task của người đó ÷ **tổng task của project** (kể cả người khác và task chưa
+giao), chỉ task công việc chưa huỷ, gồm cả đã xong. Vì mẫu số là cả project nên chọn thêm hay
+bớt người không làm các % khác đổi. Mỗi người có thêm số **xong** và **đang mở**; thanh chia hai đoạn, xanh lá là phần đã xong. Không tích ai nghĩa là xem tất cả. Lựa chọn nằm trên
+URL (`?people=An&people=Bình`) nên gửi link là người khác thấy đúng góc nhìn đó. Tab này
+không dùng bộ lọc của tab Danh sách.
+
+Có thể lọc **thời gian**: 7, 30, 90 ngày gần đây (gồm cả hôm nay), hoặc tự nhập khoảng ngày
+(chọn "Tuỳ chọn khoảng ngày"; bỏ trống một ô nghĩa là không giới hạn phía đó). Ngày tính theo
+múi giờ bạn đã chọn. Mốc thời gian là **ngày hoạt động**: ngày hoàn thành với task đã xong, ngày
+cập nhật gần nhất với task còn lại. Khi lọc, cả số task của từng người lẫn tổng task của project
+đều chỉ tính các task có hoạt động trong khoảng đó, nên % là phần việc của người đó **trong kỳ**.
+Danh sách người để tích vẫn đủ mọi người, kể cả ai không có hoạt động trong kỳ.
+
 ## Các trường khi nhập task
 
 Bấm **Chi tiết** để mở đầy đủ.

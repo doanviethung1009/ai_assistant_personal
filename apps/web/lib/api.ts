@@ -23,6 +23,7 @@ import type {
   Paged,
   Project,
   PurgeResponse,
+  Participation,
   Stats,
   SystemInfo,
   Task,
@@ -392,6 +393,23 @@ export async function getAgenda(
   if (opts.referenceDate) params.set("reference_date", opts.referenceDate);
   appendView(params, view, owners);
   return coreFetch<Agenda>(`/api/v1/tasks/agenda?${params.toString()}`);
+}
+
+/**
+ * Tỉ lệ tham dự dự án của nhóm. `people` rỗng = tất cả mọi người. `period` là khoảng NGÀY
+ * ĐỊA PHƯƠNG (YYYY-MM-DD, gồm cả ngày cuối) lọc theo ngày hoạt động của task.
+ * Luôn là task công việc, không phụ thuộc view của người dùng.
+ */
+export async function getParticipation(
+  people: string[] = [],
+  period: { from?: string; to?: string } = {},
+): Promise<Participation> {
+  if (IS_LOCAL) return local(() => engine.getParticipation(people, period));
+  const params = new URLSearchParams();
+  for (const name of people) params.append("person", name);
+  if (period.from) params.set("date_from", period.from);
+  if (period.to) params.set("date_to", period.to);
+  return coreFetch<Participation>(`/api/v1/tasks/participation?${params.toString()}`);
 }
 
 export async function getStats(opts: { view?: TaskView } = {}): Promise<Stats> {

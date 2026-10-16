@@ -96,6 +96,12 @@ export interface Agenda {
 }
 
 export type Stats = Schemas["TaskStatsResponse"];
+export type ProjectProgress = Schemas["ProjectProgress"];
+
+/** Dashboard tham dự dự án của nhóm (GET /tasks/participation). */
+export type Participation = Schemas["ParticipationResponse"];
+export type ProjectParticipation = Schemas["ProjectParticipation"];
+export type ParticipationMember = Schemas["ParticipationMember"];
 
 export interface TrashResponse {
   items: Task[];

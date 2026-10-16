@@ -92,6 +92,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/tasks/participation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Tỉ lệ tham dự dự án của nhóm
+         * @description Với mỗi project: mỗi người được chọn gánh bao nhiêu % task của project (task công việc, chưa huỷ). `person` lặp lại để chọn nhiều người; bỏ trống = tất cả. Mẫu số là tổng task của project nên % không đổi theo danh sách chọn. `date_from`/`date_to` lọc theo ngày hoạt động (xong: ngày hoàn thành, còn lại: ngày cập nhật), áp cho cả tử lẫn mẫu số.
+         */
+        get: operations["get_participation_api_v1_tasks_participation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/upsert-batch": {
         parameters: {
             query?: never;
@@ -746,6 +766,16 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** AssigneeOption */
+        AssigneeOption: {
+            /** Name */
+            name: string;
+            /**
+             * Total
+             * @description Tổng task công việc chưa huỷ của người này, mọi thời gian (không theo khoảng)
+             */
+            total: number;
+        };
         /** ComponentHealth */
         ComponentHealth: {
             /**
@@ -1282,6 +1312,62 @@ export interface components {
             /** Offset */
             offset: number;
         };
+        /**
+         * ParticipationMember
+         * @description Phần việc của một người trong một project.
+         */
+        ParticipationMember: {
+            /** Assignee */
+            assignee: string;
+            /**
+             * Count
+             * @description Số task (chưa huỷ) của người này trong project
+             */
+            count: number;
+            /**
+             * Done
+             * @description Trong `count`: số task đã xong
+             */
+            done: number;
+            /**
+             * Open
+             * @description Trong `count`: số task chưa xong (count - done)
+             */
+            open: number;
+            /**
+             * Percent
+             * @description count / tổng task của project, làm tròn
+             */
+            percent: number;
+        };
+        /**
+         * ParticipationResponse
+         * @description Dashboard tham dự dự án của nhóm (task công việc, chưa huỷ).
+         */
+        ParticipationResponse: {
+            /**
+             * Assignees
+             * @description Mọi người có task, để dựng ô chọn; ít việc nhất xếp cuối
+             */
+            assignees: components["schemas"]["AssigneeOption"][];
+            /**
+             * Selected
+             * @description Những người được phân tích (rỗng đầu vào = tất cả)
+             */
+            selected: string[];
+            /**
+             * Date From
+             * @description Đầu khoảng đã áp (ngày địa phương), null = không giới hạn
+             */
+            date_from?: string | null;
+            /**
+             * Date To
+             * @description Cuối khoảng đã áp (gồm cả ngày này), null = không giới hạn
+             */
+            date_to?: string | null;
+            /** Projects */
+            projects: components["schemas"]["ProjectParticipation"][];
+        };
         /** ProjectCreate */
         ProjectCreate: {
             /** Name */
@@ -1299,6 +1385,56 @@ export interface components {
              * @example OPS
              */
             key: string;
+        };
+        /**
+         * ProjectParticipation
+         * @description Một project và phần việc của từng người được chọn.
+         *
+         *     `total` là TỔNG task chưa huỷ của project trong khoảng thời gian đã chọn (kể cả task chưa
+         *     giao và của người không được chọn), nên % của một người không đổi khi bạn chọn thêm hay
+         *     bớt người khác.
+         */
+        ProjectParticipation: {
+            /** Project Id */
+            project_id: string | null;
+            /** Key */
+            key: string | null;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string | null;
+            /** Total */
+            total: number;
+            /** Members */
+            members: components["schemas"]["ParticipationMember"][];
+        };
+        /**
+         * ProjectProgress
+         * @description Tiến độ một project: tỉ lệ task đã xong trên tổng task (không tính task đã huỷ).
+         *
+         *     Task không thuộc project nào gom vào một dòng với `project_id = null`. Task đã huỷ bị loại
+         *     khỏi mẫu số vì việc huỷ không phải "chưa xong", nếu không project dọn backlog sẽ trông kém.
+         */
+        ProjectProgress: {
+            /** Project Id */
+            project_id: string | null;
+            /** Key */
+            key: string | null;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string | null;
+            /** Total */
+            total: number;
+            /** Done */
+            done: number;
+            /** Open */
+            open: number;
+            /**
+             * Percent Done
+             * @description done / total, làm tròn, 0 nếu total = 0
+             */
+            percent_done: number;
         };
         /** ProjectRead */
         ProjectRead: {
@@ -1742,6 +1878,11 @@ export interface components {
              * @default 0
              */
             trash_total: number;
+            /**
+             * By Project
+             * @description Tiến độ theo project, nhiều việc đang mở nhất lên trước (tối đa 50)
+             */
+            by_project?: components["schemas"]["ProjectProgress"][];
         };
         /**
          * TaskStatus
@@ -2093,6 +2234,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TaskStatsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_participation_api_v1_tasks_participation_get: {
+        parameters: {
+            query?: {
+                /** @description Tên assignee cần phân tích, lặp lại để chọn nhiều (tối đa 50) */
+                person?: string[] | null;
+                /** @description Từ ngày địa phương này (gồm cả ngày). Bỏ trống = từ đầu */
+                date_from?: string | null;
+                /** @description Đến ngày địa phương này (gồm cả ngày). Bỏ trống = đến nay */
+                date_to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ParticipationResponse"];
                 };
             };
             /** @description Validation Error */

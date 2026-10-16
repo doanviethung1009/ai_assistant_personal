@@ -20,7 +20,9 @@ import type {
   NoteKind,
   NoteSortField,
   Paged,
+  Participation,
   Project,
+  ProjectProgress,
   ProjectSummary,
   Stats,
   Task,
@@ -731,7 +733,137 @@ export function getStats(opts: ViewOptions): Stats {
     overdue_total: tasks.filter((t) => isOpen(t) && isPastDue(t, clock)).length,
     minutes_logged_today: store.minutesLoggedToday,
     trash_total: store.tasks.filter((t) => t.deleted_at !== null).length,
+    by_project: projectProgress(tasks, store.projects),
   };
+}
+
+/**
+ * Tỉ lệ tham dự dự án (chế độ file), cùng quy tắc với backend `get_participation`:
+ * task công việc chưa huỷ; mẫu số là TỔNG task của project (kể cả người không được chọn
+ * và task chưa giao) để % không nhảy theo danh sách chọn. `people` rỗng = tất cả.
+ */
+export function getParticipation(
+  people: string[],
+  period: { from?: string; to?: string } = {},
+): Participation {
+  const worked = aliveTasks().filter((t) => matchesView(t, "work", []) && t.status !== "cancelled");
+  // Ô chọn người luôn lấy từ TOÀN BỘ thời gian, để đổi khoảng không làm mất lựa chọn.
+  const everyone = new Map<string, number>();
+  for (const task of worked) {
+    if (task.assignee) everyone.set(task.assignee, (everyone.get(task.assignee) ?? 0) + 1);
+  }
+  // Ngày hoạt động: xong -> completed_at, còn lại -> updated_at (như backend). So sánh chuỗi
+  // YYYY-MM-DD theo múi giờ hiển thị, nên `to` tự gồm cả ngày cuối.
+  const activityDay = (t: StoredTask): string =>
+    localDay(t.status === "done" && t.completed_at ? t.completed_at : t.updated_at);
+  const tasks = worked.filter((t) => {
+    if (!period.from && !period.to) return true;
+    const day = activityDay(t);
+    return (!period.from || day >= period.from) && (!period.to || day <= period.to);
+  });
+  const byId = new Map(state().projects.map((p) => [p.id, p]));
+  const perPerson = new Map<string, number>();
+  const projects = new Map<
+    string | null,
+    { total: number; counts: Map<string, number>; done: Map<string, number> }
+  >();
+  for (const task of tasks) {
+    const key = task.project_id ?? null;
+    const proj = projects.get(key) ?? {
+      total: 0,
+      counts: new Map<string, number>(),
+      done: new Map<string, number>(),
+    };
+    proj.total += 1;
+    if (task.assignee) {
+      perPerson.set(task.assignee, (perPerson.get(task.assignee) ?? 0) + 1);
+      proj.counts.set(task.assignee, (proj.counts.get(task.assignee) ?? 0) + 1);
+      if (task.status === "done") {
+        proj.done.set(task.assignee, (proj.done.get(task.assignee) ?? 0) + 1);
+      }
+    }
+    projects.set(key, proj);
+  }
+  const chosen = people.length > 0 ? people : [...perPerson.keys()].sort();
+  const rows = [...projects.entries()]
+    .map(([id, proj]) => {
+      const meta = id ? byId.get(id) : undefined;
+      const members = chosen
+        .filter((name) => proj.counts.has(name))
+        .map((name) => {
+          const count = proj.counts.get(name) ?? 0;
+          const done = proj.done.get(name) ?? 0;
+          // Task huỷ đã bị loại ở trên nên phần còn lại là chưa xong.
+          return {
+            assignee: name,
+            count,
+            done,
+            open: count - done,
+            percent: Math.round((count * 100) / proj.total),
+          };
+        })
+        .sort((a, b) => b.count - a.count || a.assignee.localeCompare(b.assignee));
+      return {
+        project_id: id,
+        key: meta?.key ?? null,
+        name: meta?.name ?? "Không có project",
+        color: meta?.color ?? null,
+        total: proj.total,
+        members,
+      };
+    })
+    .filter((p) => p.members.length > 0)
+    .sort(
+      (a, b) =>
+        b.members.reduce((n, m) => n + m.count, 0) - a.members.reduce((n, m) => n + m.count, 0) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, MAX_PROJECT_ROWS);
+  return {
+    assignees: [...everyone.entries()]
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total || a.name.localeCompare(b.name)),
+    selected: chosen,
+    date_from: period.from ?? null,
+    date_to: period.to ?? null,
+    projects: rows,
+  };
+}
+
+/** Trần số dòng project trong thống kê, khớp MAX_PROJECT_ROWS ở backend. */
+const MAX_PROJECT_ROWS = 50;
+
+/**
+ * Tiến độ theo project (chế độ file), cùng quy tắc với backend `_project_progress`:
+ * mẫu số là task chưa huỷ, nhiều việc đang mở nhất lên trước, task không có project
+ * gom vào một dòng `project_id = null`.
+ */
+function projectProgress(tasks: StoredTask[], projects: Project[]): ProjectProgress[] {
+  const byId = new Map(projects.map((p) => [p.id, p]));
+  const groups = new Map<string | null, { total: number; done: number; open: number }>();
+  for (const task of tasks) {
+    if (task.status === "cancelled") continue;
+    const key = task.project_id ?? null;
+    const g = groups.get(key) ?? { total: 0, done: 0, open: 0 };
+    g.total += 1;
+    if (task.status === "done") g.done += 1;
+    if (isOpen(task)) g.open += 1;
+    groups.set(key, g);
+  }
+  return [...groups.entries()]
+    .map(([id, g]) => {
+      const project = id ? byId.get(id) : undefined;
+      return {
+        project_id: id,
+        key: project?.key ?? null,
+        name: project?.name ?? "Không có project",
+        color: project?.color ?? null,
+        ...g,
+        percent_done: g.total ? Math.round((g.done * 100) / g.total) : 0,
+      };
+    })
+    .sort((a, b) => b.open - a.open || b.total - a.total || a.name.localeCompare(b.name))
+    .slice(0, MAX_PROJECT_ROWS);
 }
 
 export interface ListOptions {

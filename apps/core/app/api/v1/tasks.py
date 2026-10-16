@@ -13,6 +13,7 @@ from app.models.enums import TaskPriority, TaskSource, TaskStatus
 from app.schemas.common import Page
 from app.schemas.task import (
     AgendaResponse,
+    ParticipationResponse,
     PurgeResponse,
     TaskCreate,
     TaskDetail,
@@ -82,6 +83,37 @@ async def get_stats(
     owners = task_service.validate_view_params(view, owner)
     data = await task_service.get_stats(session, reference_date, view=view, owners=owners)
     return TaskStatsResponse.model_validate(data)
+
+
+@router.get(
+    "/participation",
+    response_model=ParticipationResponse,
+    summary="Tỉ lệ tham dự dự án của nhóm",
+    description=(
+        "Với mỗi project: mỗi người được chọn gánh bao nhiêu % task của project (task công "
+        "việc, chưa huỷ). `person` lặp lại để chọn nhiều người; bỏ trống = tất cả. Mẫu số là "
+        "tổng task của project nên % không đổi theo danh sách chọn. `date_from`/`date_to` lọc "
+        "theo ngày hoạt động (xong: ngày hoàn thành, còn lại: ngày cập nhật), áp cho cả tử "
+        "lẫn mẫu số."
+    ),
+)
+async def get_participation(
+    session: SessionDep,
+    person: Annotated[
+        list[str] | None,
+        Query(description="Tên assignee cần phân tích, lặp lại để chọn nhiều (tối đa 50)"),
+    ] = None,
+    date_from: Annotated[
+        date | None, Query(description="Từ ngày địa phương này (gồm cả ngày). Bỏ trống = từ đầu")
+    ] = None,
+    date_to: Annotated[
+        date | None, Query(description="Đến ngày địa phương này (gồm cả ngày). Bỏ trống = đến nay")
+    ] = None,
+) -> ParticipationResponse:
+    people = task_service.validate_people(person)
+    task_service.validate_period(date_from, date_to)
+    data = await task_service.get_participation(session, people, date_from, date_to)
+    return ParticipationResponse.model_validate(data)
 
 
 def _require_import_secret(request: Request, import_secret: ImportSecretHeader = None) -> None:
