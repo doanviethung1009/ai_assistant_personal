@@ -462,6 +462,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "DOCKER_ARCHITECTURE.md"),
   },
   {
+    slug: "make-commands",
+    title: "Lệnh make: cấu hình & cách dùng",
+    description:
+      "Makefile định nghĩa ở đâu, cách chạy từng nhóm lệnh, sinh .env từ .env.example (make env), thêm lệnh mới.",
+    category: "7. DevOps & Triển khai",
+    file: path.join("docs", "MAKE_COMMANDS.md"),
+  },
+  {
     slug: "deployment-strategies",
     title: "Chiến lược Triển khai (Deploy)",
     description:
