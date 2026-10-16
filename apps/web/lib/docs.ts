@@ -515,6 +515,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "PROXMOX_OPERATIONS.md"),
   },
   {
+    slug: "prod-operations",
+    title: "Vận hành production",
+    description:
+      "Trạng thái VM prod, cách đặt tag phiên bản, lần go-live đầu (v1.0.0), deploy các lần sau theo main → uat → prod, rollback và ranh giới an toàn.",
+    category: "8. Proxmox & Server",
+    file: path.join("docs", "PROD_OPERATIONS.md"),
+  },
+  {
     slug: "vm-layout-recovery",
     title: "Bản đồ thư mục trên VM và khởi động lại sau reset",
     description:
