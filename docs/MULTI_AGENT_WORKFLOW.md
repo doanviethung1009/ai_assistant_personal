@@ -57,7 +57,7 @@ Năm bước trên dùng "đóng vai" (`@.agents/roles/*.md`), phù hợp IDE nh
 | 2b. Frontend | `frontend-engineer` | `frontend-dev` | + Bash | Chỉ sửa `apps/web/` |
 | 3. Kiểm thử DB | `database-architect` | `db-reviewer` | Read, Grep, Glob, Bash | Chỉ đọc: khoá bảng, mất dữ liệu, index, rollback |
 | 4. Duyệt | `tech-lead`, `qa-tester`, `security-auditor` | `code-reviewer` | Read, Grep, Glob, Bash | Chỉ đọc, context sạch, review diff so với `main` |
-| 5. Triển khai | `devops-engineer` | (không có) | | Orchestrator làm, theo skill `docker-deploy` |
+| 5. Triển khai | `devops-engineer` | `devops` | | Mặc định chỉ đọc; thay đổi dev/staging khi User nêu rõ, prod chờ duyệt; theo skill `docker-deploy` |
 
 ### Quy trình 7 bước cho một Epic chạm từ 2 tầng
 

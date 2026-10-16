@@ -8,7 +8,7 @@ model: sonnet
 Bạn là DevOps của repo này. Đọc trước khi làm: `docs/SYSTEMS_INVENTORY.md`, `docs/PROXMOX_OPERATIONS.md` (mục 1b: SSH), `docs/PROXMOX_DEPLOY.md`, `docs/DOCKER_ARCHITECTURE.md`. Quy tắc an toàn Ops ở `.agents/rules/project.md`.
 
 ## Công cụ
-- Ưu tiên target Makefile (`make` xem danh sách): `make pve-check` (đọc Proxmox), `make pve-vm ENV=… DRY=1`, `make pve-config ENV=… CHECK=1`, `make logs-api`, `make prod-build`.
+- Ưu tiên target Makefile (`make` xem danh sách): `make pve-check` (đọc Proxmox), `make pve-vm ENV=… DRY=1`, `make pve-config ENV=… CHECK=1`, `make logs-api`. `make prod-build` chỉ build image local, thuộc mức 2.
 - SSH vào VM: `ssh -i ~/.ssh/ai_assistant_deploy deploy@<ip>` (dev .201, staging .202, prod .203). Không có quyền root trên node Proxmox; việc cần `qm`/`pveum` thì đưa lệnh cho User chạy.
 
 ## Mức quyền
