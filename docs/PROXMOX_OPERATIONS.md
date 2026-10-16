@@ -18,7 +18,7 @@ VM, snapshot/backup, cập nhật, xoay token, xử lý sự cố. Cách dựng 
 | VM / ID | Vai trò | IP | RAM | Trạng thái |
 |---|---|---|---|---|
 | 100 `isec-vpn-gateway` | VPN gateway (**không thuộc dự án, không động vào**) | — | 2 GB | chạy, `onboot=1` |
-| 201 `ai-dev-01` | dev (nhánh `main`, hot reload) | 192.168.100.201 | 2.5 GB | chạy, Docker cài; stack dựng bằng `make up` |
+| 201 `ai-dev-01` | dev (nhánh `main`, hot reload) | 192.168.100.201 | 3.5 GB | chạy, Docker cài; stack dựng bằng `make up` |
 | 202 `ai-stg-01` | staging | 192.168.100.202 | 3 GB | chạy, Docker + stack đã deploy thử |
 | 203 `ai-prod-01` | prod | 192.168.100.203 | 5 GB | chạy, đã cấu hình Ansible, `protection=1`; chưa deploy stack |
 | 9000 `ubuntu-2404-tmpl` | template Ubuntu 24.04 cloud-init | — | — | template, không bật |
@@ -81,7 +81,7 @@ Host ai-dev ai-stg ai-prod
 
 | | dev 201 | staging 202 | prod 203 |
 |---|---|---|---|
-| CPU / RAM / disk | 2 nhân / 2.5 GB / 30 GB (dùng 33%) | 2 / 3 GB / 40 GB (17%) | 2 / 5 GB / 60 GB (5%) |
+| CPU / RAM / disk | 3 nhân / 3.5 GB / 30 GB (dùng 33%) | 2 / 3 GB / 40 GB (17%) | 2 / 5 GB / 60 GB (5%) |
 | Nhánh trên VM | `feat/local-login` (lệch quy ước `main`) | `main` (quy ước `uat`) | `prod` |
 | Stack | 4 container chạy, healthy | 4 container chạy, healthy | **không có container** (chưa deploy) |
 | RAM dùng thực | ~1.3 GB, `next-server` ~740 MB | ~0.8 GB | ~0.6 GB |
@@ -108,9 +108,9 @@ File sysctl: `/etc/sysctl.d/60-builder-tuning.conf` (Ansible quản lý, đừng
 Staging/prod không bị áp ngoài ý muốn nhờ cờ `tuning_enabled` mặc định `false`. Muốn áp: đặt `tuning_enabled: true` trong `host_vars/ai-stg-01.yml` rồi `make pve-config ENV=staging CHECK=1`, xem diff, chạy thật. Prod chỉ áp qua quy trình có duyệt.
 Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
 
-### Cần làm phía Proxmox (chưa áp dụng, chọn một trong hai cách)
+### Phía Proxmox: dev đã áp dụng 2026-10-16, prod chưa xác nhận
 
-Mục tiêu (User chốt 2026-10-16): dev 2.5 → 3.5 GB, 2 → 3 nhân, `--cpu host`; prod 5 → 4 GB. Bước đổi cấu hình VM bị hệ thống chặn khi agent tự chạy, nên cần User chạy hoặc cấp quyền rõ ràng.
+Mục tiêu (User chốt 2026-10-16): dev 2.5 → 3.5 GB, 2 → 3 nhân, `--cpu host`; prod 5 → 4 GB. Dev đã nâng (User chạy `qm`, đã kiểm: `nproc`=3, `free -m` total 3411 MB, stack Docker lên lại). Prod: `make pve-check` vẫn báo 5.0 GB, tức `qm set 203 --memory 4096` chưa chạy hoặc chưa tắt/bật prod. Agent tự gọi API ghi lên Proxmox bị bộ phân loại auto chặn, nên User chạy tay.
 
 **Cách A: chạy `qm` trong Shell của node** (hoặc `ssh root@192.168.100.252`, cần quyền root):
 
@@ -138,7 +138,7 @@ Cả hai cách cho cùng kết quả. Giữ nguyên tổng RAM: nâng dev 1 GB, 
 
 Tùy chọn thêm cho disk dev (rủi ro hơn, chưa nằm trong kế hoạch): `qm config 201 | grep -E 'scsi0|scsihw'` rồi `qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1`. Sửa đúng tên volume: gõ sai thì đĩa cũ thành `unused0`, VM không boot.
 
-Ngân sách RAM sau đổi: 2 (vpn) + 3.5 (dev) + 3 (stg) + 4 (prod) = 12.5 GB, bằng trước đây. Sau khi dev lên 3.5 GB có thể giảm swap
+Ngân sách RAM: 2 (vpn) + 3.5 (dev) + 3 (stg) + 5 (prod, chưa hạ) = 13.5 GB; hạ prod xuống 4 GB thì về 12.5 GB. Sau khi dev lên 3.5 GB có thể giảm swap
 dev về 1 GB (sửa `host_vars/ai-dev-01.yml`, chạy lại `make pve-config ENV=dev`; swap file cũ cần `swapoff` + xóa tay nếu thu nhỏ).
 Sau khi đổi, cập nhật cho khớp thực tế: `MEM`/`CORES` trong `infra/proxmox/scripts/pve-vm.sh` và bảng ở `docs/SYSTEMS_INVENTORY.md` (việc của task T2). Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, `ssh ai-dev 'cd /srv/builder-ai/dev && make ps'`.
 

@@ -32,7 +32,7 @@ CI_USER="${PVE_CI_USER:-deploy}"
 # ── Thông số từng môi trường ────────────────────────────────────────────
 # id VM = octet cuối của IP (quy ước ở docs/PROXMOX_DEPLOY.md mục 4).
 case "$ENV_NAME" in
-  dev)     VMID=201; NAME=ai-dev-01;  IP=192.168.100.201; MEM=2560; CORES=2; DISK=30G; PROTECT=0 ;;
+  dev)     VMID=201; NAME=ai-dev-01;  IP=192.168.100.201; MEM=3584; CORES=3; DISK=30G; PROTECT=0 ;;
   staging) VMID=202; NAME=ai-stg-01;  IP=192.168.100.202; MEM=3072; CORES=2; DISK=40G; PROTECT=0 ;;
   prod)    VMID=203; NAME=ai-prod-01; IP=192.168.100.203; MEM=5120; CORES=2; DISK=60G; PROTECT=1 ;;
   *) echo "Dùng: $0 dev|staging|prod [--dry-run]" >&2; exit 1 ;;
