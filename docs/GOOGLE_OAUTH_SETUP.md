@@ -52,7 +52,7 @@ Quy tắc của Google cần nhớ:
 AUTH_GOOGLE_ID=<Client ID>
 AUTH_GOOGLE_SECRET=<Client secret>
 AUTH_SECRET=<chuỗi ngẫu nhiên ≥ 32 byte>   # sinh bằng: openssl rand -base64 32
-AUTH_URL=https://<domain-của-web>           # local: http://localhost:3000
+AUTH_URL=https://<domain-của-web>           # local: http://localhost:3000; VM qua LAN: http://<ip-vm>:3000. BẮT BUỘC, không có mặc định
 AUTH_TRUST_HOST=true                        # chỉ khi web chạy sau reverse proxy đáng tin
 CORE_JWT_SECRET=<chuỗi ngẫu nhiên ≥ 32 byte> # web ký JWT 60 giây gửi core; PHẢI giống hệt ở core
 GOOGLE_ALLOWED_HD=                          # để trống; chỉ điền nếu cả team dùng một domain Workspace
@@ -93,6 +93,7 @@ Một client có thể khai báo nhiều redirect URI, nhưng tách riêng theo 
 | `Error 403: access_denied` / "app is being tested" | Consent screen ở Testing và email chưa vào Test users | Thêm email vào Test users hoặc Publish |
 | `Error 401: invalid_client` | Sai Client ID/secret hoặc đã reset secret | Cập nhật lại `.env` rồi restart web |
 | Đăng nhập Google xong nhưng quay lại trang login | `AUTH_SECRET` thiếu/đổi, hoặc cookie bị chặn do chạy HTTP ở host không phải localhost | Dùng HTTPS; kiểm `AUTH_URL`, `AUTH_TRUST_HOST` |
+| Đăng nhập (mật khẩu hoặc Google) xong bị đẩy về `localhost` hoặc sang host khác host bạn gõ | `AUTH_URL` sai host: Auth.js redirect về `AUTH_URL`, không về host của request | Đặt `AUTH_URL` đúng URL đang gõ (vd `http://192.168.100.201:3000`) rồi tạo lại container web. Thiếu `AUTH_URL`: web hiện `/config-error` |
 | Đăng nhập xong báo "chưa được mời" | Email chưa có trong danh sách mời (đúng thiết kế invite-only) | Admin thêm email ở **Quản trị → Người dùng → Thêm người dùng** (tab Google) |
 
 ## 8. Liên quan
