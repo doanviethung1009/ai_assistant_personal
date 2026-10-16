@@ -1,6 +1,6 @@
 # Spec: Ghi nhớ tag đã đổi tên/xoá khi đồng bộ (Tag Rules, T7)
 
-- Trạng thái: DRAFT (chờ User chốt các câu hỏi ở mục 7)
+- Trạng thái: CHỐT (User duyệt Q1-Q6 ngày 2026-10-16, xem mục 8)
 - Tác giả: architect
 - Ngày: 2026-10-16
 - Nhánh: `feat/T7-tag-rules`, worktree `../ai_assistant_personal-T7`

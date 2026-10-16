@@ -416,6 +416,13 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "specs", "jira-reporter.md"),
   },
   {
+    slug: "spec-tag-rules",
+    title: "Spec: Ghi nhớ tag đã đổi tên/xoá khi đồng bộ",
+    description: "Bảng tag_rules (alias và chặn), cách ghi rule khi lead đổi tên/xoá tag và cách áp khi sync Jira, Excel, URL; kèm quyết định User đã chốt (T7).",
+    category: "6. Spec thiết kế",
+    file: path.join("docs", "specs", "tag-rules.md"),
+  },
+  {
     slug: "spec-import-json-to-postgres",
     title: "Spec (DRAFT): Nhập JSON vào Postgres",
     description: "Đường nhập an toàn, lặp lại được từ file JSON của web vào Postgres qua core API, kèm 14 quyết định chờ User chốt.",
