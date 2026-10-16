@@ -20,7 +20,7 @@ VM, snapshot/backup, cập nhật, xoay token, xử lý sự cố. Cách dựng 
 | 100 `isec-vpn-gateway` | VPN gateway (**không thuộc dự án, không động vào**) | — | 2 GB | chạy, `onboot=1` |
 | 201 `ai-dev-01` | dev (nhánh `main`, hot reload) | 192.168.100.201 | 3.5 GB | chạy, Docker cài; stack dựng bằng `make up` |
 | 202 `ai-stg-01` | staging | 192.168.100.202 | 3 GB | chạy, Docker + stack đã deploy thử |
-| 203 `ai-prod-01` | prod | 192.168.100.203 | 5 GB | chạy, đã cấu hình Ansible, `protection=1`; chưa deploy stack |
+| 203 `ai-prod-01` | prod | 192.168.100.203 | 4 GB | chạy, đã cấu hình Ansible, `protection=1`; chưa deploy stack |
 | 9000 `ubuntu-2404-tmpl` | template Ubuntu 24.04 cloud-init | — | — | template, không bật |
 | 140, 150 | VM cũ (`agent-hub`, `jump-host-hub`) | — | — | **tắt**, chờ xóa hoặc giữ |
 
@@ -81,7 +81,7 @@ Host ai-dev ai-stg ai-prod
 
 | | dev 201 | staging 202 | prod 203 |
 |---|---|---|---|
-| CPU / RAM / disk | 3 nhân / 3.5 GB / 30 GB (dùng 33%) | 2 / 3 GB / 40 GB (17%) | 2 / 5 GB / 60 GB (5%) |
+| CPU / RAM / disk | 3 nhân / 3.5 GB / 30 GB (dùng 33%) | 2 / 3 GB / 40 GB (17%) | 2 / 4 GB / 60 GB (5%) |
 | Nhánh trên VM | `feat/local-login` (lệch quy ước `main`) | `main` (quy ước `uat`) | `prod` |
 | Stack | 4 container chạy, healthy | 4 container chạy, healthy | **không có container** (chưa deploy) |
 | RAM dùng thực | ~1.3 GB, `next-server` ~740 MB | ~0.8 GB | ~0.6 GB |
@@ -108,9 +108,9 @@ File sysctl: `/etc/sysctl.d/60-builder-tuning.conf` (Ansible quản lý, đừng
 Staging/prod không bị áp ngoài ý muốn nhờ cờ `tuning_enabled` mặc định `false`. Muốn áp: đặt `tuning_enabled: true` trong `host_vars/ai-stg-01.yml` rồi `make pve-config ENV=staging CHECK=1`, xem diff, chạy thật. Prod chỉ áp qua quy trình có duyệt.
 Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
 
-### Phía Proxmox: dev đã áp dụng 2026-10-16, prod chưa xác nhận
+### Phía Proxmox: đã áp dụng cho dev và prod (2026-10-16)
 
-Mục tiêu (User chốt 2026-10-16): dev 2.5 → 3.5 GB, 2 → 3 nhân, `--cpu host`; prod 5 → 4 GB. Dev đã nâng (User chạy `qm`, đã kiểm: `nproc`=3, `free -m` total 3411 MB, stack Docker lên lại). Prod: `make pve-check` vẫn báo 5.0 GB, tức `qm set 203 --memory 4096` chưa chạy hoặc chưa tắt/bật prod. Agent tự gọi API ghi lên Proxmox bị bộ phân loại auto chặn, nên User chạy tay.
+Mục tiêu (User chốt 2026-10-16): dev 2.5 → 3.5 GB, 2 → 3 nhân, `--cpu host`; prod 5 → 4 GB. Dev đã nâng (User chạy `qm`, đã kiểm: `nproc`=3, `free -m` total 3411 MB, stack Docker lên lại). Prod đã hạ 4 GB (`make pve-check` báo 4.0 GB; SSH: `free -m` total 3915 MB, chưa có container vì chưa deploy stack). Agent tự gọi API ghi lên Proxmox bị bộ phân loại auto chặn, nên User chạy tay.
 
 **Cách A: chạy `qm` trong Shell của node** (hoặc `ssh root@192.168.100.252`, cần quyền root):
 
@@ -138,7 +138,7 @@ Cả hai cách cho cùng kết quả. Giữ nguyên tổng RAM: nâng dev 1 GB, 
 
 Tùy chọn thêm cho disk dev (rủi ro hơn, chưa nằm trong kế hoạch): `qm config 201 | grep -E 'scsi0|scsihw'` rồi `qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1`. Sửa đúng tên volume: gõ sai thì đĩa cũ thành `unused0`, VM không boot.
 
-Ngân sách RAM: 2 (vpn) + 3.5 (dev) + 3 (stg) + 5 (prod, chưa hạ) = 13.5 GB; hạ prod xuống 4 GB thì về 12.5 GB. Sau khi dev lên 3.5 GB có thể giảm swap
+Ngân sách RAM: 2 (vpn) + 3.5 (dev) + 3 (stg) + 4 (prod) = 12.5 GB, bằng trước đây. Sau khi dev lên 3.5 GB có thể giảm swap
 dev về 1 GB (sửa `host_vars/ai-dev-01.yml`, chạy lại `make pve-config ENV=dev`; swap file cũ cần `swapoff` + xóa tay nếu thu nhỏ).
 Sau khi đổi, cập nhật cho khớp thực tế: `MEM`/`CORES` trong `infra/proxmox/scripts/pve-vm.sh` và bảng ở `docs/SYSTEMS_INVENTORY.md` (việc của task T2). Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, `ssh ai-dev 'cd /srv/builder-ai/dev && make ps'`.
 
@@ -195,8 +195,8 @@ qm resize 202 scsi0 +10G         # nới disk (CHỈ nới, không thu nhỏ đ�
 Sau khi nới disk, cloud-init thường tự nới phân vùng gốc ở lần boot; nếu chưa, trong VM:
 `sudo growpart /dev/sda 1 && sudo resize2fs /dev/sda1`.
 
-**Ngân sách RAM.** Tổng RAM đã cấp cho VM đang chạy + khoảng 2 GB cho host phải nhỏ hơn 15.5 GB. Hiện: 2 (vpn) + 2.5
-(dev) + 3 (staging) + 5 (prod) = 12.5 GB đã cấp, **sát giới hạn** (đo thực tế thấp hơn nhiều vì VM ít việc, swap 8 GB đỡ phần còn lại).
+**Ngân sách RAM.** Tổng RAM đã cấp cho VM đang chạy + khoảng 2 GB cho host phải nhỏ hơn 15.5 GB. Hiện: 2 (vpn) + 3.5
+(dev) + 3 (staging) + 4 (prod) = 12.5 GB đã cấp, **sát giới hạn** (đo thực tế thấp hơn nhiều vì VM ít việc, swap 8 GB đỡ phần còn lại).
 Chưa còn chỗ cho runner CI (1 GB): muốn thêm thì tắt dev khi không dùng (`qm shutdown 201`) hoặc hạ cấu hình. Dựng thêm VM phải cộng vào bảng này
 trước. Không overcommit RAM cho prod.
 

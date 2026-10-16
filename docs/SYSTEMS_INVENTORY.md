@@ -32,7 +32,7 @@ lượng. Cách truy cập ở [PROXMOX_ACCESS.md](PROXMOX_ACCESS.md); việc h�
         │  Proxmox VE 9.1.11  node "isec"   192.168.100.252   :8006 :22  │
         │   ┌────────────┐ ┌────────────┐ ┌────────────┐ ┌────────────┐  │
         │   │ 100 vpn    │ │ 201 dev    │ │ 202 staging│ │ 203 prod   │  │
-        │   │ gateway    │ │ .201 3.5GB │ │ .202 3 GB  │ │ .203 5 GB  │  │
+        │   │ gateway    │ │ .201 3.5GB │ │ .202 3 GB  │ │ .203 4 GB  │  │
         │   │ 2 GB       │ │ nhánh main │ │ nhánh uat  │ │ nhánh prod │  │
         │   └────────────┘ └────────────┘ └────────────┘ └────────────┘  │
         │   template 9000 (Ubuntu 24.04 cloud-init)                       │
@@ -73,7 +73,7 @@ VM 140 `agent-hub` (6 GB, disk 104 GB) và 150 `jump-host-hub` (2 GB, 24 GB) đa
 | Danh tính | `root@pam` (con người); `readonly@pve!audit` (PVEAuditor); `deploy@pve!automation` (AIDeploy, pool `ai-assistant`) |
 | Pool | `ai-assistant` (dự án) |
 | Backup | **chưa có job** |
-| RAM đã cấp | 2 (vpn) + 3.5 + 3 + 5 = 13.5 GB đang chạy (prod hạ về 4 GB thì còn 12.5 GB); thực dùng ~12.1 GB tại lúc đo (đo thay đổi) |
+| RAM đã cấp | 2 (vpn) + 3.5 + 3 + 4 = 12.5 GB đang chạy; thực dùng ~12.1 GB tại lúc đo (đo thay đổi) |
 
 ## 4. Thông tin các VM dự án
 
@@ -85,7 +85,7 @@ Cấu hình chung (cả ba): Ubuntu 24.04.5 LTS, kernel 6.8.0-117, 2 vCPU, Docke
 |---|---|---|---|
 | VM id / tên | 201 `ai-dev-01` | 202 `ai-stg-01` | 203 `ai-prod-01` |
 | IP | 192.168.100.201 | 192.168.100.202 | 192.168.100.203 |
-| RAM / disk | 3.5 GB / 30 GB (25% dùng), 3 nhân | 3 GB / 40 GB (17%) | 5 GB / 60 GB (5%) |
+| RAM / disk | 3.5 GB / 30 GB (25% dùng), 3 nhân | 3 GB / 40 GB (17%) | 4 GB / 60 GB (5%) |
 | Nhánh git trên VM | `main` | `main` (checkout tay để thử; đúng quy trình là `uat`) | `prod` (cũ, `d0cbccc`) |
 | Thư mục app | `/srv/builder-ai/dev` | `/srv/builder-ai/staging` | `/srv/builder-ai/prod` |
 | File cấu hình | `.env` (xem PROXMOX_ACCESS.md mục 7) | `.env` | `.env` |
@@ -165,7 +165,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 | 11 | VM 140, 150 tắt nhưng chưa xóa | Thấp | Xóa hoặc ghi rõ lý do giữ (mục 4 PROXMOX_DEPLOY.md) |
 | 12 | Chưa có **tab Hạ tầng** trên web (giai đoạn A chỉ đọc) | Thấp | Spec có; làm sau khi web có đăng nhập cho phần hành động |
 | 13 | `instances.yml` (danh mục instance) mới ở dạng đề xuất | Thấp | PROXMOX_TEMPLATES.md mục 7.3 |
-| 14 | Dev từng OOM thật 2026-10-15; **đã nâng lên 3.5 GB / 3 nhân (2026-10-16)** cùng swap 2 GB. Prod vẫn 5 GB: chưa hạ xuống 4 GB nên tổng RAM đã cấp 13.5/15.5 GB | Thấp | Hạ prod: `qm set 203 --memory 4096` rồi tắt/bật prod (PROXMOX_OPERATIONS.md mục 1c) |
+| 14 | Dev từng OOM thật 2026-10-15; **đã nâng lên 3.5 GB / 3 nhân (2026-10-16)** cùng swap 2 GB. Prod đã hạ 5 → 4 GB cùng ngày, tổng RAM đã cấp 12.5/15.5 GB | Đã xử lý | Không còn việc; cân nhắc giảm swap dev về 1 GB |
 | 15 | Còn `sed -i ''` (macOS-only) ở `scripts/bootstrap.sh` và `Makefile` | Thấp | Sửa như `gen-env.sh` |
 
 ## 9. Lệnh làm mới số liệu (chạy khi cần cập nhật file này)
