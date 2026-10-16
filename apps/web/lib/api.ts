@@ -1076,17 +1076,91 @@ export async function getTagsStatsApi(): Promise<TagStat[]> {
   return rows.map((row) => ({ name: row.name, taskCount: row.task_count, noteCount: row.note_count }));
 }
 
-export async function renameGlobalTagApi(oldName: string, newName: string): Promise<void> {
-  if (IS_LOCAL) return local(() => engine.renameGlobalTag(oldName, newName));
-  await coreFetch<unknown>(tagPath(oldName), {
+/** Quy tắc đồng bộ tag (core `TagRuleRead`, đã đổi sang camelCase). `targetTag` null = tag bị chặn. */
+export interface TagRule {
+  id: string;
+  sourceTag: string;
+  targetTag: string | null;
+  kind: "alias" | "block";
+  createdByName: string | null;
+  createdAt: string;
+}
+
+interface CoreTagRule {
+  id: string;
+  source_tag: string;
+  target_tag: string | null;
+  kind: "alias" | "block";
+  created_by_name: string | null;
+  created_at: string;
+}
+
+function mapTagRule(row: CoreTagRule): TagRule {
+  return {
+    id: row.id,
+    sourceTag: row.source_tag,
+    targetTag: row.target_tag,
+    kind: row.kind,
+    createdByName: row.created_by_name,
+    createdAt: row.created_at,
+  };
+}
+
+/** Kết quả đổi tên/xoá tag; `rule` null khi lệnh không chạm task work (hoặc chế độ file/memory). */
+export interface TagChangeResult {
+  tasks: number;
+  notes: number;
+  rule: TagRule | null;
+}
+
+interface CoreTagChange {
+  tasks: number;
+  notes: number;
+  rule?: CoreTagRule | null;
+}
+
+function mapTagChange(row: CoreTagChange): TagChangeResult {
+  return { tasks: row.tasks, notes: row.notes, rule: row.rule ? mapTagRule(row.rule) : null };
+}
+
+export async function renameGlobalTagApi(oldName: string, newName: string): Promise<TagChangeResult> {
+  if (IS_LOCAL) {
+    local(() => engine.renameGlobalTag(oldName, newName));
+    return { tasks: 0, notes: 0, rule: null };
+  }
+  const row = await coreFetch<CoreTagChange>(tagPath(oldName), {
     method: "PATCH",
     body: JSON.stringify({ new_name: newName }),
   });
+  return mapTagChange(row);
 }
 
-export async function deleteGlobalTagApi(name: string): Promise<void> {
-  if (IS_LOCAL) return local(() => engine.deleteGlobalTag(name));
-  await coreFetch<unknown>(tagPath(name), { method: "DELETE" });
+export async function deleteGlobalTagApi(name: string): Promise<TagChangeResult> {
+  if (IS_LOCAL) {
+    local(() => engine.deleteGlobalTag(name));
+    return { tasks: 0, notes: 0, rule: null };
+  }
+  const row = await coreFetch<CoreTagChange>(tagPath(name), { method: "DELETE" });
+  return mapTagChange(row);
+}
+
+/** Một trang rule đồng bộ (50/trang, `page` bắt đầu từ 1). Chế độ file/memory không có rule. */
+export async function getTagRulesApi(page = 1): Promise<Paged<TagRule>> {
+  if (IS_LOCAL) return { items: [], total: 0, limit: ADMIN_PAGE_SIZE, offset: 0 };
+  const params = new URLSearchParams({
+    limit: String(ADMIN_PAGE_SIZE),
+    offset: String(Math.max(0, page - 1) * ADMIN_PAGE_SIZE),
+  });
+  const result = await coreFetch<Paged<CoreTagRule>>(`/api/v1/tag-rules?${params}`);
+  return { ...result, items: result.items.map(mapTagRule) };
+}
+
+/** Gỡ rule; lần đồng bộ tới tag nguồn sẽ quay lại. Chế độ file/memory từ chối rõ ràng. */
+export async function deleteTagRuleApi(ruleId: string): Promise<void> {
+  if (IS_LOCAL) {
+    return Promise.reject(new CoreApiError("Quy tắc đồng bộ chỉ có ở chế độ api", 501));
+  }
+  await coreFetch<unknown>(`/api/v1/tag-rules/${encodeURIComponent(ruleId)}`, { method: "DELETE" });
 }
 
 /**
