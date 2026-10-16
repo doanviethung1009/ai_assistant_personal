@@ -31,7 +31,7 @@ Việc hằng ngày sau khi dựng xong (kiểm tra, backup, cập nhật, sự 
     └─ push prod ──► [người duyệt] ► runner ──ssh──► VM prod .203 : snapshot → backup → pull → up → health/smoke
 
  Proxmox node "isec" (192.168.100.252:8006, PVE 9.1) chứa: template 9000, VM dev, VM staging, VM prod, (LXC runner: chưa dựng)
- dev: VM ai-dev-01 (.201) chạy `make up` (hot reload từ nhánh main); vẫn có thể chạy `make dev` trên máy cá nhân
+ dev: VM ai-dev-01 (.201) chạy api theo `make up`, riêng web chạy bản production (mục 8.4, từ 2026-10-16); vẫn có thể chạy `make dev` trên máy cá nhân
 ```
 
 | Môi trường | Nhánh git | `ENVIRONMENT` | Chạy ở | IP | RAM |
@@ -509,6 +509,40 @@ Chưa triển khai; xem trạng thái ở mục 0.
 | Migration phá dữ liệu | Restore backup DB (Case 8 đường B). Chỉ khi hỏng cả hệ thống mới `qm rollback 203 pre-<sha>`. |
 
 Snapshot nằm cùng storage với VM nên **không thay thế backup**.
+
+### 8.4 Dev: web chạy bản production (từ 2026-10-16)
+
+**Chức năng:** container `web` trên VM dev chạy `next start` (target `prod`) thay cho `next dev`. Lý do: đo
+được RTT tới VM chỉ ~11 ms và core 3-5 ms, nên điểm nghẽn khi chuyển trang là `next dev` (compile theo route
+lần đầu, render chậm). `/login` nóng giảm từ ~75 ms xuống ~18-34 ms. Chỉ web đổi; api, postgres, redis
+giữ nguyên chế độ dev.
+
+**Lệnh** (chạy trong `/srv/builder-ai/dev`, không sửa file tracked nào, `git status` vẫn sạch):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.lan.yml up -d --build --no-deps web
+```
+
+- `docker-compose.lan.yml` giữ lại vì cổng web của dev đang mở ra LAN (0.0.0.0).
+- `--no-deps` + tên `web`: chỉ tạo lại web, không đụng DB. Build mất ~4 phút (VM 3.5 GB RAM).
+- Không có `NEXT_PUBLIC_*` nên không cần build arg.
+
+**Đánh đổi (đọc trước khi sửa code trên VM):**
+- Hết hot reload: sau `git pull` phải chạy lại đúng lệnh trên (đủ 3 file compose) thì web mới nhận code mới.
+  Chạy `docker compose up` thường (chỉ `docker-compose.yml` + lan) sẽ đưa web về dev mode.
+- `make prod-up` không dùng cho dev: nó tạo lại cả api và postgres.
+- Áp giới hạn bộ nhớ 512M của file prod cho web; `./data` của web thành volume `web_data` (thư mục cũ trống).
+- Chưa kiểm đăng nhập thật dưới `NODE_ENV=production` với `AUTH_URL` dạng http (cookie Auth.js). Lỗi đăng nhập
+  sau đổi này thì xem rollback dưới đây trước.
+
+**Rollback về dev mode:**
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d --build --no-deps web
+```
+
+Volume `builder-dev_web_node_modules`, `builder-dev_web_next_cache` còn nguyên nên dựng lại nhanh; volume
+`web_data` có thể để nguyên.
 
 ## 9. Backup và giám sát
 

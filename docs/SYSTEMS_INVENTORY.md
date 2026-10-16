@@ -91,7 +91,7 @@ Cấu hình chung (cả ba): Ubuntu 24.04.5 LTS, kernel 6.8.0-117, 2 vCPU, Docke
 | File cấu hình | `.env` (xem PROXMOX_ACCESS.md mục 7) | `.env` | `.env` |
 | `ENVIRONMENT` | development | staging | production |
 | `COMPOSE_PROJECT_NAME` | builder-dev | builder-staging | builder-prod |
-| Cách chạy | `make up` (dev, bind mount, hot reload; image build tại chỗ) | `docker-compose.prod.yml` + `scripts/deploy.sh` | như staging, **chưa chạy** |
+| Cách chạy | api: `make up` (bind mount, hot reload); web: bản production từ 2026-10-16, xem PROXMOX_DEPLOY.md mục 8.4; image build tại chỗ | `docker-compose.prod.yml` + `scripts/deploy.sh` | như staging, **chưa chạy** |
 | Image app | `builder-dev-api`, `builder-dev-web` (build tại chỗ) | `ghcr.io/.../ai-assistant-{api,web}:local` | chưa có |
 | `protection` | không | không | **có** (không xóa nhầm được) |
 | Backup | không (dữ liệu thử) | `backups/` trên VM (1 file), không có job | chưa |
