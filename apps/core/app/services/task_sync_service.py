@@ -48,7 +48,7 @@ from app.schemas.task_upsert import (
     UpsertItemError,
     UpsertItemWarning,
 )
-from app.services import clock
+from app.services import clock, tag_rule_service
 from app.services.errors import ConflictError
 from app.services.import_service import normalize_project_key
 from app.services.jsonable import jsonable
@@ -239,6 +239,8 @@ class _Prepared:
     item: TaskUpsert
     project_key: str | None
     payload: dict[str, Any] | None
+    # Tag nguồn sau khi áp tag_rules. KHÔNG sửa `item.tags` (đó là input của client).
+    tags: list[str]
 
 
 async def _fetch_alive(
@@ -334,6 +336,8 @@ def _wanted_values(
     for name in _SYNCED_FIELDS:
         if name in sent and name not in create_only:
             values[name] = getattr(p.item, name)
+    if "tags" in values:
+        values["tags"] = p.tags
     if "due_at" not in create_only:
         if "due_at" in sent:
             values["due_at"] = _to_utc(p.item.due_at)
@@ -486,10 +490,22 @@ async def upsert_batch(
             errors.append(UpsertItemError(index=index, reason=str(exc)))
             continue
         seen.add(item.external_id)
-        prepared.append(_Prepared(index, item, key, payload))
+        prepared.append(_Prepared(index, item, key, payload, list(item.tags)))
 
     # ── Khoá rồi đọc: từ đây tới hết hàm là đoạn giữ khoá ───────────────
     await locks.take_import_write_lock(session)
+    # Nạp rule SAU khi giữ khoá: thấy rule mới nhất và không xen với một lệnh đổi tên tag
+    # (tag_service lấy cùng khoá). Áp lên tag NGUỒN trước khi gộp vào tag của task.
+    tag_rules = await tag_rule_service.load_rules(session)
+    # Chỉ đếm lượt áp RULE LẦN HAI này (Excel/URL, hoặc Jira nếu map_issue chưa áp). Jira đã
+    # được áp trước bước cắt trong map_issue nên số này gần như luôn 0 với Jira: đừng đọc nó là
+    # "rule không chạy".
+    tag_rules_applied = 0
+    if tag_rules:
+        for p in prepared:
+            p.tags = tag_rule_service.apply_rules(p.item.tags, tag_rules)
+            if p.tags != list(dict.fromkeys(p.item.tags)):
+                tag_rules_applied += 1
     existing = await _fetch_alive(session, source, [p.item.external_id for p in prepared])
 
     wanted_projects: dict[str, str | None] = {}
@@ -562,7 +578,7 @@ async def upsert_batch(
 
     logger.info(
         "upsert-batch: source=%s added=%d updated=%d unchanged=%d skipped_personal=%d "
-        "errors=%d warnings=%d",
+        "errors=%d warnings=%d tag_rules_reapplied=%d",
         source.value,
         added,
         updated,
@@ -570,6 +586,7 @@ async def upsert_batch(
         skipped_personal,
         len(errors),
         len(warnings),
+        tag_rules_applied,
     )
     return TaskUpsertResult(
         added=added,
@@ -603,7 +620,7 @@ def _build_task(p: _Prepared, source: TaskSource, project_ids: dict[str, uuid.UU
         due_all_day=bool(item.due_all_day) and item.due_at is not None,
         scheduled_for=item.scheduled_for,
         estimate_minutes=item.estimate_minutes,
-        tags=list(item.tags),
+        tags=p.tags,
         source=source,
         # Tích hợp chỉ ghi scope=work (task-scope.md); không phụ thuộc default theo source.
         scope=TaskScope.WORK,

@@ -13,6 +13,7 @@ from app.api.v1 import (
     projects,
     settings,
     system,
+    tag_rules,
     tags,
     tasks,
 )
@@ -40,6 +41,7 @@ active_router.include_router(tasks.router)
 active_router.include_router(projects.router)
 active_router.include_router(notes.router)
 active_router.include_router(tags.router)
+active_router.include_router(tag_rules.router)
 active_router.include_router(system.router)
 active_router.include_router(imports.router)
 active_router.include_router(settings.router)

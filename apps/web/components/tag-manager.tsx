@@ -1,15 +1,25 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { useActionAuth } from "@/lib/use-action-auth";
 import { renameTagAction, deleteTagAction } from "@/app/actions";
-import type { TagStat } from "@/lib/api";
+import type { TagRule, TagStat } from "@/lib/api";
+
+/** Câu báo "đã ghi nhớ" từ rule core vừa ghi (alias hoặc chặn). */
+function ruleNotice(rule: TagRule): string {
+  return rule.targetTag
+    ? `Đã ghi nhớ cho lần đồng bộ sau: Jira/Excel sẽ đổi #${rule.sourceTag} thành #${rule.targetTag}.`
+    : `Đã ghi nhớ cho lần đồng bộ sau: Jira/Excel sẽ bỏ #${rule.sourceTag}.`;
+}
 
 export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
   const [tags, setTags] = useState<TagStat[]>(initialTags);
   const [pending, startTransition] = useTransition();
   const gate = useActionAuth();
+  const router = useRouter();
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const [editingTag, setEditingTag] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
@@ -23,6 +33,7 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
 
     startTransition(async () => {
       setError(null);
+      setNotice(null);
       const result = await renameTagAction(oldName, newName);
       if (gate(result)) return;
       // Thất bại thì KHÔNG cập nhật state cục bộ (tránh hiện đã đổi tên dù server từ chối).
@@ -45,14 +56,17 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
         return next.sort((a, b) => a.name.localeCompare(b.name));
       });
       setEditingTag(null);
+      if (result.rule) setNotice(ruleNotice(result.rule));
+      router.refresh();
     });
   };
 
   const handleDelete = (name: string) => {
-    if (!confirm(`Bạn có chắc muốn xoá tag #${name} khỏi tất cả các task và sổ tay? Hành động này không thể hoàn tác.`)) return;
+    if (!confirm(`Bạn có chắc muốn xoá tag #${name} khỏi tất cả các task và sổ tay? Hành động này không thể hoàn tác. Với task công việc, lần đồng bộ Jira/Excel sau sẽ không đưa tag này trở lại.`)) return;
 
     startTransition(async () => {
       setError(null);
+      setNotice(null);
       const result = await deleteTagAction(name);
       if (gate(result)) return;
       if (!result.ok) {
@@ -60,6 +74,8 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
         return;
       }
       setTags(prev => prev.filter(t => t.name !== name));
+      if (result.rule) setNotice(ruleNotice(result.rule));
+      router.refresh();
     });
   };
 
@@ -68,6 +84,11 @@ export function TagManager({ initialTags }: { initialTags: TagStat[] }) {
       {error ? (
         <p role="alert" className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-600">
           {error}
+        </p>
+      ) : null}
+      {notice ? (
+        <p role="status" className="rounded-md border border-green-500/30 bg-green-500/10 px-3 py-2 text-sm text-green-700 dark:text-green-400">
+          {notice}
         </p>
       ) : null}
       {tags.length === 0 ? (

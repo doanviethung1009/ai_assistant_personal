@@ -989,3 +989,49 @@ async def test_personal_task_reporter_is_untouched(  # type: ignore[no-untyped-d
     resp = (await client.post(_sync_url(cid))).json()
     assert resp["skipped_personal"] == 1
     assert (await _tasks())[0].reporter == "Lan"
+
+
+# ═══════════════════════════════════════════════════════════════════════
+#  Tag rules (T7): tag đã đổi tên/xoá không quay lại qua connector Jira
+# ═══════════════════════════════════════════════════════════════════════
+
+
+async def test_deleted_tag_does_not_come_back_on_next_sync(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda request: _page(_issue("DBA-1")))
+    cid = await _create(client)
+    assert (await client.post(_sync_url(cid))).status_code == 200
+    assert "be" in (await _tasks())[0].tags
+
+    # Admin của `client` có task:write_any_work nên xoá tag work sinh rule chặn `be`.
+    assert (await client.delete("/api/v1/tags/be")).status_code == 200
+    assert "be" not in (await _tasks())[0].tags
+
+    again = await client.post(_sync_url(cid))
+    assert again.status_code == 200
+    assert again.json()["unchanged"] == 1
+    assert "be" not in (await _tasks())[0].tags
+
+
+async def test_renamed_tag_is_mapped_to_new_name_on_next_sync(
+    client: httpx.AsyncClient, jira
+) -> None:  # type: ignore[no-untyped-def]
+    jira(lambda request: _page(_issue("DBA-1"), _issue("DBA-2", labels=["be", "ops"])))
+    cid = await _create(client)
+    assert (await client.post(_sync_url(cid))).status_code == 200
+
+    resp = await client.patch("/api/v1/tags/be", json={"new_name": "backend"})
+    assert resp.status_code == 200 and resp.json()["rule"] is not None
+
+    # Task Jira MỚI (DBA-3) cũng nhận tên mới thay vì `be`: rule áp trước bước cắt MAX_TAGS.
+    jira(
+        lambda request: _page(
+            _issue("DBA-1"), _issue("DBA-2", labels=["be", "ops"]), _issue("DBA-3")
+        )
+    )
+    again = await client.post(_sync_url(cid))
+    assert again.status_code == 200 and again.json()["added"] == 1
+    for task in await _tasks():
+        assert "be" not in task.tags
+        assert "backend" in task.tags

@@ -9,8 +9,9 @@ PHẠM VI (đi qua `access`, không tự viết điều kiện owner/scope):
   `task:write_any_work`. Cố ý chặt hơn `access.task_permissions`: member không sửa tag hàng loạt
   trên task work dù là người tạo/được giao. Mỗi task bị đổi ghi một `TaskEvent` UPDATED.
 
-LƯU Ý: tag có nguồn từ Jira (label/component) sẽ quay lại ở lần sync kế tiếp vì
-`task_sync_service` gộp (union) tag cũ với tag nhận về.
+Tag có nguồn từ Jira/Excel sẽ quay lại ở lần sync kế tiếp vì `task_sync_service` gộp (union)
+tag cũ với tag nhận về. Để chặn điều đó, lệnh đổi tên/xoá chạm ít nhất một task `work` ghi một
+quy tắc (`tag_rule_service.record_change`) mà sync áp lên tag nguồn (docs/specs/tag-rules.md).
 """
 
 from __future__ import annotations
@@ -21,12 +22,13 @@ from sqlalchemy.types import String
 
 from app.core.auth import CurrentUser
 from app.core.permissions import Permission
+from app.db import locks
 from app.models.enums import TaskEventType, TaskScope
 from app.models.note import Note
 from app.models.task import Task, TaskEvent
 from app.schemas.common import normalize_tags
-from app.schemas.tag import TagChangeResponse, TagStat
-from app.services import access
+from app.schemas.tag import TagChangeResponse, TagRuleRead, TagStat
+from app.services import access, tag_rule_service
 from app.services.errors import ConflictError, NotFoundError, ValidationError
 
 
@@ -84,8 +86,33 @@ async def delete(session: AsyncSession, user: CurrentUser, name: str) -> TagChan
 async def _apply(
     session: AsyncSession, user: CurrentUser, old: str, new: str | None
 ) -> TagChangeResponse:
-    """`new=None` nghĩa là xoá. Đổi tên sang tag đã có trên cùng dòng thì chỉ bỏ tag cũ (gộp)."""
+    """Bọc `_apply_locked` để lỗi hết hạn chờ khoá thành 409.
+
+    `take_import_write_lock` đặt `lock_timeout` cho CẢ transaction, nên các UPDATE tasks/notes
+    phía sau cũng có thể ném 55P03 khi dòng đang bị request khác giữ. Không bọc thì thành 500
+    (trước T7 đổi tên tag chỉ chờ, không có timeout).
+    """
+    async with locks.conflict_on_lock_timeout(
+        session, "Tag đang được sửa ở nơi khác, hãy thử lại sau."
+    ):
+        return await _apply_locked(session, user, old, new)
+
+
+async def _apply_locked(
+    session: AsyncSession, user: CurrentUser, old: str, new: str | None
+) -> TagChangeResponse:
+    """`new=None` nghĩa là xoá. Đổi tên sang tag đã có trên cùng dòng thì chỉ bỏ tag cũ (gộp).
+
+    Người có `task:write_any_work` lấy advisory lock của nhập TRƯỚC các câu UPDATE: tuần tự hoá
+    với lô sync (lô không đọc rule cũ rồi ghi đè sau khi đổi tên xong) và giữ cùng thứ tự khoá
+    (advisory -> dòng) với `upsert_batch` để không deadlock. Member không chạm task work nên
+    không cần khoá.
+    """
+    can_write_work = user.has(Permission.TASK_WRITE_ANY_WORK)
+    if can_write_work:
+        await locks.take_import_write_lock(session)
     counts: list[int] = []
+    work_changed = 0
     for model, scope_clause in (
         (Task, _writable_task_clause(user)),
         (Note, access.note_visible_clause(user)),
@@ -99,15 +126,16 @@ async def _apply(
                 (model.tags.contains([new]), func.array_remove(model.tags, old_lit)),
                 else_=func.array_replace(model.tags, old_lit, new_lit),
             )
-        result = await session.execute(
+        stmt = (
             update(model)
             .where(model.deleted_at.is_(None), scope_clause, model.tags.contains([old]))
             .values(tags=new_tags)
-            .returning(model.id)
         )
-        ids = list(result.scalars())
-        counts.append(len(ids))
         if model is Task:
+            # Cần scope để biết có chạm task work không (chỉ khi đó mới ghi rule).
+            rows = (await session.execute(stmt.returning(Task.id, Task.scope))).all()
+            ids = [row[0] for row in rows]
+            work_changed = sum(1 for row in rows if row[1] is TaskScope.WORK)
             # Sửa hàng loạt task cả team phải để lại dấu vết như update_task (audit log).
             for task_id in ids:
                 session.add(
@@ -119,6 +147,21 @@ async def _apply(
                         payload={"tags": {"from": old, "to": new}},
                     )
                 )
+        else:
+            ids = list((await session.execute(stmt.returning(model.id))).scalars())
+        counts.append(len(ids))
     if not any(counts):
         raise NotFoundError("không có task hoặc note nào bạn sửa được đang dùng tag này")
-    return TagChangeResponse(tasks=counts[0], notes=counts[1])
+    rule_read: TagRuleRead | None = None
+    if work_changed and can_write_work:
+        rule = await tag_rule_service.record_change(session, user, old, new)
+        rule_read = TagRuleRead(
+            id=rule.id,
+            source_tag=rule.source_tag,
+            target_tag=rule.target_tag,
+            created_by_user_id=rule.created_by_user_id,
+            created_by_name=user.name,
+            created_at=rule.created_at,
+            updated_at=rule.updated_at,
+        )
+    return TagChangeResponse(tasks=counts[0], notes=counts[1], rule=rule_read)

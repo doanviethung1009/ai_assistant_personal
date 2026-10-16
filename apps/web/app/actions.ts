@@ -769,26 +769,46 @@ export async function removeSyncUrlAction(url: string): Promise<SyncUrlActionRes
   }
 }
 
-import { renameGlobalTagApi, deleteGlobalTagApi } from "@/lib/api";
+import { renameGlobalTagApi, deleteGlobalTagApi, deleteTagRuleApi, type TagRule } from "@/lib/api";
 
-export async function renameTagAction(oldName: string, newName: string): Promise<ActionResult> {
+/** Kết quả đổi tên/xoá tag; `rule` có khi core đã ghi nhớ cho lần đồng bộ sau. */
+export type TagActionResult = ActionResult & { rule?: TagRule | null };
+
+export async function renameTagAction(oldName: string, newName: string): Promise<TagActionResult> {
   const auth = await requireSession();
   if (!auth.ok) return auth;
   try {
-    await renameGlobalTagApi(oldName, newName);
+    const change = await renameGlobalTagApi(oldName, newName);
     revalidateAll();
-    return { ok: true };
+    revalidatePath("/tags");
+    return { ok: true, rule: change.rule };
   } catch (error) {
     return toResult(error);
   }
 }
 
-export async function deleteTagAction(name: string): Promise<ActionResult> {
+export async function deleteTagAction(name: string): Promise<TagActionResult> {
   const auth = await requireSession();
   if (!auth.ok) return auth;
   try {
-    await deleteGlobalTagApi(name);
+    const change = await deleteGlobalTagApi(name);
     revalidateAll();
+    revalidatePath("/tags");
+    return { ok: true, rule: change.rule };
+  } catch (error) {
+    return toResult(error);
+  }
+}
+
+/** Gỡ quy tắc đồng bộ tag. Chặn sớm theo quyền; core vẫn kiểm lại. */
+export async function deleteTagRuleAction(ruleId: string): Promise<ActionResult> {
+  const auth = await requirePermission("task:write_any_work");
+  if (!auth.ok) return auth;
+  if (typeof ruleId !== "string" || !ruleId) return { ok: false, error: "Rule không hợp lệ" };
+  try {
+    await deleteTagRuleApi(ruleId);
+    revalidateAll();
+    revalidatePath("/tags");
     return { ok: true };
   } catch (error) {
     return toResult(error);

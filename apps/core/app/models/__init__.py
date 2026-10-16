@@ -28,6 +28,7 @@ from app.models.import_audit import ImportAudit, ImportRun
 from app.models.integration import IntegrationConnection
 from app.models.note import Note
 from app.models.project import Project
+from app.models.tag_rule import TagRule
 from app.models.task import Task, TaskEvent
 from app.models.user import User, UserAlias
 
@@ -49,6 +50,7 @@ __all__ = [
     "NoteSource",
     "Project",
     "SettingKey",
+    "TagRule",
     "Task",
     "TaskEvent",
     "TaskEventType",

@@ -44,7 +44,7 @@ from app.models.integration import IntegrationConnection
 from app.models.project import Project
 from app.schemas.integration import SyncMessage, SyncResult
 from app.schemas.task_upsert import MAX_BATCH_ITEMS, TaskUpsert, TaskUpsertResult
-from app.services import clock, jira_client, jira_mapping, task_sync_service
+from app.services import clock, jira_client, jira_mapping, tag_rule_service, task_sync_service
 from app.services.errors import ConflictError, DomainError, NotFoundError
 from app.services.import_service import normalize_project_key
 from app.services.jira_client import JiraSyncError
@@ -181,6 +181,16 @@ async def _write_batch(
                 await session.rollback()
             raise
     return result
+
+
+async def _load_tag_rules() -> dict[str, str | None]:
+    """Nạp tag_rules MỘT lần mỗi lần sync (transaction ngắn, không giữ khi gọi Jira).
+
+    Dùng để áp rule trước bước cắt MAX_TAGS trong `map_issue`. Rule đổi giữa chừng thì
+    `upsert_batch` (nạp lại dưới advisory lock) vẫn là nơi quyết định cuối cùng.
+    """
+    async with SessionFactory() as session:
+        return await tag_rule_service.load_rules(session)
 
 
 async def _mark_synced(connection_id: uuid.UUID) -> None:
@@ -428,6 +438,7 @@ async def _run(
         )
         del token
 
+        tag_rules = await _load_tag_rules()
         items: list[TaskUpsert] = []
         origin: list[int] = []  # vị trí issue (trong dữ liệu đã tải) của từng item
         seen: set[str] = set()
@@ -448,6 +459,7 @@ async def _run(
                                 fallback_project_name=snapshot.project_name,
                                 notes=notes,
                                 project_from_field=progress.project_from_field,
+                                tag_rules=tag_rules,
                             )
                         except jira_mapping.MappingError as exc:
                             progress.error(SyncMessage(index=index, reason=str(exc)))
