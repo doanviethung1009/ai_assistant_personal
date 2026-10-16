@@ -11,4 +11,6 @@
   roles:
     - base
     - docker
+    # Chỉ môi trường bật tuning_enabled (mặc định false; dev bật ở host_vars). Prod/staging áp khi được duyệt.
+    - {role: tuning, when: tuning_enabled | default(false) | bool}
     - app

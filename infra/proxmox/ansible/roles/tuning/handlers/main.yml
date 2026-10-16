@@ -1,0 +1,5 @@
+---
+# Áp sysctl ngay sau khi file /etc/sysctl.d/60-builder-tuning.conf thay đổi (swap đã được bật bằng task trực tiếp).
+- name: reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: false

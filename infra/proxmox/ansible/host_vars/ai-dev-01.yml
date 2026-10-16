@@ -1,0 +1,5 @@
+---
+# Dev có 2.5 GB RAM, từng bị OOM khi `next dev` + build: cho swap rộng hơn.
+# Bật role tuning cho dev (xem group_vars/all.yml).
+tuning_enabled: true
+swap_size_mb: 2048

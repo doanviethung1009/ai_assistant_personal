@@ -1,0 +1,75 @@
+---
+# ── Tinh chỉnh hiệu năng guest (swap + sysctl) ─────────────────────────
+# WHY: VM dev chỉ 2.5 GB, không swap; `next dev` + build có thể vượt 1.6 GB và kernel giết tiến trình
+# (đã xảy ra 2026-10-15: OOM kill next-server). Swap file là lưới an toàn, không thay cho việc cấp đủ RAM.
+# Kích thước và sysctl đặt trong group_vars/all.yml (swap_size_mb, tuning_sysctl) để mỗi môi trường chỉnh riêng.
+- name: Kiểm tra swap file đã có chưa
+  ansible.builtin.stat: {path: /swapfile}
+  register: swapfile
+
+# fallocate nhanh, nhưng ext4 + swap cần file không "sparse"; dd chắc chắn hơn. Chỉ chạy khi chưa có file.
+- name: Tạo swap file
+  ansible.builtin.command: "dd if=/dev/zero of=/swapfile bs=1M count={{ swap_size_mb }} status=none"
+  args: {creates: /swapfile}
+  when: swap_size_mb | int > 0
+  # dd hỏng giữa chừng (hết đĩa) để lại file dở: xoá để lần chạy sau tạo lại thay vì mkswap file thiếu dung lượng.
+  register: dd_swap
+  ignore_errors: true
+
+- name: Xoá swap file dở dang
+  ansible.builtin.file: {path: /swapfile, state: absent}
+  when: dd_swap is failed
+
+- name: Dừng nếu không tạo được swap file
+  ansible.builtin.fail: {msg: "Không tạo được /swapfile (hết đĩa?): {{ dd_swap.msg | default('') }}"}
+  when: dd_swap is failed
+
+# Đổi swap_size_mb mà file đã tồn tại thì không tự đổi cỡ (tránh swapoff khi đang dùng): báo để người vận hành xử lý.
+- name: Cảnh báo cỡ swap file lệch cấu hình
+  ansible.builtin.debug:
+    msg: "/swapfile là {{ swapfile.stat.size // 1048576 }} MB, cấu hình {{ swap_size_mb }} MB. Muốn đổi: swapoff /swapfile, xoá file, chạy lại."
+  when: swap_size_mb | int > 0 and swapfile.stat.exists and (swapfile.stat.size // 1048576) != (swap_size_mb | int)
+
+- name: Khoá quyền swap file (chỉ root đọc, tránh lộ nội dung RAM)
+  ansible.builtin.file: {path: /swapfile, owner: root, group: root, mode: "0600"}
+  when: swap_size_mb | int > 0
+  # --check: file chưa được tạo thật.
+  ignore_errors: "{{ ansible_check_mode }}"
+
+# Đã là swap rồi thì mkswap lại sẽ bị từ chối khi đang bật; blkid rỗng mới format.
+- name: Đánh dấu swap file
+  ansible.builtin.shell: "blkid /swapfile | grep -q swap || mkswap /swapfile"
+  register: mkswap
+  changed_when: mkswap.rc == 0 and 'Setting up swapspace' in mkswap.stdout
+  when: swap_size_mb | int > 0 and not ansible_check_mode
+
+- name: Ghi swap vào fstab (giữ qua reboot)
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "/swapfile none swap sw 0 0"
+    regexp: '^/swapfile\s'
+  when: swap_size_mb | int > 0
+
+- name: Xem swap đang bật chưa
+  ansible.builtin.command: swapon --show=NAME --noheadings
+  register: active_swap
+  changed_when: false
+  check_mode: false
+
+- name: Bật swap ngay
+  ansible.builtin.command: swapon /swapfile
+  when: swap_size_mb | int > 0 and '/swapfile' not in active_swap.stdout and not ansible_check_mode
+
+# swappiness thấp: chỉ đẩy ra swap khi thực sự thiếu RAM, giữ page cache của Postgres/node_modules trong RAM.
+# vfs_cache_pressure vừa phải: giữ cache inode/dentry (bind mount hàng chục nghìn file node_modules, .next).
+# inotify: next dev / watchpack theo dõi rất nhiều file, mặc định 8192 watch dễ cạn -> "ENOSPC".
+- name: Đặt sysctl hiệu năng
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/60-builder-tuning.conf
+    content: |
+      # Quản lý bởi Ansible (role tuning). Sửa ở group_vars/all.yml, không sửa tay.
+      {% for k, v in tuning_sysctl.items() %}
+      {{ k }} = {{ v }}
+      {% endfor %}
+    mode: "0644"
+  notify: reload sysctl

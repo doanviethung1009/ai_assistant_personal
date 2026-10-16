@@ -17,3 +17,16 @@ app_root: /srv/builder-ai
 #   extra_ssh_keys:
 #     - "ssh-ed25519 AAAAC3...xyz hung@macbook-2026"
 extra_ssh_keys: []
+
+# ── Tinh chỉnh hiệu năng (role tuning) ───────────────────────────────────
+# Công tắc role tuning. Mặc định TẮT để `make pve-config` trên staging/prod không âm thầm tạo swap/đổi sysctl;
+# bật riêng từng máy ở host_vars/<tên-máy>.yml sau khi được duyệt.
+tuning_enabled: false
+# Swap file (MB). 0 = không tạo. Là lưới an toàn khi RAM thiếu, KHÔNG thay cho cấp đủ RAM ở Proxmox.
+# Giá trị mặc định cho máy nào bật tuning; dev ghi đè lớn hơn vì `next dev` + build ngốn RAM.
+swap_size_mb: 1024
+tuning_sysctl:
+  vm.swappiness: 10            # chỉ swap khi thiếu thật, ưu tiên giữ page cache
+  vm.vfs_cache_pressure: 50    # giữ cache inode/dentry của bind mount nhiều file
+  fs.inotify.max_user_watches: 524288    # chỉ có tác dụng khi watchpack dùng inotify (WATCHPACK_POLLING=false); kernel mới đã mặc định cao theo RAM
+  fs.inotify.max_user_instances: 512     # nhiều tiến trình (next, tsc, editor remote) cùng mở watcher thì mặc định 128 dễ cạn

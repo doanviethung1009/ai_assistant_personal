@@ -75,6 +75,71 @@ Host ai-dev ai-stg ai-prod
 - Nguyên tắc dự án: agent không có quyền ghi thường trực lên production. SSH vào **prod** chỉ để đọc/chẩn đoán, thay đổi đi qua
   pipeline/runbook có duyệt.
 
+## 1c. Kiểm tra môi trường và tinh chỉnh hiệu năng dev (2026-10-16)
+
+### Kết quả kiểm tra (đo thật qua `make pve-check` + SSH)
+
+| | dev 201 | staging 202 | prod 203 |
+|---|---|---|---|
+| CPU / RAM / disk | 2 nhân / 2.5 GB / 30 GB (dùng 33%) | 2 / 3 GB / 40 GB (17%) | 2 / 5 GB / 60 GB (5%) |
+| Nhánh trên VM | `feat/local-login` (lệch quy ước `main`) | `main` (quy ước `uat`) | `prod` |
+| Stack | 4 container chạy, healthy | 4 container chạy, healthy | **không có container** (chưa deploy) |
+| RAM dùng thực | ~1.3 GB, `next-server` ~740 MB | ~0.8 GB | ~0.6 GB |
+| Swap | **không có** (trước tinh chỉnh) | không có | không có |
+
+Phát hiện:
+- **Dev từng bị OOM thật**: 2026-10-15 18:06 kernel giết `next-server` (RSS 1.6 GB) vì VM 2.5 GB và không swap. Nguyên nhân hiệu năng chính của dev là thiếu RAM, không phải CPU (load ~0.1).
+- Node: RAM host dùng 12.1/15.5 GB (KVM cấp cứng, không ballooning), thin pool còn 728/794 GB, host load thấp, CPU i5-9500T 6 nhân.
+- Dev lệch quy ước nhánh (`feat/local-login` thay vì `main`), do có người `git checkout` thử trên VM. Đưa về `main` khi nhánh đã merge: `ssh ai-dev 'cd /srv/builder-ai/dev && git checkout main && git pull --ff-only'`.
+- Docker daemon đã giới hạn log (10 MB x 3), `onboot=1`, guest agent bật trên cả 3 VM.
+
+### Đã làm (phía guest, không cần root Proxmox)
+
+Role Ansible mới `infra/proxmox/ansible/roles/tuning` (chạy trong `site.yml` **chỉ khi `tuning_enabled: true`**, mặc định tắt; hiện chỉ dev bật ở `host_vars/ai-dev-01.yml`; có comment WHY từng bước):
+
+| Thay đổi | Giá trị | Lý do |
+|---|---|---|
+| Swap file `/swapfile` | dev 2 GB (`host_vars/ai-dev-01.yml`), mặc định 1 GB (`group_vars/all.yml`) | Lưới an toàn chống OOM kill; ghi vào `/etc/fstab` |
+| `vm.swappiness` | 10 | Chỉ swap khi thật sự thiếu, giữ page cache Postgres/`node_modules` |
+| `vm.vfs_cache_pressure` | 50 | Giữ cache inode của bind mount nhiều file |
+| `fs.inotify.max_user_watches` | 524288 | Chỉ có tác dụng khi watchpack dùng inotify, tức sau khi tắt `WATCHPACK_POLLING` (xem gợi ý bên dưới); kernel mới đã mặc định cao theo RAM |
+
+File sysctl: `/etc/sysctl.d/60-builder-tuning.conf` (Ansible quản lý, đừng sửa tay). **Mới áp dụng cho dev.**
+Staging/prod không bị áp ngoài ý muốn nhờ cờ `tuning_enabled` mặc định `false`. Muốn áp: đặt `tuning_enabled: true` trong `host_vars/ai-stg-01.yml` rồi `make pve-config ENV=staging CHECK=1`, xem diff, chạy thật. Prod chỉ áp qua quy trình có duyệt.
+Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
+
+### Cần làm phía Proxmox (cần quyền root, agent không có)
+
+Chạy trong Shell của node (hoặc `ssh root@192.168.100.252`). Giữ nguyên tổng RAM: nâng dev 1 GB, hạ prod 1 GB (prod đang dùng ~0.6 GB và chưa chạy stack):
+
+```bash
+# Dev: thêm RAM + nhân, dùng CPU thật của host, disk nhanh hơn. Áp dụng sau khi tắt/bật VM (reboot gõ trong guest không đủ).
+qm config 201 | grep -E 'scsi0|scsihw'     # xác nhận tên volume thật và scsihw = virtio-scsi-single (iothread cần controller này)
+qm shutdown 201 --timeout 90
+qm set 201 --memory 3584 --cores 3 --cpu host
+qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1    # SỬA tên volume nếu lệnh trên in ra khác: gõ sai thì đĩa cũ thành unused0, VM không boot
+qm start 201
+# Prod: nhường RAM (chỉ khi chưa deploy stack, kiểm tra lại ngân sách trước khi deploy thật)
+qm set 203 --memory 4096        # áp dụng sau khi tắt/bật VM từ Proxmox (qm shutdown + qm start)
+```
+
+Ngân sách RAM sau đổi: 2 (vpn) + 3.5 (dev) + 3 (stg) + 4 (prod) = 12.5 GB, bằng trước đây. Sau khi dev lên 3.5 GB có thể giảm swap
+dev về 1 GB (sửa `host_vars/ai-dev-01.yml`, chạy lại `make pve-config ENV=dev`; swap file cũ cần `swapoff` + xóa tay nếu thu nhỏ).
+Sau khi đổi, cập nhật cho khớp thực tế: `MEM`/`CORES` trong `infra/proxmox/scripts/pve-vm.sh` và bảng ở `docs/SYSTEMS_INVENTORY.md` (việc của task T2). Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, `ssh ai-dev 'cd /srv/builder-ai/dev && make ps'`.
+
+### Gợi ý thêm (chưa làm, cần quyết định)
+
+- **`WATCHPACK_POLLING`** (`docker-compose.yml`, service `web`). Next.js dev server cần biết file nào vừa đổi để tự build lại (hot reload).
+  Có hai cách: **inotify** (mặc định, kernel Linux báo ngay khi file đổi, gần như không tốn CPU) và **polling** (`true`: cứ vài trăm ms
+  quét lại toàn bộ file để so sánh, tốn CPU liên tục, càng nhiều file càng tốn). Repo bật polling vì Docker Desktop trên Mac mount thư mục
+  từ macOS vào VM Linux ẩn, sự kiện inotify không đi qua được, thiếu polling thì hot reload trên Mac không chạy.
+  VM dev Proxmox là Linux thật, mã nguồn nằm ngay trên ổ của VM nên inotify chạy tốt, polling chỉ phí CPU của 2 nhân.
+  "Tắt trên VM dev" = sửa compose thành `WATCHPACK_POLLING: ${WATCHPACK_POLLING:-true}` (mặc định vẫn `true`, Mac không đổi) rồi đặt
+  `WATCHPACK_POLLING=false` trong `.env` của VM dev. Lợi ích vừa phải (thủ phạm chính của dev là thiếu RAM, đã xử lý bằng swap và nâng RAM); sửa compose
+  là file dùng chung nên cần task riêng.
+- Chưa có job backup Proxmox (mục 5.1): dev không cần, staging/prod nên có trước khi nhập dữ liệu thật.
+- Dọn build cache Docker trên dev (3.2 GB, 1.3 GB reclaimable): `ssh ai-dev 'docker builder prune -f'`.
+
 ## 2. Lịch kiểm tra định kỳ
 
 | Tần suất | Việc | Cách làm | Ngưỡng cần hành động |

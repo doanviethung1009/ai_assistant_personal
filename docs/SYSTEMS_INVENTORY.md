@@ -165,7 +165,7 @@ Mạng Docker nội bộ: `builder-ai-net`. Profile phụ (chưa bật): `llm` (
 | 11 | VM 140, 150 tắt nhưng chưa xóa | Thấp | Xóa hoặc ghi rõ lý do giữ (mục 4 PROXMOX_DEPLOY.md) |
 | 12 | Chưa có **tab Hạ tầng** trên web (giai đoạn A chỉ đọc) | Thấp | Spec có; làm sau khi web có đăng nhập cho phần hành động |
 | 13 | `instances.yml` (danh mục instance) mới ở dạng đề xuất | Thấp | PROXMOX_TEMPLATES.md mục 7.3 |
-| 14 | Môi trường dev chỉ 2.5 GB, có thể thiếu khi build lớn | Thấp | Nâng lên 3 GB nếu OOM |
+| 14 | Môi trường dev chỉ 2.5 GB, **đã OOM thật 2026-10-15**; đã thêm swap 2 GB (role `tuning`) | Trung bình | Nâng RAM dev lên 3.5 GB, hạ prod 4 GB: lệnh ở PROXMOX_OPERATIONS.md mục 1c |
 | 15 | Còn `sed -i ''` (macOS-only) ở `scripts/bootstrap.sh` và `Makefile` | Thấp | Sửa như `gen-env.sh` |
 
 ## 9. Lệnh làm mới số liệu (chạy khi cần cập nhật file này)
