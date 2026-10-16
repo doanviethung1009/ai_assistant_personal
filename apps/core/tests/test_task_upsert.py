@@ -668,6 +668,30 @@ async def test_external_url_accepts_http_and_https(client: httpx.AsyncClient) ->
     assert (await client.post(URL, json=_batch(items))).json()["added"] == 2
 
 
+@pytest.mark.db
+async def test_tag_union_is_capped_and_prefers_existing_tags(client: httpx.AsyncClient) -> None:
+    existing = [f"old{i}" for i in range(18)]
+    await client.post(URL, json=_batch([_item("J-1", tags=existing)]))
+    new = [f"new{i}" for i in range(5)]
+    res = (await client.post(URL, json=_batch([_item("J-1", tags=new)]))).json()
+    assert res["updated"] == 1
+    (t1,) = await _tasks("J-1")
+    assert len(t1.tags) == 20
+    assert t1.tags == [*existing, "new0", "new1"]  # giữ nguyên 18 tag cũ, nguồn lấy theo thứ tự
+    # Sửa task sau đó không bị TaskUpdate từ chối "tối đa 20 tag".
+    ok = await client.patch(f"/api/v1/tasks/{t1.id}", json={"tags": t1.tags})
+    assert ok.status_code == 200, ok.text
+
+
+def test_merge_wanted_does_not_worsen_task_already_over_cap() -> None:
+    over = [f"t{i}" for i in range(23)]  # dữ liệu cũ vượt MAX_TAGS từ trước
+    task = Task(title="x", tags=list(over))
+    merged = task_sync_service._merge_wanted(task, {"tags": ["fresh", "t1"]})
+    assert merged["tags"] == over  # không thêm, không cắt tag của User
+    merged = task_sync_service._merge_wanted(task, {"tags": ["t0"]})
+    assert merged["tags"] == over
+
+
 # ── Khoá, race ──────────────────────────────────────────────────────
 
 

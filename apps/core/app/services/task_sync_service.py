@@ -42,6 +42,7 @@ from app.db import locks
 from app.models.enums import TaskEventType, TaskScope, TaskSource, TaskStatus
 from app.models.project import Project
 from app.models.task import Task, TaskEvent
+from app.schemas.common import MAX_TAGS
 from app.schemas.task_upsert import (
     TaskUpsert,
     TaskUpsertResult,
@@ -355,10 +356,29 @@ def _wanted_values(
 
 
 def _merge_wanted(task: Task, wanted: dict[str, Any]) -> dict[str, Any]:
-    """Áp luật gộp: tags = hợp (giữ thứ tự, bỏ trùng), description chỉ điền khi đang rỗng."""
+    """Áp luật gộp: tags = hợp (giữ thứ tự, bỏ trùng, tối đa MAX_TAGS), description chỉ điền khi
+    đang rỗng.
+
+    Tag đang có (kể cả User tự gõ) được ưu tiên hơn tag nguồn mới khi phải cắt: nếu không, hợp
+    có thể vượt MAX_TAGS và lần User sửa task sau đó bị `TaskUpdate` từ chối "tối đa 20 tag".
+    Task đã vượt sẵn từ trước thì giữ nguyên tag cũ, không thêm gì và không cắt bớt của User.
+    """
     merged = dict(wanted)
     if "tags" in merged:
-        merged["tags"] = list(dict.fromkeys([*task.tags, *merged["tags"]]))
+        current = list(dict.fromkeys(task.tags))
+        union = list(dict.fromkeys([*current, *merged["tags"]]))
+        if len(union) > MAX_TAGS:
+            room = max(MAX_TAGS - len(current), 0)
+            kept = [*current, *union[len(current) :][:room]]
+            logger.info(
+                "upsert-batch: cắt tag của task %s về %d (hợp %d, giữ %d tag cũ)",
+                task.id,
+                len(kept),
+                len(union),
+                len(current),
+            )
+            union = kept
+        merged["tags"] = union
     if "description" in merged and (task.description or "").strip():
         del merged["description"]
     return merged

@@ -16,7 +16,9 @@ quy tắc (`tag_rule_service.record_change`) mà sync áp lên tag nguồn (docs
 
 from __future__ import annotations
 
-from sqlalchemy import ColumnElement, and_, case, func, literal, select, update
+from typing import Any
+
+from sqlalchemy import ColumnElement, and_, case, func, literal, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.types import String
 
@@ -69,22 +71,40 @@ async def list_stats(session: AsyncSession, user: CurrentUser) -> list[TagStat]:
     return [TagStat(name=k, task_count=v[0], note_count=v[1]) for k, v in sorted(counts.items())]
 
 
+def _variants(name: str, canonical: str) -> list[str]:
+    """Các cách viết của tag có thể đang nằm trong DB: tên thô (đã strip) và tên chuẩn hoá.
+
+    `/tags/stats` trả đúng giá trị đang lưu; dữ liệu cũ nhập trước khi có `normalize_tags` có thể
+    là "Foo" hay "Legacy Tag". Chỉ so khớp tên chuẩn hoá thì tag đó hiện ở thống kê nhưng
+    đổi tên/xoá trả 404.
+    """
+    return list(dict.fromkeys([name.strip(), canonical]))
+
+
 async def rename(
     session: AsyncSession, user: CurrentUser, old_name: str, new_name: str
 ) -> TagChangeResponse:
     old = normalize_name(old_name)
     new = normalize_name(new_name)
-    if old == new:
+    variants = _variants(old_name, old)
+    # Tên mới chỉ "trùng" khi không còn biến thể nào khác nó để đổi. Đổi "Foo" -> "foo" là hợp
+    # lệ (chuẩn hoá lại dữ liệu cũ).
+    if all(v == new for v in variants):
         raise ConflictError("tên mới trùng tên cũ")
-    return await _apply(session, user, old, new)
+    return await _apply(session, user, old, new, variants)
 
 
 async def delete(session: AsyncSession, user: CurrentUser, name: str) -> TagChangeResponse:
-    return await _apply(session, user, normalize_name(name), None)
+    canonical = normalize_name(name)
+    return await _apply(session, user, canonical, None, _variants(name, canonical))
 
 
 async def _apply(
-    session: AsyncSession, user: CurrentUser, old: str, new: str | None
+    session: AsyncSession,
+    user: CurrentUser,
+    old: str,
+    new: str | None,
+    variants: list[str],
 ) -> TagChangeResponse:
     """Bọc `_apply_locked` để lỗi hết hạn chờ khoá thành 409.
 
@@ -95,18 +115,55 @@ async def _apply(
     async with locks.conflict_on_lock_timeout(
         session, "Tag đang được sửa ở nơi khác, hãy thử lại sau."
     ):
-        return await _apply_locked(session, user, old, new)
+        return await _apply_locked(session, user, old, new, variants)
+
+
+def _replacement(
+    tags_col: Any, variants: list[str], new: str | None
+) -> ColumnElement[Any]:
+    """Biểu thức SQL tính mảng tag mới: bỏ (new=None) hoặc đổi mọi biến thể sang `new`."""
+    if new is None:
+        expr = tags_col
+        for v in variants:
+            expr = func.array_remove(expr, literal(v, String))
+        return expr
+    # Biến thể trùng đúng `new` không cần đổi (đã là tên đích).
+    todo = [v for v in variants if v != new]
+    removed = tags_col
+    replaced = tags_col
+    for v in todo:
+        removed = func.array_remove(removed, literal(v, String))
+        replaced = func.array_replace(replaced, literal(v, String), literal(new, String))
+    branches = [(tags_col.contains([new]), removed)]
+    if len(todo) == 2:
+        # Dòng mang cả hai biến thể: đổi cái đầu, bỏ cái sau, nếu không `new` bị lặp hai lần.
+        both = and_(tags_col.contains([todo[0]]), tags_col.contains([todo[1]]))
+        branches.append(
+            (
+                both,
+                func.array_remove(
+                    func.array_replace(tags_col, literal(todo[0], String), literal(new, String)),
+                    literal(todo[1], String),
+                ),
+            )
+        )
+    return case(*branches, else_=replaced)
 
 
 async def _apply_locked(
-    session: AsyncSession, user: CurrentUser, old: str, new: str | None
+    session: AsyncSession,
+    user: CurrentUser,
+    old: str,
+    new: str | None,
+    variants: list[str],
 ) -> TagChangeResponse:
     """`new=None` nghĩa là xoá. Đổi tên sang tag đã có trên cùng dòng thì chỉ bỏ tag cũ (gộp).
 
-    Người có `task:write_any_work` lấy advisory lock của nhập TRƯỚC các câu UPDATE: tuần tự hoá
-    với lô sync (lô không đọc rule cũ rồi ghi đè sau khi đổi tên xong) và giữ cùng thứ tự khoá
-    (advisory -> dòng) với `upsert_batch` để không deadlock. Member không chạm task work nên
-    không cần khoá.
+    `old` là tên chuẩn hoá (dùng làm `source_tag` của rule, giữ bất biến phẳng); `variants` là các
+    cách viết cần khớp trong DB. Người có `task:write_any_work` lấy advisory lock của nhập TRƯỚC
+    các câu UPDATE: tuần tự hoá với lô sync (lô không đọc rule cũ rồi ghi đè sau khi đổi tên xong)
+    và giữ cùng thứ tự khoá (advisory -> dòng) với `upsert_batch` để không deadlock. Member không
+    chạm task work nên không cần khoá.
     """
     can_write_work = user.has(Permission.TASK_WRITE_ANY_WORK)
     if can_write_work:
@@ -117,19 +174,17 @@ async def _apply_locked(
         (Task, _writable_task_clause(user)),
         (Note, access.note_visible_clause(user)),
     ):
-        old_lit = literal(old, String)
-        if new is None:
-            new_tags = func.array_remove(model.tags, old_lit)
-        else:
-            new_lit = literal(new, String)
-            new_tags = case(
-                (model.tags.contains([new]), func.array_remove(model.tags, old_lit)),
-                else_=func.array_replace(model.tags, old_lit, new_lit),
-            )
+        # Khớp dòng mang BẤT KỲ biến thể nào, trừ khi biến thể đó chính là tên đích (không phải
+        # đổi gì); nếu không, dòng chỉ có `new` bị đếm như đã sửa.
+        match = [v for v in variants if v != new]
         stmt = (
             update(model)
-            .where(model.deleted_at.is_(None), scope_clause, model.tags.contains([old]))
-            .values(tags=new_tags)
+            .where(
+                model.deleted_at.is_(None),
+                scope_clause,
+                or_(*[model.tags.contains([v]) for v in match]),
+            )
+            .values(tags=_replacement(model.tags, variants, new))
         )
         if model is Task:
             # Cần scope để biết có chạm task work không (chỉ khi đó mới ghi rule).
@@ -153,7 +208,9 @@ async def _apply_locked(
     if not any(counts):
         raise NotFoundError("không có task hoặc note nào bạn sửa được đang dùng tag này")
     rule_read: TagRuleRead | None = None
-    if work_changed and can_write_work:
+    # old == new (chuẩn hoá lại "Foo" -> "foo") không phải quyết định đổi tag nguồn: ghi rule
+    # foo -> foo sẽ là vòng tự trỏ, phá bất biến phẳng.
+    if work_changed and can_write_work and old != new:
         rule = await tag_rule_service.record_change(session, user, old, new)
         rule_read = TagRuleRead(
             id=rule.id,

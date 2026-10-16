@@ -8,8 +8,6 @@ import { ApiErrorPanel } from "@/components/api-error";
 
 export const dynamic = "force-dynamic";
 
-const RULES_PAGE_SIZE = 50;
-
 // Lưu ý (ngoài phạm vi T7): danh sách tag chính bên dưới TagManager vẫn tải hết một lần
 // (hiện ~474 tag), chưa phân trang server-side như AGENTS.md 3.5 yêu cầu.
 export default async function TagsPage({
@@ -39,7 +37,9 @@ export default async function TagsPage({
 
   // ?rulesPage= vượt số trang thật (gỡ bớt rule, hoặc gõ tay) thì về trang cuối.
   // redirect() ném lỗi điều hướng nên phải nằm NGOÀI try/catch ở trên.
-  const totalPages = Math.max(1, Math.ceil(rules.total / RULES_PAGE_SIZE));
+  // Lấy cỡ trang từ response (`rules.limit`) thay vì một hằng thứ hai: getTagRulesApi mới là nơi
+  // quyết định cỡ trang, hai con số riêng sẽ lệch nhau mà không ai thấy.
+  const totalPages = Math.max(1, Math.ceil(rules.total / Math.max(1, rules.limit)));
   if (requested > totalPages) redirect(rulesHref(totalPages));
 
   return (
