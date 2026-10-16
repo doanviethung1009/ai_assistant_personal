@@ -36,12 +36,12 @@ Việc hằng ngày sau khi dựng xong (kiểm tra, backup, cập nhật, sự 
 
 | Môi trường | Nhánh git | `ENVIRONMENT` | Chạy ở | IP | RAM |
 |---|---|---|---|---|---|
-| dev | `main` | `development` | VM `ai-dev-01` (id 201) | 192.168.100.201 | 2.5 GB |
+| dev | `main` | `development` | VM `ai-dev-01` (id 201) | 192.168.100.201 | 3.5 GB |
 | staging | `uat` | `staging` | VM `ai-stg-01` | 192.168.100.202 | 3 GB |
-| prod | `prod` | `production` | VM `ai-prod-01` | 192.168.100.203 | 5 GB |
+| prod | `prod` | `production` | VM `ai-prod-01` | 192.168.100.203 | 4 GB |
 | runner CI | — | — | LXC `ai-ci-01` | 192.168.100.204 | 1 GB (**chưa dựng**) |
 
-Gateway `192.168.100.1`. Node có 15.5 GB RAM. Ngân sách đã cấp: vpn 2 + dev 2.5 + staging 3 + prod 5 = **12.5 GB** (VM `agent-hub` và `jump-host-hub` đang tắt). Mức dùng thực tế thấp hơn, nhưng chưa còn chỗ cho runner CI 1 GB: muốn thêm thì tắt dev khi không dùng (`qm shutdown 201`).
+Gateway `192.168.100.1`. Node có 15.5 GB RAM. Ngân sách đã cấp: vpn 2 + dev 3.5 + staging 3 + prod 4 = **12.5 GB** (VM `agent-hub` và `jump-host-hub` đang tắt). Mức dùng thực tế thấp hơn, nhưng chưa còn chỗ cho runner CI 1 GB: muốn thêm thì tắt dev khi không dùng (`qm shutdown 201`).
 
 ## 2. Chuẩn bị: token API Proxmox
 
@@ -546,7 +546,7 @@ Snapshot nằm cùng storage với VM nên **không thay thế backup**.
 Mã thoát: `pve-check` 0 = ổn, 2 = fingerprint TLS lệch, 3 = token chưa có quyền. `pve-vm` 0 = xong (hoặc VM đã có, không làm gì),
 1 = Proxmox từ chối (đọc dòng `LỖI ... HTTP ...`), 2 = fingerprint lệch, 3 = VM lên nhưng SSH chưa mở.
 
-Môi trường hỗ trợ: `dev` (id 201, 2.5 GB, 30 GB), `staging` (202, 3 GB, 40 GB), `prod` (203, 5 GB, 60 GB, tự bật `protection`).
+Môi trường hỗ trợ: `dev` (id 201, 3.5 GB, 30 GB), `staging` (202, 3 GB, 40 GB), `prod` (203, 4 GB, 60 GB, tự bật `protection`).
 
 Quy ước thiết kế của `pve-vm`: **idempotent** (VM id đã có thì dừng, không bao giờ ghi đè), id VM = octet cuối IP,
 tag `env-<tên>`, prod tự bật `protection`. Thêm cờ `DRY=1` để chỉ in kế hoạch: `make pve-vm ENV=staging DRY=1`.
