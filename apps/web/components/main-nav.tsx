@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { hasPermission, type PermissionSet } from "@/lib/permissions";
 import { PRIMARY_NAV, SECONDARY_NAV, AI_NAV, ADMIN_NAV, isItemActive, type NavItem } from "@/lib/nav";
 
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 
 /**
@@ -77,12 +77,31 @@ function CollapsibleSection({ title, children, defaultOpen }: { title: string, c
   );
 }
 
+/**
+ * Link nav prefetch ĐẦY ĐỦ (cả dữ liệu page động) nhưng chỉ khi người dùng rê chuột/focus vào.
+ * Mặc định Next chỉ prefetch tới loading.tsx cho page động, nên click vẫn chờ server + core. Prefetch
+ * khi hiện ra màn hình thì bắn cả chục lần render vào core dùng chung rate limit, còn theo ý định
+ * (hover) thì chỉ tốn request cho mục sắp bấm. Kết quả nằm trong Router Cache (staleTimes.dynamic).
+ */
+function NavLink(props: Omit<ComponentProps<typeof Link>, "prefetch">) {
+  const [intent, setIntent] = useState(false);
+  return (
+    <Link
+      {...props}
+      prefetch={intent ? true : false}
+      onMouseEnter={() => setIntent(true)}
+      onFocus={() => setIntent(true)}
+      onTouchStart={() => setIntent(true)}
+    />
+  );
+}
+
 function PrimaryLink({ item, pathname }: { item: NavItem; pathname: string }) {
   const active = isItemActive(item.href, pathname);
   const Icon = item.icon;
 
   return (
-    <Link
+    <NavLink
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={`group flex items-center gap-3.5 rounded-xl px-3.5 py-2.5 text-[0.95rem] transition-all duration-300 ${active
@@ -94,7 +113,7 @@ function PrimaryLink({ item, pathname }: { item: NavItem; pathname: string }) {
         className={`size-5 shrink-0 transition-transform duration-300 ${active ? "text-white scale-110" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink)] group-hover:scale-110"}`}
       />
       <span>{item.label}</span>
-    </Link>
+    </NavLink>
   );
 }
 
@@ -103,7 +122,7 @@ function SecondaryLink({ item, pathname }: { item: NavItem; pathname: string }) 
   const Icon = item.icon;
 
   return (
-    <Link
+    <NavLink
       href={item.href}
       aria-current={active ? "page" : undefined}
       className={`group flex items-center gap-3.5 rounded-xl px-3.5 py-2 text-sm transition-all duration-300 ${active
@@ -115,6 +134,6 @@ function SecondaryLink({ item, pathname }: { item: NavItem; pathname: string }) 
         className={`size-5 shrink-0 transition-transform duration-300 ${active ? "text-[var(--color-accent)] scale-110" : "text-[var(--color-ink-muted)] group-hover:text-[var(--color-ink)] group-hover:scale-110"}`}
       />
       <span>{item.label}</span>
-    </Link>
+    </NavLink>
   );
 }
