@@ -277,3 +277,6 @@ class AuditAction(StrEnum):
     LOGIN_LOCKED = "login_locked"
     USER_UNLOCKED = "user_unlocked"
     USER_DELETED = "user_deleted"
+    # Quy tắc đồng bộ tag (docs/specs/tag-rules.md): đặt khi đổi tên/xoá tag chạm task work.
+    TAG_RULE_SET = "tag_rule_set"
+    TAG_RULE_DELETED = "tag_rule_deleted"

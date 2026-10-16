@@ -70,7 +70,7 @@ API_KEY = os.environ["API_KEY"]
 # của test này rò sang test sau. import_audit/import_runs là sổ cái của chức năng nhập.
 _TRUNCATE_SQL = (
     "TRUNCATE task_events, tasks, notes, projects, import_audit, import_runs, "
-    "app_settings, integration_connections, user_aliases, audit_log, users "
+    "app_settings, integration_connections, user_aliases, audit_log, tag_rules, users "
     "RESTART IDENTITY CASCADE"
 )
 ROOT = Path(__file__).resolve().parents[1]
