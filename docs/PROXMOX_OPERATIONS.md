@@ -95,17 +95,17 @@ Phát hiện:
 
 ### Đã làm (phía guest, không cần root Proxmox)
 
-Role Ansible mới `infra/proxmox/ansible/roles/tuning` (chạy trong `site.yml`, có comment WHY từng bước):
+Role Ansible mới `infra/proxmox/ansible/roles/tuning` (chạy trong `site.yml` **chỉ khi `tuning_enabled: true`**, mặc định tắt; hiện chỉ dev bật ở `host_vars/ai-dev-01.yml`; có comment WHY từng bước):
 
 | Thay đổi | Giá trị | Lý do |
 |---|---|---|
 | Swap file `/swapfile` | dev 2 GB (`host_vars/ai-dev-01.yml`), mặc định 1 GB (`group_vars/all.yml`) | Lưới an toàn chống OOM kill; ghi vào `/etc/fstab` |
 | `vm.swappiness` | 10 | Chỉ swap khi thật sự thiếu, giữ page cache Postgres/`node_modules` |
 | `vm.vfs_cache_pressure` | 50 | Giữ cache inode của bind mount nhiều file |
-| `fs.inotify.max_user_watches` | 524288 | Hot reload `next dev` không cạn watch (lỗi ENOSPC) |
+| `fs.inotify.max_user_watches` | 524288 | Chỉ có tác dụng khi watchpack dùng inotify, tức sau khi tắt `WATCHPACK_POLLING` (xem gợi ý bên dưới); kernel mới đã mặc định cao theo RAM |
 
 File sysctl: `/etc/sysctl.d/60-builder-tuning.conf` (Ansible quản lý, đừng sửa tay). **Mới áp dụng cho dev.**
-Staging/prod chưa áp (dry-run staging sạch); áp khi sẵn sàng: `make pve-config ENV=staging`. Prod chỉ áp qua quy trình có duyệt.
+Staging/prod không bị áp ngoài ý muốn nhờ cờ `tuning_enabled` mặc định `false`. Muốn áp: đặt `tuning_enabled: true` trong `host_vars/ai-stg-01.yml` rồi `make pve-config ENV=staging CHECK=1`, xem diff, chạy thật. Prod chỉ áp qua quy trình có duyệt.
 Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
 
 ### Cần làm phía Proxmox (cần quyền root, agent không có)
@@ -113,18 +113,19 @@ Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
 Chạy trong Shell của node (hoặc `ssh root@192.168.100.252`). Giữ nguyên tổng RAM: nâng dev 1 GB, hạ prod 1 GB (prod đang dùng ~0.6 GB và chưa chạy stack):
 
 ```bash
-# Dev: thêm RAM + nhân, dùng CPU thật của host, disk nhanh hơn. Áp dụng sau khi tắt/bật VM.
+# Dev: thêm RAM + nhân, dùng CPU thật của host, disk nhanh hơn. Áp dụng sau khi tắt/bật VM (reboot gõ trong guest không đủ).
+qm config 201 | grep -E 'scsi0|scsihw'     # xác nhận tên volume thật và scsihw = virtio-scsi-single (iothread cần controller này)
 qm shutdown 201 --timeout 90
 qm set 201 --memory 3584 --cores 3 --cpu host
-qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1
+qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1    # SỬA tên volume nếu lệnh trên in ra khác: gõ sai thì đĩa cũ thành unused0, VM không boot
 qm start 201
 # Prod: nhường RAM (chỉ khi chưa deploy stack, kiểm tra lại ngân sách trước khi deploy thật)
-qm set 203 --memory 4096        # có hiệu lực ở lần reboot VM kế tiếp
+qm set 203 --memory 4096        # áp dụng sau khi tắt/bật VM từ Proxmox (qm shutdown + qm start)
 ```
 
 Ngân sách RAM sau đổi: 2 (vpn) + 3.5 (dev) + 3 (stg) + 4 (prod) = 12.5 GB, bằng trước đây. Sau khi dev lên 3.5 GB có thể giảm swap
 dev về 1 GB (sửa `host_vars/ai-dev-01.yml`, chạy lại `make pve-config ENV=dev`; swap file cũ cần `swapoff` + xóa tay nếu thu nhỏ).
-Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, `ssh ai-dev 'cd /srv/builder-ai/dev && make ps'`.
+Sau khi đổi, cập nhật cho khớp thực tế: `MEM`/`CORES` trong `infra/proxmox/scripts/pve-vm.sh` và bảng ở `docs/SYSTEMS_INVENTORY.md` (việc của task T2). Kiểm tra sau đổi: `make pve-check`, `ssh ai-dev 'free -m; swapon --show'`, `ssh ai-dev 'cd /srv/builder-ai/dev && make ps'`.
 
 ### Gợi ý thêm (chưa làm, cần quyết định)
 

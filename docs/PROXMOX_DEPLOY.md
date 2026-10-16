@@ -352,6 +352,9 @@ VM có `protection=1` không xóa được: bỏ cờ bằng `qm set <id> --prot
 Mục tiêu: VM mới thành "máy chạy được Docker Compose" mà không gõ tay, và **chạy lại bao nhiêu lần cũng được**
 (idempotent: lần 2 phải báo `changed=0`).
 
+Các role chạy theo thứ tự `base` → `docker` → `tuning` → `app`. Role `tuning` (swap file, sysctl hiệu năng) **mặc định tắt**,
+chỉ chạy trên máy có `tuning_enabled: true` trong `host_vars/`; chi tiết và lý do ở [PROXMOX_OPERATIONS.md](PROXMOX_OPERATIONS.md) mục 1c.
+
 ### 5.1 Cài công cụ (một lần, trên máy dev)
 
 Ansible nằm trong venv của dự án (đã bị `.gitignore`), không cài vào hệ thống:

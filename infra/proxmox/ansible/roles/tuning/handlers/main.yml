@@ -1,9 +1,5 @@
 ---
-# Dùng khi swap file vừa được tạo; các task sau đã tự bật, handler chỉ phòng trường hợp chạy dở.
-- name: enable swap
-  ansible.builtin.shell: "swapon --show=NAME --noheadings | grep -q '^/swapfile$' || swapon /swapfile"
-  changed_when: false
-
+# Áp sysctl ngay sau khi file /etc/sysctl.d/60-builder-tuning.conf thay đổi (swap đã được bật bằng task trực tiếp).
 - name: reload sysctl
   ansible.builtin.command: sysctl --system
   changed_when: false
