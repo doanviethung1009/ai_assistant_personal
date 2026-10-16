@@ -67,29 +67,49 @@ sudo usermod -aG docker $USER && newgrp docker
 git clone -b prod https://github.com/<org>/<repo>.git /srv/builder-ai/prod
 cd /srv/builder-ai/prod
 
-# 3. Sinh .env với khoá ngẫu nhiên
+# 3. Sinh .env với khoá ngẫu nhiên (POSTGRES_PASSWORD, API_KEY, CORE_JWT_SECRET,
+#    AUTH_SECRET, INTEGRATION_SECRET_KEY). Sao lưu .env: mất INTEGRATION_SECRET_KEY
+#    thì phải nhập lại mọi token tích hợp.
 make env
 # Sửa .env: COMPOSE_PROJECT_NAME=builder-prod, ENVIRONMENT=production,
 # CORS_ORIGINS khớp domain thật. Xem bảng đầy đủ ở git-workflow.md.
+# BẮT BUỘC đặt thêm biến đăng nhập (AUTH_URL, ADMIN_EMAILS, ...): xem
+# "Cấu hình đăng nhập" ngay dưới khối lệnh này.
 
-# 4. Build và dựng — LẦN ĐẦU dùng make migration-init, không dùng make migrate
+# 4. Build và dựng. Migration đã nằm sẵn trong git, KHÔNG chạy make migration-init.
 make prod-build
-docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d postgres redis
-
-# 5. migrations/versions/ rỗng khi mới clone. Sinh initial schema TRƯỚC khi
-#    dựng api, nếu không "alembic upgrade head" sẽ "thành công" mà không tạo
-#    bảng nào — xem Troubleshooting #1.
-make migration-init
-
-make prod-up
-make migrate
+make prod-up        # api tự chạy "alembic upgrade head" khi khởi động
+make migrate        # chạy lại tường minh để thấy output và chắc chắn đã áp xong
+make health
 make smoke
+
+# 5. Tạo tài khoản admin đầu tiên (chỉ cần nếu dùng đăng nhập nội bộ, không dùng Google)
+make auth-create-local USERNAME=<ten> EMAIL=<email-trong-ADMIN_EMAILS> ROLE=admin
 ```
 
-**Vì sao `migration-init` chỉ chạy ở case này.** `apps/core/migrations/versions/`
-commit vào git với chỉ một file `.gitkeep` — initial schema chưa được sinh.
-Mọi lần deploy sau, migration đã tồn tại trong git nên chỉ cần `make migrate`
-(áp những gì đã có), không sinh thêm.
+**Cấu hình đăng nhập (bắt buộc trước `make prod-up`).** Bản hiện tại luôn bắt đăng nhập;
+thiếu biến nào dưới đây thì web hiện `/config-error` hoặc core không khởi động (fail closed).
+
+| Biến trong `.env` | Ý nghĩa | Ai đặt |
+|---|---|---|
+| `AUTH_URL` | URL công khai của web, **đúng như người dùng gõ** (scheme + host + cổng), vd `http://192.168.100.203:3000` hoặc `https://<domain>`. Auth.js redirect về đúng URL này sau đăng nhập; sai host thì người dùng bị đẩy sang host khác. Không còn mặc định `localhost`, để trống thì web báo `/config-error` | **Tự điền** (`make env` chỉ chép giá trị mẫu `http://localhost:3000`, phải đổi) |
+| `AUTH_SECRET` | Khoá Auth.js ký cookie phiên. Phải khác `API_KEY` và `CORE_JWT_SECRET` | `make env` sinh |
+| `CORE_JWT_SECRET` | Khoá ký JWT HS256 web→core (≥ 32 ký tự). `web` và `api` dùng **cùng giá trị**. Thiếu thì core không khởi động | `make env` sinh |
+| `ADMIN_EMAILS` | Email luôn là admin (phân cách dấu phẩy). Core upsert lúc khởi động. Email đầu tiên cũng là `SMOKE_EMAIL` của `make smoke` | **Tự điền**, mặc định trống |
+| `INTEGRATION_SECRET_KEY` | Khoá Fernet mã hoá token Jira trong DB. Để trống thì tắt lưu token. **Mất khoá = nhập lại mọi token**, nên sao lưu | `make env` sinh |
+| `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`, `GOOGLE_ALLOWED_HD` | Chỉ khi dùng đăng nhập Google. Để trống `AUTH_GOOGLE_*` thì nút Google không hiện. Hướng dẫn: [GOOGLE_OAUTH_SETUP.md](GOOGLE_OAUTH_SETUP.md) | Tự điền, tuỳ chọn |
+
+Máy đã có `.env` từ trước khi các biến này ra đời: `make env-fill` bổ sung
+`INTEGRATION_SECRET_KEY`, `CORE_JWT_SECRET`, `AUTH_SECRET` còn thiếu, **không đổi biến đã có**.
+Nó không đặt `AUTH_URL` hay `ADMIN_EMAILS`: hai biến đó luôn phải tự điền. Sau `make env-fill`
+phải `make prod-up` để container nhận biến mới.
+
+**Vì sao không còn `migration-init`.** `apps/core/migrations/versions/` đã chứa đủ chuỗi
+migration trong git (từ `initial_schema` trở đi). Chạy `make migration-init` lúc này sẽ
+autogenerate thêm một revision "initial schema" thứ hai, lệch với chuỗi hiện có và làm
+`alembic upgrade head` có nhiều head hoặc chạy sai. Mọi máy mới, kể cả lần đầu, chỉ cần
+`make migrate` (api cũng tự áp khi khởi động). Target `migration-init` còn trong Makefile
+nhưng chỉ dành cho repo mà `versions/` trống thật sự; ở repo này đừng dùng.
 
 Nếu đây là máy UAT thay vì prod, đổi `-b prod` thành `-b uat`, và `.env` đặt
 `ENVIRONMENT=staging` (không phải `uat` — xem lý do ở
@@ -172,6 +192,19 @@ make health
 (`display_timezone`) và `web` đọc nó lúc chạy, nên đổi `TZ` chỉ cần `make prod-up`, không
 phải build lại image. Không còn biến `NEXT_PUBLIC_*` nào; nếu sau này thêm thì giá trị
 bị nhúng lúc build và đổi nó phải `make prod-build`.
+
+**Biến đăng nhập (`AUTH_URL`, `AUTH_SECRET`, `CORE_JWT_SECRET`, `ADMIN_EMAILS`).** Đổi các
+biến này cũng chỉ cần `make prod-up`, nhưng có ràng buộc:
+
+- `AUTH_URL` phải khớp URL người dùng gõ vào. Đổi domain hoặc IP thì đổi cả `AUTH_URL`,
+  `CORS_ORIGINS` và redirect URI ở Google (nếu dùng Google).
+- Đổi `AUTH_SECRET` làm **mọi phiên đăng nhập hết hiệu lực**, người dùng phải đăng nhập lại.
+- `CORE_JWT_SECRET` phải giống nhau ở `web` và `api`; `make prod-up` đọc `.env` cho cả hai nên
+  không lệch. Đừng restart riêng một service. Không dùng chung với `API_KEY` hay `AUTH_SECRET`.
+- Thêm admin: thêm email vào `ADMIN_EMAILS` rồi `make prod-up` (core upsert lúc khởi động).
+- `INTEGRATION_SECRET_KEY` **không xoay bằng cách thay giá trị**: đặt khoá mới vào
+  `INTEGRATION_SECRET_KEY` và chuyển khoá cũ sang `INTEGRATION_SECRET_KEY_OLD`, nếu không token
+  Jira đã lưu không giải mã được.
 
 **Xoay `API_KEY`.** `API_KEY` được cả `api` (để validate) và `web` (để gọi
 `api`) dùng, nên đổi nó phải restart cả hai cùng lúc — `make prod-up` làm đúng
@@ -339,6 +372,43 @@ bạn kiểm soát, cân nhắc kỹ trước khi bật — đây là mức quy�
 `.env` rồi `make llm-up` lại — compose tự nhận diện service không đổi cấu
 hình container thì không restart, có đổi thì restart đúng service đó.
 
+## Case 9b — Bật đăng nhập lần đầu trên prod đang chạy bản cũ
+
+Dùng khi: prod đang chạy bản trước khi có đăng nhập (không có `AUTH_*`, `CORE_JWT_SECRET`),
+giờ nâng lên bản có đăng nhập và đã có dữ liệu thật.
+
+```bash
+cd /srv/builder-ai/prod
+
+make backup && ls -lh backups/ | tail -n 1   # bắt buộc: migration thêm bảng user, gán chủ dữ liệu
+
+git pull --ff-only   # kéo code TRƯỚC: gen-env.sh bản cũ chưa sinh CORE_JWT_SECRET/AUTH_SECRET
+
+make env-fill        # bổ sung CORE_JWT_SECRET, AUTH_SECRET, INTEGRATION_SECRET_KEY còn thiếu
+nano .env            # tự điền AUTH_URL và ADMIN_EMAILS (+ AUTH_GOOGLE_* nếu dùng Google)
+
+make prod-build
+make prod-up
+make migrate
+
+# Gán chủ cho dữ liệu cũ (task/note tạo trước khi có user). Chạy thử trước:
+make auth-bootstrap OWNER=<email-admin> DRY=1
+make auth-bootstrap OWNER=<email-admin>
+
+# Nếu dùng đăng nhập nội bộ: tạo tài khoản (in mật khẩu tạm MỘT lần, đăng nhập xong bị ép đổi)
+make auth-create-local USERNAME=<ten> EMAIL=<email-admin> ROLE=admin
+
+make health
+make smoke
+```
+
+Kiểm tra bằng trình duyệt: mở `AUTH_URL`, phải thấy trang `/login`; đăng nhập xong phải về
+**đúng host đó**, không phải `localhost`. Thấy `/config-error` nghĩa là thiếu biến (thường là
+`AUTH_URL`). Bảng lỗi đầy đủ: [GOOGLE_OAUTH_SETUP.md](GOOGLE_OAUTH_SETUP.md).
+
+Rollback (Case 7/8) về bản không có đăng nhập thì các bảng user vẫn còn trong DB; nếu cần lùi
+schema thì theo Case 8, và nhớ đã có `make backup` ở bước đầu.
+
 ## Case 10 — Chỉ cần máy khác trong LAN dùng chung, không phải case deploy thật
 
 Dùng khi: bạn **không** đang dựng UAT/production. Chỉ muốn điện thoại hay
@@ -396,6 +466,9 @@ Dùng cho Case 2, 3, 6 — bất kỳ lần nào đưa code mới lên `prod`.
       git-workflow.md)
 - [ ] Nếu có migration mới: đã `make backup` trên **production**, đã xác
       nhận file backup không rỗng (`ls -lh backups/`)
+- [ ] Nếu có đổi biến đăng nhập hoặc bật login lần đầu: `AUTH_URL` đúng URL người dùng gõ,
+      `ADMIN_EMAILS` có ít nhất một email, `CORE_JWT_SECRET`/`AUTH_SECRET` đã có (`make env-fill`)
+      — xem Case 1 và Case 9b
 - [ ] Nếu có đổi `NEXT_PUBLIC_*`: nhớ `make prod-build`, không chỉ `prod-up`
 - [ ] Biết rõ cách rollback cho lần deploy này **trước khi** bắt đầu (Case 7
       nếu không đổi schema, Case 8 nếu có)
@@ -407,10 +480,17 @@ Dùng cho Case 2, 3, 6 — bất kỳ lần nào đưa code mới lên `prod`.
 ## Troubleshooting
 
 **#1 — `make migrate` chạy "thành công" nhưng gọi API thì lỗi bảng không
-tồn tại.** `migrations/versions/` đang trống (chưa từng `migration-init`).
-`alembic upgrade head` không có gì để áp thì vẫn exit 0. Chạy
-`make migration-init` rồi `make migrate` lại — chỉ cần làm một lần cho mỗi
-database mới.
+tồn tại.** Thường là `make migrate` chạy trên DB/compose project khác với cái api đang dùng
+(sai thư mục, `COMPOSE_PROJECT_NAME` lệch), hoặc `alembic_version` trỏ tới revision không còn
+trong `versions/`. Kiểm: `make history` xem revision hiện tại, `make ps` xem đúng project.
+Đừng chạy `make migration-init`: `versions/` đã có đủ migration trong git (xem Case 1).
+
+**#1b — Web hiện `/config-error`, hoặc đăng nhập xong bị đẩy về `localhost`.**
+`AUTH_URL` trống hoặc sai host. Đặt đúng URL người dùng gõ, rồi `make prod-up`
+(compose tự tạo lại web khi env đổi, và target này giữ nguyên overlay LAN).
+
+**#1c — Core không khởi động, log nhắc `CORE_JWT_SECRET`.** Thiếu hoặc < 32 ký tự. Chạy
+`make env-fill` rồi `make prod-up`.
 
 **#2 — Web chạy đúng ở local nhưng tab Tài liệu báo "không tìm thấy file" trên
 server.** Thiếu mount `DOCS_DIR`. Đảm bảo đang dùng `docker-compose.prod.yml`

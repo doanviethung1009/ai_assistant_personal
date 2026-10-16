@@ -16,6 +16,7 @@ Cập nhật: 2026-10-09. Thiết kế và lý do nằm ở [spec](specs/proxmox
 | Cấu hình VM bằng Ansible | **Đã có** `make pve-config ENV=...`, đã áp lên staging, chạy lần 2 `changed=0` (mục 5) |
 | Thử build + chạy stack trên staging | **Đã thử** (2026-10-09): build, up, migrate, health OK; `make smoke` 93/98 (5 lỗi là race của backend, xem PROXMOX_OPERATIONS.md mục 11) |
 | CI build image + deploy tự động | Workflow đã viết và merge (`build-images.yml`, `deploy.yml`); `Build images` đã build+đẩy được image api, bước Trivy còn lỗi chưa rõ nguyên nhân; `Deploy` **chưa chạy được** (cần runner tự host, Environments, Secrets) |
+| **Cách deploy hiện tại** | **Deploy tay theo [deploy-runbook.md](deploy-runbook.md)** (SSH vào VM, `git pull`, `make prod-build`, `make prod-up`, `make migrate`, `make health`, `make smoke`). Pipeline ở mục 7 và 8 là **thiết kế đích, chưa chạy được**; đừng chờ nó tự deploy |
 | Tab "Hạ tầng" trên web | Chưa làm (mục 10) |
 
 Khi một mục chuyển sang "Đã có", cập nhật bảng này.
@@ -476,13 +477,24 @@ Chưa triển khai; xem trạng thái ở mục 0.
 
 ## 8. Quy trình deploy một bản mới
 
-### 8.1 Lên staging (tự động)
+> **Mục 8.1 đến 8.3 mô tả pipeline đích, chưa chạy được** (workflow `Deploy` thiếu runner tự host,
+> Environments và Secrets; xem mục 0). Hiện tại deploy staging và prod **bằng tay** theo
+> [deploy-runbook.md](deploy-runbook.md): Case 2 (update thường), Case 3 (có migration),
+> Case 9b (bật đăng nhập lần đầu). Khi pipeline chạy được thì bỏ ghi chú này và cập nhật bảng mục 0.
+
+### 8.1 Lên staging (tự động, khi pipeline sẵn sàng)
 
 1. Merge PR vào `main`. CI build image, push `sha-abc1234`.
 2. Thăng cấp: `make promote-uat` (xem git-workflow.md). Pipeline deploy staging.
 3. Xác nhận: `make health` và `make smoke` xanh; mở `http://192.168.100.202:3000` xem tay.
 
-### 8.2 Lên prod (có duyệt)
+### 8.2 Lên prod (có duyệt, khi pipeline sẵn sàng)
+
+**Hiện tại (deploy tay):** làm theo Checklist trước mỗi lần deploy production và Case 3 trong
+[deploy-runbook.md](deploy-runbook.md) (`make backup`, `git pull --ff-only`, `make prod-build`,
+`make prod-up`, `make migrate`, `make health`, `make smoke`). Snapshot VM `qm snapshot 203 pre-<sha>`
+làm tay trên node Proxmox trước khi bắt đầu. Prod chưa từng deploy: dùng Case 1; lần đầu bật đăng
+nhập trên dữ liệu có sẵn thì dùng Case 9b. Bảng bên dưới là các bước pipeline sẽ tự làm sau này.
 
 1. Đạt các mục của "Checklist trước mỗi lần deploy production" trong [deploy-runbook.md](deploy-runbook.md).
 2. Thăng cấp lên `prod`. Pipeline dừng chờ người duyệt trên GitHub.
