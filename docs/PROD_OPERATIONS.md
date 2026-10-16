@@ -11,9 +11,9 @@ không thay thế hai file đó.
 |---|---|
 | Nhánh `uat`, `prod` trên GitHub | Cùng ở `23a6911` (= `main` lúc thăng cấp) |
 | Tag phát hành | `v1.0.0` tại `23a6911` |
-| VM prod `192.168.100.203` (`ai-prod-01`) | Đã dựng và cấu hình Ansible; repo ở `/srv/builder-ai/prod` đang ở nhánh `prod`, commit cũ `d0cbccc` |
-| Stack trên VM prod | **Chưa chạy** (chưa có container, chưa có DB, chưa có `backups/`) |
-| Deploy lên VM prod | **Chưa làm.** Việc thay đổi trên prod do User thực hiện (agent `devops` bị cấm chạy lệnh ghi trên prod) |
+| VM prod `192.168.100.203` (`ai-prod-01`) | Đã dựng và cấu hình Ansible; repo ở `/srv/builder-ai/prod` nhánh `prod`, commit `23a6911` (`v1.0.0`) |
+| Stack trên VM prod | **Đang chạy bản prod** (`make prod-build` + `make prod-up`): api, postgres, redis healthy; web giới hạn 512 MB, không bind mount code. Migration `alembic upgrade head` xong |
+| Deploy lên VM prod | **Đã deploy `v1.0.0` (2026-10-16).** `make health` ok, `/tags` trả 302, openapi có `/api/v1/tags/*`. Chưa chạy `make smoke` (thiếu `SMOKE_TOKEN`) và chưa kiểm `/tags` sau đăng nhập. Việc ghi trên prod do User cấp quyền; agent `devops` mặc định bị cấm |
 
 ## 2. Cách đặt phiên bản (tag)
 
@@ -26,7 +26,11 @@ không thay thế hai file đó.
   `git push origin origin/main:refs/heads/uat`, rồi `git tag -a v1.0.0 origin/uat`, rồi
   `git push origin origin/uat:refs/heads/prod v1.0.0`.
 
-## 3. Lần go-live đầu trên VM prod (User chạy)
+## 3. Lần go-live đầu trên VM prod (đã làm 2026-10-16; giữ làm tham chiếu)
+
+Lưu ý đã gặp: phải `make prod-build` + `make prod-up`, KHÔNG phải `make up` (lệnh này dựng stack dev: bind mount code, `next dev`).
+Kiểm bằng `docker inspect ... HostConfig.Memory` khác 0 và web không có bind mount `/app`. Phải `git pull --ff-only`
+trước `make env-fill` vì `env-fill` không có ở commit cũ.
 
 Điều kiện cần xong **trước**:
 
