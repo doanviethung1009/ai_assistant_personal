@@ -499,8 +499,14 @@ read-only) — nếu bạn tự viết compose khác, phải tự thêm ba mount
 
 **#3 — Đổi `.env` nhưng container không nhận giá trị mới.** `docker compose
 up -d` chỉ recreate container nếu nó phát hiện cấu hình đổi. Nếu nghi ngờ,
-buộc recreate: `docker compose -f docker-compose.yml -f docker-compose.prod.yml
-up -d --force-recreate api web`.
+buộc recreate (`make prod-up` không có cờ này nên phải gọi compose trực tiếp, và phải
+giữ overlay LAN giống target đó, nếu không web mất cổng LAN khi `.env` có `EXPOSE_LAN=true`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+  $(grep -q '^EXPOSE_LAN=true' .env && echo "-f docker-compose.lan.yml") \
+  up -d --force-recreate api web
+```
 
 **#4 — `docker-compose.prod.yml` báo lỗi parse, phàn nàn về `!override`.**
 Cần Docker Compose ≥ 2.24. Kiểm tra: `docker compose version --short`.
