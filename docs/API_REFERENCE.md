@@ -70,7 +70,9 @@ Tên tag được chuẩn hoá như lúc nhập (chữ thường, space → `-`,
 | `PATCH` | `/{name}` | Đổi tên tag. Body `{"new_name": "..."}` | Tên mới đã có trên cùng bản ghi thì gộp. Trả `{tasks, notes}` là số bản ghi đã đổi. 404 nếu không có bản ghi nào sửa được; 409 nếu tên mới trùng tên cũ; 422 nếu tên rỗng |
 | `DELETE` | `/{name}` | Xoá tag khỏi mọi bản ghi sửa được | Trả `{tasks, notes}`; 404 nếu không có gì để xoá |
 
-Phạm vi sửa (đổi tên/xoá): note của chính user, task `personal` của chính user, và task `work` chỉ khi có quyền `task:write_any_work` (lead, admin). Member vẫn thấy tag của task work trong `/stats` nhưng đổi tên/xoá không động vào chúng.
+Phạm vi sửa (đổi tên/xoá): note của chính user, task `personal` của chính user, và task `work` chỉ khi có quyền `task:write_any_work` (lead, admin). Member vẫn thấy tag của task work trong `/stats` nhưng đổi tên/xoá không động vào chúng (kể cả task họ tạo hoặc được giao). Mỗi task bị đổi ghi một `TaskEvent` `updated` với payload `{tags: {from, to}}`. Tên tag có `/` vẫn dùng được (route `/{name:path}`).
+
+**Cạnh tranh với Jira sync:** tag lấy từ label/component của Jira sẽ quay lại ở lần sync kế tiếp (sync gộp tag cũ với tag nhận về), nên đổi tên/xoá loại tag này chỉ có tác dụng tạm thời.
 
 ## 3. API Quản lý Dự án (Projects)
 Base path: `/api/v1/projects`

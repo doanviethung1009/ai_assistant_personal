@@ -86,3 +86,30 @@ async def test_member_cannot_touch_work_tasks_or_others_data(client: httpx.Async
     assert (await client.delete(f"{TAGS}/shared", headers=member.headers)).status_code == 404
     names = {t["name"] for t in (await client.get(f"{TAGS}/stats")).json()}
     assert names == {"shared"}
+
+
+async def test_tag_with_slash_and_soft_deleted_untouched(client: httpx.AsyncClient) -> None:
+    """Tag có `/` vẫn đổi được (route :path); task đã xoá mềm không bị đụng."""
+    live = await _task(client, ["a/b"])
+    dead = await _task(client, ["a/b"])
+    assert (await client.delete(f"/api/v1/tasks/{dead}")).status_code in (200, 204)
+    resp = await client.patch(f"{TAGS}/a%2Fb", json={"new_name": "ab"})
+    assert resp.status_code == 200
+    assert resp.json() == {"tasks": 1, "notes": 0}
+    assert (await client.get(f"/api/v1/tasks/{live}")).json()["tags"] == ["ab"]
+
+
+async def test_member_renames_own_tags(client: httpx.AsyncClient) -> None:
+    """Member đổi được tag trên note và task personal của mình, task work của team giữ nguyên."""
+    work = await _task(client, ["team"], scope="work")
+    member = await create_persona("member-own@test.local", UserRole.MEMBER)
+    resp = await client.post(
+        "/api/v1/notes",
+        json={"title": "n", "content": "c", "tags": ["team"]},
+        headers=member.headers,
+    )
+    assert resp.status_code == 201
+    resp = await client.patch(f"{TAGS}/team", json={"new_name": "mine"}, headers=member.headers)
+    assert resp.status_code == 200
+    assert resp.json() == {"tasks": 0, "notes": 1}
+    assert (await client.get(f"/api/v1/tasks/{work}")).json()["tags"] == ["team"]

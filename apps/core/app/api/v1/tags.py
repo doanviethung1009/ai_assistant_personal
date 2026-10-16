@@ -23,7 +23,7 @@ async def tag_stats(session: SessionDep, user: CurrentUserDep) -> list[TagStat]:
 
 
 @router.patch(
-    "/{name}",
+    "/{name:path}",
     response_model=TagChangeResponse,
     summary="Đổi tên tag",
     description=(
@@ -39,7 +39,7 @@ async def rename_tag(
 
 
 @router.delete(
-    "/{name}",
+    "/{name:path}",
     response_model=TagChangeResponse,
     summary="Xoá tag khỏi mọi task/note được phép sửa",
 )

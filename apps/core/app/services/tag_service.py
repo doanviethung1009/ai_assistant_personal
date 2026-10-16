@@ -6,8 +6,11 @@ một câu SQL trên mảng, không cần migration.
 PHẠM VI (đi qua `access`, không tự viết điều kiện owner/scope):
 - Thống kê: task nhìn thấy được + note của chính user.
 - Đổi tên/xoá: note của chính user; task `personal` của chính user; task `work` chỉ khi có
-  `task:write_any_work` (giống sửa task work). Member vẫn quản lý được tag của mình, không động
-  vào task của team.
+  `task:write_any_work`. Cố ý chặt hơn `access.task_permissions`: member không sửa tag hàng loạt
+  trên task work dù là người tạo/được giao. Mỗi task bị đổi ghi một `TaskEvent` UPDATED.
+
+LƯU Ý: tag có nguồn từ Jira (label/component) sẽ quay lại ở lần sync kế tiếp vì
+`task_sync_service` gộp (union) tag cũ với tag nhận về.
 """
 
 from __future__ import annotations
@@ -18,9 +21,9 @@ from sqlalchemy.types import String
 
 from app.core.auth import CurrentUser
 from app.core.permissions import Permission
-from app.models.enums import TaskScope
+from app.models.enums import TaskEventType, TaskScope
 from app.models.note import Note
-from app.models.task import Task
+from app.models.task import Task, TaskEvent
 from app.schemas.common import normalize_tags
 from app.schemas.tag import TagChangeResponse, TagStat
 from app.services import access
@@ -44,14 +47,14 @@ def _writable_task_clause(user: CurrentUser) -> ColumnElement[bool]:
 async def list_stats(session: AsyncSession, user: CurrentUser) -> list[TagStat]:
     t_tag = func.unnest(Task.tags).column_valued("tag")
     task_rows = (
-        select(t_tag.label("name"), func.count().label("n"))
+        select(t_tag.label("name"), func.count(func.distinct(Task.id)).label("n"))
         .select_from(Task)
         .where(Task.deleted_at.is_(None), access.task_visible_clause(user))
         .group_by(t_tag)
     )
     n_tag = func.unnest(Note.tags).column_valued("tag")
     note_rows = (
-        select(n_tag.label("name"), func.count().label("n"))
+        select(n_tag.label("name"), func.count(func.distinct(Note.id)).label("n"))
         .select_from(Note)
         .where(Note.deleted_at.is_(None), access.note_visible_clause(user))
         .group_by(n_tag)
@@ -100,8 +103,22 @@ async def _apply(
             update(model)
             .where(model.deleted_at.is_(None), scope_clause, model.tags.contains([old]))
             .values(tags=new_tags)
+            .returning(model.id)
         )
-        counts.append(result.rowcount or 0)
+        ids = list(result.scalars())
+        counts.append(len(ids))
+        if model is Task:
+            # Sửa hàng loạt task cả team phải để lại dấu vết như update_task (audit log).
+            for task_id in ids:
+                session.add(
+                    TaskEvent(
+                        task_id=task_id,
+                        event_type=TaskEventType.UPDATED,
+                        actor=user.actor,
+                        actor_user_id=user.id,
+                        payload={"tags": {"from": old, "to": new}},
+                    )
+                )
     if not any(counts):
-        raise NotFoundError("không có task hoặc note nào dùng tag này")
+        raise NotFoundError("không có task hoặc note nào bạn sửa được đang dùng tag này")
     return TagChangeResponse(tasks=counts[0], notes=counts[1])
