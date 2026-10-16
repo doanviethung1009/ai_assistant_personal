@@ -50,6 +50,10 @@ scripts/agents/new-worktree.sh T<N> <slug> --type <type>
 ```
 Script tự nhận biết chế độ: ở linked worktree thì chạy `--here` (đổi tên nhánh hiện tại sang `<type>/T<N>-<slug>`, không `git worktree add`); ở checkout chính thì tạo worktree mới. Ép tay bằng `--here` / `--new`. Ở chế độ NEW script tạo nhánh từ `origin/main`, sinh `.env` + `.env.worktree`, dựng postgres/redis/api của riêng task và chạy migration (nếu Docker chạy). Lần đầu build image có thể mất vài phút. Lỗi thì đọc thông báo, sửa nguyên nhân rồi chạy lại (script chạy lại an toàn).
 
+Máy không có Docker (script báo "Docker không chạy"): **không phải lỗi**. Worktree và `.env.worktree` vẫn
+đủ để code. Kiểm chứng backend sau này dùng `make devvm-test` / `make devvm-smoke` (chạy trên VM dev),
+web xem nhanh bằng `make devvm-web`. Chi tiết: `docs/agents/WORKFLOW.md` mục 9.
+
 ## Bước 6 - Báo cho User
 In nguyên khối tóm tắt cuối của script (thư mục, nhánh, compose project, DB, cổng).
 - Chế độ NEW, nhắc: mở session Claude Code **mới** trong worktree: `cd <đường dẫn> && claude`. Session hiện tại không code task này.

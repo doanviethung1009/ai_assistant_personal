@@ -423,3 +423,26 @@ devvm-web: devvm-tunnel ## Chạy web trên host (DATA_SOURCE=api) trỏ vào AP
 .PHONY: devvm-down
 devvm-down: ## Đóng tunnel
 	@pkill -f "ssh .*-L $(DEVVM_PORT):127.0.0.1:8000" 2>/dev/null || true
+
+# ── Kiểm chứng backend khi máy local không có Docker (xem docs/agents/WORKFLOW.md mục 9) ──
+# Cả bốn lệnh chạy trên VM dev nhưng KHÔNG đụng DB thật, trừ devvm-branch (có sao lưu + khoá).
+.PHONY: devvm-test
+devvm-test: ## Lint + migration + pytest của apps/core trên VM dev, DB tạm (không đụng stack dev). Thêm K=<biểu thức> để lọc
+	bash scripts/patches/dev-vm-backend-test.sh $(if $(K),-k "$(K)")
+
+.PHONY: devvm-smoke
+devvm-smoke: ## Smoke E2E trên VM dev trong stack tạm, cho commit REF (mặc định HEAD)
+	bash scripts/patches/dev-vm-smoke.sh $(or $(REF),HEAD)
+
+.PHONY: devvm-branch
+devvm-branch: ## Đưa nhánh BRANCH (đã push) lên VM dev để xem backend thật: sao lưu DB + khoá, chặn migration. Kèm TASK=T<N>. Xong phải devvm-restore
+	@[ -n "$(BRANCH)" ] || { echo "Thiếu BRANCH=<nhánh đã push>"; exit 1; }
+	scripts/agents/dev-vm-branch.sh deploy "$(BRANCH)" $(TASK)
+
+.PHONY: devvm-restore
+devvm-restore: ## Trả VM dev về main (nhả khoá devvm-branch)
+	scripts/agents/dev-vm-branch.sh restore
+
+.PHONY: devvm-status
+devvm-status: ## Nhánh đang chạy trên VM dev, ai giữ khoá, trạng thái container
+	scripts/agents/dev-vm-branch.sh status

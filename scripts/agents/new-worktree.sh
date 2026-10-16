@@ -183,8 +183,10 @@ if [[ $STACK -eq 1 ]]; then
     make --no-print-directory migrate
     STACK_NOTE="đang chạy (postgres, redis, api), đã migrate lên head"
   else
-    STACK_NOTE="CHƯA dựng: Docker không chạy. Khi có Docker: make up-backend && make migrate"
-    warn "Docker không chạy hoặc thiếu docker-compose.worktree.yml, bỏ qua bước dựng DB."
+    # Máy không có Docker là cấu hình bình thường của dự án (docs/agents/WORKFLOW.md mục 9):
+    # backend kiểm chứng trên VM dev, không phải lỗi cần sửa.
+    STACK_NOTE="CHƯA dựng (không có Docker local). Kiểm chứng backend: make devvm-test / make devvm-smoke. Có Docker: make up-backend && make migrate"
+    warn "Không dựng DB riêng (Docker không chạy hoặc thiếu docker-compose.worktree.yml). Dùng make devvm-test / devvm-smoke để kiểm backend trên VM dev."
   fi
 fi
 

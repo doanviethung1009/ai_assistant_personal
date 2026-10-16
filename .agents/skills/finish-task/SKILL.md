@@ -34,6 +34,17 @@ make smoke               # khi có đổi apps/core
 ```
 Đổi `apps/web`: thêm `cd apps/web && npx vitest run` nếu có test liên quan.
 
+**Máy không có Docker** (`docker info` lỗi): không dựng stack local. Kiểm chứng backend trên VM dev,
+cách ly với DB thật (xem `docs/agents/WORKFLOW.md` mục 9):
+```bash
+make devvm-test            # ruff + migration + pytest trên DB tạm (thêm K=<biểu thức> để lọc)
+make devvm-smoke           # khi có đổi apps/core; REF=<commit> nếu không phải HEAD
+(cd apps/web && npx tsc --noEmit)   # typecheck web ở local
+```
+Muốn xem giao diện với backend thật của nhánh: push nhánh (hỏi User), `make devvm-branch BRANCH=<nhánh> TASK=T<N>`,
+`make devvm-web`, và **luôn `make devvm-restore` khi xong**. Nhánh có migration thì script từ chối: dùng `devvm-smoke`.
+Ghi kết quả (số test pass, smoke) vào mô tả PR và handoff; việc chưa chạy được thì ghi rõ là chưa chạy.
+
 ## Bước 3 - Cập nhật theo origin/main
 Chọn cách theo việc nhánh đã từng push hay chưa (rebase nhánh đã push buộc phải push ép, mà hook chặn):
 ```bash
