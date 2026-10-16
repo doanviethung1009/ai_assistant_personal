@@ -90,6 +90,14 @@ export const DOCS: DocEntry[] = [
     file: path.join("docs", "agents", "WORKFLOW.md"),
   },
   {
+    slug: "github-cli-guide",
+    title: "GitHub CLI: vận hành task, session, agent",
+    description:
+      "Dùng gh (issue, PR, CI) làm bảng điều phối khi chạy nhiều task, nhiều session Claude Code và nhiều subagent; quy ước đặt tên, chia việc song song, merge, sự cố thường gặp.",
+    category: "2. Làm việc với AI Agent",
+    file: path.join("docs", "GITHUB_CLI_GUIDE.md"),
+  },
+  {
     slug: "agents-handoff-template",
     title: "Mẫu handoff cuối session",
     description:
