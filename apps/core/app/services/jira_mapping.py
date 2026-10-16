@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -29,6 +30,7 @@ from app.models.enums import TaskPriority, TaskStatus
 from app.schemas.common import MAX_TAGS
 from app.schemas.task import MAX_ASSIGNEE_LEN, MAX_REPORTER_LEN
 from app.schemas.task_upsert import TaskUpsert
+from app.services import tag_rule_service
 from app.services.import_service import normalize_project_key
 
 # Tên custom field Jira được coi là thông tin phân nhóm dự án (cùng regex với bản TS).
@@ -234,6 +236,7 @@ def map_issue(
     fallback_project_name: str | None = None,
     notes: list[str] | None = None,
     project_from_field: set[str] | None = None,
+    tag_rules: Mapping[str, str | None] | None = None,
 ) -> TaskUpsert:
     """Một issue -> TaskUpsert.
 
@@ -244,6 +247,11 @@ def map_issue(
     custom field Company/Team (không phải từ project Jira hay tiền tố khoá). Chỉ những
     issue này mới được phép đổi project của task ĐÃ CÓ; thiếu field (đổi quyền, bị cắt)
     thì không được kéo cả loạt task về project của Jira.
+
+    `tag_rules`: quy tắc đồng bộ tag (source -> target, None = chặn). Áp lên danh sách tag đã
+    sắp theo độ ưu tiên NGAY TRƯỚC khi cắt còn MAX_TAGS, để tag bị chặn không chiếm chỗ của
+    label đứng sau. Mặc định None = hành vi cũ, hàm vẫn thuần (không chạm DB); người gọi nạp
+    rule một lần mỗi lần sync. `upsert_batch` áp lại (idempotent) để phủ Excel/URL.
 
     Raises:
         MappingError: thiếu/sai khoá issue hoặc dữ liệu không dựng được TaskUpsert.
@@ -305,6 +313,8 @@ def map_issue(
         [_slug(x) for x in labels if isinstance(x, str)] if isinstance(labels, list) else []
     )
     ordered = list(dict.fromkeys(t for t in (*identity, *grouping, *secondary, *label_tags) if t))
+    if tag_rules:
+        ordered = tag_rule_service.apply_rules(ordered, tag_rules)
     tag_list = ordered[:MAX_TAGS]
     if len(ordered) > MAX_TAGS and notes is not None:
         notes.append(f"{len(ordered) - MAX_TAGS} tag vượt trần {MAX_TAGS} nên bị bỏ")
@@ -381,7 +391,7 @@ def map_issue(
 # Điểm lệch có chủ đích so với bản TS (và cách Jira sync dùng upsert):
 # - Trường CHỈ GHI KHI TẠO (create_only trong integration_sync_service): priority,
 #   assignee. Khớp bản TS để giá trị User sửa tay không bị sync ghi đè. Status, title,
-#   external_url và tags (gộp) vẫn được áp khi cập nhật.
+#   external_url và tags (gộp, sau khi áp tag_rules) vẫn được áp khi cập nhật.
 # - reporter: LUÔN cập nhật theo Jira, không create-only. Reporter không sửa tay được
 #   (không có trong TaskUpdate) nên không có gì để giữ; create-only sẽ khiến task cũ không
 #   bao giờ có reporter.

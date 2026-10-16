@@ -50,7 +50,7 @@ async def test_rename_merges_into_existing_tag(client: httpx.AsyncClient) -> Non
     note = await _note(client, ["old"])
     resp = await client.patch(f"{TAGS}/old", json={"new_name": "New"})
     assert resp.status_code == 200
-    assert resp.json() == {"tasks": 2, "notes": 1}
+    assert resp.json() == {"tasks": 2, "notes": 1, "rule": None}
     assert (await client.get(f"/api/v1/tasks/{both}")).json()["tags"] == ["new"]
     assert (await client.get(f"/api/v1/tasks/{only}")).json()["tags"] == ["new"]
     assert (await client.get(f"/api/v1/notes/{note}")).json()["tags"] == ["new"]
@@ -67,7 +67,7 @@ async def test_delete_removes_tag(client: httpx.AsyncClient) -> None:
     task_id = await _task(client, ["a", "b"])
     resp = await client.delete(f"{TAGS}/a")
     assert resp.status_code == 200
-    assert resp.json() == {"tasks": 1, "notes": 0}
+    assert resp.json() == {"tasks": 1, "notes": 0, "rule": None}
     assert (await client.get(f"/api/v1/tasks/{task_id}")).json()["tags"] == ["b"]
     assert (await client.delete(f"{TAGS}/a")).status_code == 404
 
@@ -95,7 +95,7 @@ async def test_tag_with_slash_and_soft_deleted_untouched(client: httpx.AsyncClie
     assert (await client.delete(f"/api/v1/tasks/{dead}")).status_code in (200, 204)
     resp = await client.patch(f"{TAGS}/a%2Fb", json={"new_name": "ab"})
     assert resp.status_code == 200
-    assert resp.json() == {"tasks": 1, "notes": 0}
+    assert resp.json() == {"tasks": 1, "notes": 0, "rule": None}
     assert (await client.get(f"/api/v1/tasks/{live}")).json()["tags"] == ["ab"]
 
 
@@ -111,5 +111,5 @@ async def test_member_renames_own_tags(client: httpx.AsyncClient) -> None:
     assert resp.status_code == 201
     resp = await client.patch(f"{TAGS}/team", json={"new_name": "mine"}, headers=member.headers)
     assert resp.status_code == 200
-    assert resp.json() == {"tasks": 0, "notes": 1}
+    assert resp.json() == {"tasks": 0, "notes": 1, "rule": None}
     assert (await client.get(f"/api/v1/tasks/{work}")).json()["tags"] == ["team"]
