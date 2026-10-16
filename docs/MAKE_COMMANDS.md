@@ -94,6 +94,8 @@ Thêm biến mới vào hệ thống: sửa `.env.example` (nguồn mẫu). Nế
 
 **Trỏ web local vào VM dev**: `make devvm-tunnel`, `make devvm-web`, `make devvm-down` (host/khoá SSH ghi đè qua `DEVVM_HOST`, `DEVVM_KEY`, `DEVVM_PORT`).
 
+**Kiểm chứng backend không cần Docker local (T8)**: `make devvm-test [K=...]` (ruff + migration + pytest, DB tạm), `make devvm-smoke [REF=...]`, `make devvm-branch BRANCH=... [TASK=T<N>]` / `make devvm-restore` / `make devvm-status` (đưa một nhánh lên VM dev rồi trả về main, có sao lưu và khoá). Quy trình đầy đủ: `docs/agents/WORKFLOW.md` mục 9.
+
 > Danh sách trên là ảnh chụp lúc viết. Nguồn đúng nhất luôn là `make help` / `Makefile`.
 
 ## 5. Thêm một lệnh mới

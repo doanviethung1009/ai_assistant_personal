@@ -35,8 +35,8 @@ Bảng tài nguyên của task `T<N>` (N từ 1 đến 99):
 | Cổng postgres / redis | `5500+N` / `6400+N` | `5512` / `6412` |
 
 Stack chính (checkout không có `.env.worktree`) giữ nguyên tên `builder-ai` và cổng
-3000/8000/5432/6379. Không task nào được trỏ vào stack chính hay vào VM dev Proxmox (có dữ
-liệu thật).
+3000/8000/5432/6379. Không task nào được trỏ vào stack chính. Với VM dev Proxmox (có dữ liệu
+thật) chỉ đi qua các lệnh có kiểm soát ở mục 9 (`make devvm-*`), không tự SSH sửa tay.
 
 ### Cơ chế
 
@@ -133,9 +133,53 @@ không mang prefix `builder-t<N>` / `builder_ai_t<N>`.
 
 ## 8. Giới hạn đã biết
 
-- Cần Docker trên máy. Không có Docker thì `new-worktree.sh` vẫn tạo nhánh, worktree và
-  `.env.worktree`, nhưng bỏ qua bước dựng DB và báo rõ.
+- Không có Docker local thì `new-worktree.sh` vẫn tạo nhánh, worktree và `.env.worktree`, bỏ qua
+  bước dựng DB và báo rõ. Khi đó kiểm chứng backend đi theo mục 9 (chạy trên VM dev).
 - Mỗi worktree build image `api`/`web` riêng lần đầu (chậm, tốn đĩa). `remove-worktree.sh` xoá image đó.
 - Commit bảng nằm ở `main` local cho tới khi User push. `task-board.sh sync` gom chúng lên trên
   `origin/main` sau mỗi lần PR merge.
 - Task chỉ đánh số T1..T99 vì cổng tính theo số task.
+
+## 9. Máy không có Docker: local chỉ chạy nhanh web, kiểm chứng chính trên VM dev (T8)
+
+Máy dev chính của dự án không cài Docker. Quy ước (User chốt 2026-10-16):
+
+- **Local** chỉ để sửa và xem nhanh code **web**: `make devvm-web` chạy web trên host với
+  `DATA_SOURCE=api`, gọi API của VM dev qua SSH tunnel. Không dựng core/DB ở local.
+- **Kiểm chứng backend** chạy trên **VM dev Proxmox** (`ai-dev-01`), dùng backend của chính VM đó.
+
+Hai cách chạy trên VM, **cách ly với DB thật** (ưu tiên, dùng cho mọi task đổi `apps/core`):
+
+| Muốn biết | Lệnh | Cách ly bằng |
+|---|---|---|
+| ruff + migration lên head + pytest | `make devvm-test` (lọc: `make devvm-test K=tag`) | Postgres tạm trên tmpfs, network riêng, hàng đợi một lượt |
+| smoke E2E qua HTTP thật | `make devvm-smoke [REF=<commit>]` | stack tạm riêng (cổng 18000), xuất đúng commit bằng `git archive` |
+
+Ở máy có Docker thì `make lint`, `make test`, `make smoke` tương đương. CI GitHub
+(`.github/workflows/ci.yml`) chạy lại ruff, alembic, pytest, tsc khi mở PR: đó là cổng cuối, đừng
+dùng CI làm chỗ phát hiện lỗi đầu tiên (chậm, mỗi lần một PR).
+
+**Xem backend của nhánh chạy thật** (khi cần mở giao diện với dữ liệu dev thật):
+
+```bash
+git push                                            # nhánh phải có trên origin (hỏi User như mọi lần push)
+make devvm-branch BRANCH=feat/T12-x TASK=T12        # sao lưu DB, khoá, checkout nhánh trên VM
+make devvm-web                                      # web của worktree gọi API dev (qua tunnel)
+make devvm-restore                                  # XONG PHẢI TRẢ VỀ main, nhả khoá
+make devvm-status                                   # ai đang giữ VM dev
+```
+
+Luật của `devvm-branch` (script `scripts/agents/dev-vm-branch.sh`, banner đầu file ghi đủ):
+
+1. **Một nhánh tại một thời điểm.** Khoá `~/dev-branch.lock` trên VM; task khác phải chờ `restore`.
+2. **Luôn sao lưu DB trước** (`make backup` trên VM, file ở `/srv/builder-ai/dev/backups/`).
+3. **Từ chối nhánh có migration mới** trừ khi `--allow-migration`: `restore` chỉ đổi mã, không
+   downgrade schema, nên migration đã chạy nằm lại trong DB thật. Thử migration bằng `make devvm-smoke`.
+4. **Chỉ api đổi theo nhánh.** Container `web` trên VM là image dựng sẵn, không có mã web của nhánh;
+   xem web của nhánh bằng `make devvm-web` ở worktree.
+5. **`restore` không kéo `origin/main`** (tránh vô tình nâng schema DB thật); nâng dev lên main mới
+   là việc riêng, có sao lưu.
+6. VM chỉ ~3.4 GB RAM: không build image web/api trên VM để thử nhánh; mỗi lần một lượt test.
+
+Việc cần Docker thật (sửa `docker-compose*.yml`, Dockerfile) thì không kiểm chứng được ở đây: ghi rõ
+trong PR là chưa chạy, để CI hoặc User chạy ở máy có Docker.
