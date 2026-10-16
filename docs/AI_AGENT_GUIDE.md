@@ -24,7 +24,7 @@ CLAUDE.md                      Điểm vào của Claude Code, chỉ import AGEN
   └── roles/                   9 vai "đóng vai" cho IDE không có subagent
 
 .claude/                       Riêng cho Claude Code
-  ├── agents/                  6 subagent thật (architect, backend-dev, ... security-auditor)
+  ├── agents/                  8 subagent thật (architect, backend-dev, ... security-auditor, work-tracker, devops)
   ├── hooks/                   Chặn lệnh nguy hiểm, chặn script patch_*
   ├── settings.json            Quyền allow/ask/deny + hook
   ├── rules  ──► ../.agents/rules    (symlink, không có bản sao thứ hai)
