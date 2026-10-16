@@ -433,9 +433,17 @@ Mặc định web chỉ bind `127.0.0.1:3000` (compose). Muốn mở ra LAN cầ
 | `ENVIRONMENT` | `staging` | `production` |
 | `API_KEY`, mật khẩu Postgres, `JIRA` token | khác nhau | khác nhau |
 | `CORS_ORIGINS` | `http://192.168.100.202:3000` | `http://192.168.100.203:3000` |
+| `AUTH_URL` | `http://192.168.100.202:3000` (hoặc `https://<domain>`) | `http://192.168.100.203:3000` (hoặc `https://<domain>`) |
 | `IMAGE_TAG` | do pipeline đặt | do pipeline đặt |
 
 Quy tắc: không đặt secret trong git; không dùng chung `API_KEY` giữa staging và prod.
+
+`AUTH_URL` **bắt buộc** và phải đúng URL người dùng gõ vào trình duyệt: Auth.js redirect về URL này sau khi đăng nhập.
+`docker-compose.yml` không còn mặc định `http://localhost:3000` (T3, sau sự cố VM dev 2026-10-16: vào bằng IP,
+đăng nhập xong bị đẩy về localhost). Thiếu thì web hiện `/config-error` kèm tên biến `AUTH_URL`.
+`.env` sinh trước T3 thường chưa có dòng này: thêm tay rồi tạo lại web bằng `make up`
+(hoặc `docker compose -f docker-compose.yml -f docker-compose.lan.yml up -d web` khi `EXPOSE_LAN=true`;
+thiếu file LAN thì cổng 3000 chỉ còn nghe trên 127.0.0.1).
 
 ## 7. CI/CD với image
 

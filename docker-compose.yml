@@ -149,7 +149,10 @@ services:
       # Đăng nhập Google bằng Auth.js (docs/specs/web-authjs-login.md). Chỉ bắt buộc khi
       # DATA_SOURCE=api; thiếu thì web hiện trang lỗi cấu hình thay vì mở cửa.
       AUTH_SECRET: ${AUTH_SECRET:-}
-      AUTH_URL: ${AUTH_URL:-http://localhost:3000}
+      # KHÔNG đặt mặc định localhost: Auth.js dựng URL redirect sau đăng nhập từ AUTH_URL, nên mặc định
+      # này đẩy người dùng vào bằng IP/domain về localhost (sự cố VM dev 2026-10-16). Để trống thì web
+      # hiện /config-error nêu tên biến AUTH_URL thay vì chạy sai âm thầm. Đặt đúng URL người dùng gõ vào.
+      AUTH_URL: ${AUTH_URL:-}
       AUTH_TRUST_HOST: "true"
       AUTH_GOOGLE_ID: ${AUTH_GOOGLE_ID:-}
       AUTH_GOOGLE_SECRET: ${AUTH_GOOGLE_SECRET:-}
