@@ -67,12 +67,20 @@ Tên tag được chuẩn hoá như lúc nhập (chữ thường, space → `-`,
 | Phương thức | Endpoint | Chức năng | Ghi chú |
 |-------------|----------|-----------|---------|
 | `GET` | `/stats` | Mọi tag kèm `task_count`, `note_count` | Đếm trên task user nhìn thấy (work + personal của mình) và note của mình. Không phân trang: số tag riêng biệt nhỏ |
-| `PATCH` | `/{name}` | Đổi tên tag. Body `{"new_name": "..."}` | Tên mới đã có trên cùng bản ghi thì gộp. Trả `{tasks, notes}` là số bản ghi đã đổi. 404 nếu không có bản ghi nào sửa được; 409 nếu tên mới trùng tên cũ; 422 nếu tên rỗng |
-| `DELETE` | `/{name}` | Xoá tag khỏi mọi bản ghi sửa được | Trả `{tasks, notes}`; 404 nếu không có gì để xoá |
+| `PATCH` | `/{name}` | Đổi tên tag. Body `{"new_name": "..."}` | Tên mới đã có trên cùng bản ghi thì gộp. Trả `{tasks, notes, rule}`: số bản ghi đã đổi và quy tắc đồng bộ vừa ghi (`rule` là `null` nếu không chạm task work). 404 nếu không có bản ghi nào sửa được; 409 nếu tên mới trùng tên cũ; 422 nếu tên rỗng |
+| `DELETE` | `/{name}` | Xoá tag khỏi mọi bản ghi sửa được | Trả `{tasks, notes, rule}`; 404 nếu không có gì để xoá |
 
 Phạm vi sửa (đổi tên/xoá): note của chính user, task `personal` của chính user, và task `work` chỉ khi có quyền `task:write_any_work` (lead, admin). Member vẫn thấy tag của task work trong `/stats` nhưng đổi tên/xoá không động vào chúng (kể cả task họ tạo hoặc được giao). Mỗi task bị đổi ghi một `TaskEvent` `updated` với payload `{tags: {from, to}}`. Tên tag có `/` vẫn dùng được (route `/{name:path}`).
 
-**Cạnh tranh với Jira sync:** tag lấy từ label/component của Jira sẽ quay lại ở lần sync kế tiếp (sync gộp tag cũ với tag nhận về), nên đổi tên/xoá loại tag này chỉ có tác dụng tạm thời.
+**Ghi nhớ khi đồng bộ (T7):** đổi tên/xoá tag mà chạm ít nhất một task `work` (chỉ người có `task:write_any_work`) sẽ ghi một quy tắc vào bảng `tag_rules`. Quy tắc được áp lên tag ĐẾN TỪ NGUỒN NGOÀI (Jira connector, Excel, URL qua `upsert-batch`) nên tag đã đổi tên/xoá không quay lại; Jira connector áp quy tắc trước khi cắt còn 20 tag. Tag người dùng tự gõ trong form task/note không bị chặn, và tag đang có trên task không bị lọc. Hai lệnh này lấy khoá nhập nên có thể trả 409 nếu đang có lô đồng bộ chạy quá 5 giây. Quy tắc tạo trước khi có T7 không tồn tại: lead cần đổi tên/xoá lại tag cũ một lần. Chế độ `DATA_SOURCE=file` không có quy tắc.
+
+### Quy tắc đồng bộ tag
+Base path: `/api/v1/tag-rules` (cố ý không đặt dưới `/tags` vì `/tags/{name:path}` nuốt mọi đường con).
+
+| Phương thức | Endpoint | Chức năng | Ghi chú |
+|-------------|----------|-----------|---------|
+| `GET` | `/` | Danh sách quy tắc, sắp theo `source_tag` | Mọi user đăng nhập. Query `limit` (1..200, mặc định 50), `offset`. Trả `Page`: item `{id, source_tag, target_tag, kind, created_by_user_id, created_by_name, created_at, updated_at}`; `kind` là `alias` hoặc `block` (`target_tag` null) |
+| `DELETE` | `/{rule_id}` | Gỡ quy tắc | 204. Cần `task:write_any_work` (403), 404 nếu không có, 422 id sai. Lần đồng bộ tới tag nguồn sẽ quay lại. Ghi `audit_log` `tag_rule_deleted` (đặt quy tắc ghi `tag_rule_set`) |
 
 ## 3. API Quản lý Dự án (Projects)
 Base path: `/api/v1/projects`
@@ -154,7 +162,7 @@ Sync Jira (B4b) chạy **trong core** bằng connector Python (ngoại lệ D-B4
 
 Quy tắc `upsert-batch`:
 - Chỉ ghi `scope=work`. Task trùng khoá mà đang `personal` thì **không bị ghi đè** (đếm vào `skipped_personal`).
-- Chỉ ghi các trường client có gửi. **tags được gộp** (union), **`description` chỉ điền khi task đang rỗng**. `completed_at` và `created_at` lấy từ nguồn nếu có.
+- Chỉ ghi các trường client có gửi. **tags được gộp** (union; tag nguồn đi qua `tag_rules` trước khi gộp), **`description` chỉ điền khi task đang rỗng**. `completed_at` và `created_at` lấy từ nguồn nếu có.
 - `raw_payload` được lọc khoá và giá trị nhạy cảm (Authorization, token, Bearer, JWT...); quá 64 KB (sau lọc) hoặc 256 KB (trước lọc) thì **vẫn upsert task**, bỏ payload và trả `warnings`.
 - Idempotent: gửi lại cùng lô thì `added=0`, `updated=0`, không đổi `updated_at`, không sinh event. Event `synced` khi tạo, `updated` kèm diff khi đổi (actor `integration:<source>`).
 - Xung đột với thao tác đồng thời (khoá dòng, lock `builder:import`) trả 409, thử lại được.
