@@ -1,0 +1,9 @@
+---
+# Dùng khi swap file vừa được tạo; các task sau đã tự bật, handler chỉ phòng trường hợp chạy dở.
+- name: enable swap
+  ansible.builtin.shell: "swapon --show=NAME --noheadings | grep -q '^/swapfile$' || swapon /swapfile"
+  changed_when: false
+
+- name: reload sysctl
+  ansible.builtin.command: sysctl --system
+  changed_when: false

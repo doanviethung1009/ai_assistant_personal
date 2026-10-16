@@ -17,3 +17,13 @@ app_root: /srv/builder-ai
 #   extra_ssh_keys:
 #     - "ssh-ed25519 AAAAC3...xyz hung@macbook-2026"
 extra_ssh_keys: []
+
+# ── Tinh chỉnh hiệu năng (role tuning) ───────────────────────────────────
+# Swap file (MB). 0 = không tạo. Là lưới an toàn khi RAM thiếu, KHÔNG thay cho cấp đủ RAM ở Proxmox.
+# Prod giữ nhỏ vì không overcommit RAM; dev cần lớn hơn vì `next dev` + build ngốn RAM.
+swap_size_mb: 1024
+tuning_sysctl:
+  vm.swappiness: 10            # chỉ swap khi thiếu thật, ưu tiên giữ page cache
+  vm.vfs_cache_pressure: 50    # giữ cache inode/dentry của bind mount nhiều file
+  fs.inotify.max_user_watches: 524288    # next dev/watchpack theo dõi nhiều file
+  fs.inotify.max_user_instances: 512
