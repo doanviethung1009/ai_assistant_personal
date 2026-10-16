@@ -10,7 +10,9 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
-      "Bash(npx tsc --noEmit:*)"
+      "Bash(npx tsc --noEmit:*)",
+      "Read(./.env.*)",
+      "Bash(gh pr merge *)"
     ],
     "ask": [
       "Bash(git push:*)",
@@ -20,7 +22,6 @@
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./.env.*)",
       "Read(./secrets/**)",
       "Bash(docker compose down -v:*)",
       "Bash(git push --force:*)",
