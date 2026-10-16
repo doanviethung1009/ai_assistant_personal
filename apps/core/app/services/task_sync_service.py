@@ -497,6 +497,9 @@ async def upsert_batch(
     # Nạp rule SAU khi giữ khoá: thấy rule mới nhất và không xen với một lệnh đổi tên tag
     # (tag_service lấy cùng khoá). Áp lên tag NGUỒN trước khi gộp vào tag của task.
     tag_rules = await tag_rule_service.load_rules(session)
+    # Chỉ đếm lượt áp RULE LẦN HAI này (Excel/URL, hoặc Jira nếu map_issue chưa áp). Jira đã
+    # được áp trước bước cắt trong map_issue nên số này gần như luôn 0 với Jira: đừng đọc nó là
+    # "rule không chạy".
     tag_rules_applied = 0
     if tag_rules:
         for p in prepared:
@@ -575,7 +578,7 @@ async def upsert_batch(
 
     logger.info(
         "upsert-batch: source=%s added=%d updated=%d unchanged=%d skipped_personal=%d "
-        "errors=%d warnings=%d tag_rules_applied=%d",
+        "errors=%d warnings=%d tag_rules_reapplied=%d",
         source.value,
         added,
         updated,

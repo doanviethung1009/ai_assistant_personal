@@ -86,6 +86,21 @@ async def delete(session: AsyncSession, user: CurrentUser, name: str) -> TagChan
 async def _apply(
     session: AsyncSession, user: CurrentUser, old: str, new: str | None
 ) -> TagChangeResponse:
+    """Bọc `_apply_locked` để lỗi hết hạn chờ khoá thành 409.
+
+    `take_import_write_lock` đặt `lock_timeout` cho CẢ transaction, nên các UPDATE tasks/notes
+    phía sau cũng có thể ném 55P03 khi dòng đang bị request khác giữ. Không bọc thì thành 500
+    (trước T7 đổi tên tag chỉ chờ, không có timeout).
+    """
+    async with locks.conflict_on_lock_timeout(
+        session, "Tag đang được sửa ở nơi khác, hãy thử lại sau."
+    ):
+        return await _apply_locked(session, user, old, new)
+
+
+async def _apply_locked(
+    session: AsyncSession, user: CurrentUser, old: str, new: str | None
+) -> TagChangeResponse:
     """`new=None` nghĩa là xoá. Đổi tên sang tag đã có trên cùng dòng thì chỉ bỏ tag cũ (gộp).
 
     Người có `task:write_any_work` lấy advisory lock của nhập TRƯỚC các câu UPDATE: tuần tự hoá
