@@ -108,20 +108,35 @@ File sysctl: `/etc/sysctl.d/60-builder-tuning.conf` (Ansible quản lý, đừng
 Staging/prod không bị áp ngoài ý muốn nhờ cờ `tuning_enabled` mặc định `false`. Muốn áp: đặt `tuning_enabled: true` trong `host_vars/ai-stg-01.yml` rồi `make pve-config ENV=staging CHECK=1`, xem diff, chạy thật. Prod chỉ áp qua quy trình có duyệt.
 Idempotent: chạy lại phải báo `changed=0` (đã kiểm với dev).
 
-### Cần làm phía Proxmox (cần quyền root, agent không có)
+### Cần làm phía Proxmox (chưa áp dụng, chọn một trong hai cách)
 
-Chạy trong Shell của node (hoặc `ssh root@192.168.100.252`). Giữ nguyên tổng RAM: nâng dev 1 GB, hạ prod 1 GB (prod đang dùng ~0.6 GB và chưa chạy stack):
+Mục tiêu (User chốt 2026-10-16): dev 2.5 → 3.5 GB, 2 → 3 nhân, `--cpu host`; prod 5 → 4 GB. Bước đổi cấu hình VM bị hệ thống chặn khi agent tự chạy, nên cần User chạy hoặc cấp quyền rõ ràng.
+
+**Cách A: chạy `qm` trong Shell của node** (hoặc `ssh root@192.168.100.252`, cần quyền root):
 
 ```bash
-# Dev: thêm RAM + nhân, dùng CPU thật của host, disk nhanh hơn. Áp dụng sau khi tắt/bật VM (reboot gõ trong guest không đủ).
-qm config 201 | grep -E 'scsi0|scsihw'     # xác nhận tên volume thật và scsihw = virtio-scsi-single (iothread cần controller này)
 qm shutdown 201 --timeout 90
 qm set 201 --memory 3584 --cores 3 --cpu host
-qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1    # SỬA tên volume nếu lệnh trên in ra khác: gõ sai thì đĩa cũ thành unused0, VM không boot
 qm start 201
-# Prod: nhường RAM (chỉ khi chưa deploy stack, kiểm tra lại ngân sách trước khi deploy thật)
-qm set 203 --memory 4096        # áp dụng sau khi tắt/bật VM từ Proxmox (qm shutdown + qm start)
+qm set 203 --memory 4096    # prod: hiệu lực ở lần tắt/bật sau
 ```
+
+**Cách B: gọi API bằng token ghi** `infra/proxmox/.env.pve.deploy` (role AIDeploy có `VM.Config.Memory`, `VM.Config.CPU`, `VM.PowerMgmt`; không cần root). Chạy từ máy có file token; token không in ra, nạp từ file:
+
+```bash
+set -a; . infra/proxmox/.env.pve.deploy; set +a
+B="https://$PVE_HOST:${PVE_PORT:-8006}/api2/json/nodes/${PVE_NODE:-isec}/qemu"
+H="Authorization: PVEAPIToken=$PVE_TOKEN_ID=$PVE_TOKEN_SECRET"
+# Kiểm tra fingerprint TLS đã ghim (như pve-vm.sh) rồi dùng curl -sk
+curl -sk -H "$H" -X POST "$B/201/status/shutdown" -d timeout=90      # đợi VM tắt: GET $B/201/status/current → "stopped"
+curl -sk -H "$H" -X PUT  "$B/201/config" -d memory=3584 -d cores=3 -d cpu=host
+curl -sk -H "$H" -X PUT  "$B/203/config" -d memory=4096              # prod: hiệu lực ở lần tắt/bật sau
+curl -sk -H "$H" -X POST "$B/201/status/start"
+```
+
+Cả hai cách cho cùng kết quả. Giữ nguyên tổng RAM: nâng dev 1 GB, hạ prod 1 GB (prod đang dùng ~0.6 GB và chưa chạy stack).
+
+Tùy chọn thêm cho disk dev (rủi ro hơn, chưa nằm trong kế hoạch): `qm config 201 | grep -E 'scsi0|scsihw'` rồi `qm set 201 --scsi0 local-lvm:vm-201-disk-0,discard=on,iothread=1,ssd=1`. Sửa đúng tên volume: gõ sai thì đĩa cũ thành `unused0`, VM không boot.
 
 Ngân sách RAM sau đổi: 2 (vpn) + 3.5 (dev) + 3 (stg) + 4 (prod) = 12.5 GB, bằng trước đây. Sau khi dev lên 3.5 GB có thể giảm swap
 dev về 1 GB (sửa `host_vars/ai-dev-01.yml`, chạy lại `make pve-config ENV=dev`; swap file cũ cần `swapoff` + xóa tay nếu thu nhỏ).
