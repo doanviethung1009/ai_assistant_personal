@@ -504,7 +504,7 @@ giữ overlay LAN giống target đó, nếu không web mất cổng LAN khi `.e
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.prod.yml \
-  $(grep -q '^EXPOSE_LAN=true' .env && echo "-f docker-compose.lan.yml") \
+  $(grep -q '^EXPOSE_LAN=true' .env 2>/dev/null && echo "-f docker-compose.lan.yml") \
   up -d --force-recreate api web
 ```
 
